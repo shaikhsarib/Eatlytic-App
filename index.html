@@ -1,0 +1,2611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Eatlytic — Food Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,900;1,9..144,400;1,9..144,700&family=Nunito:wght@400;600;700;800;900&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* ── Light mode (default) ── */
+  --white:#FFFFFF; --ink:#0A0A0A; --bg:#F5F3EE;
+  --yellow:#FFD600; --pink:#FF2D78; --blue:#0047FF;
+  --mint:#00C896; --orange:#FF6B00; --lilac:#C084FC;
+  --red:#FF1744; --cream:#FFF8E8; --muted:#777; --green:#00A878;
+  --shadow-sticker:3px 4px 0px var(--ink);
+  --shadow-card:4px 6px 0px rgba(10,10,10,0.14);
+  --shadow-sm:2px 3px 0px rgba(10,10,10,0.12);
+  --border:2px solid var(--ink);
+  --r:16px; --r-pill:100px;
+  /* nav height + iOS safe area */
+  --nav-h:60px;
+  --nav-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ── Dark mode token overrides ── */
+[data-theme="dark"] {
+  --white:#1A1A1A; --ink:#F0EDE6; --bg:#111111;
+  --cream:#1E1C18; --muted:#8A8A8A;
+  --shadow-sticker:3px 4px 0px rgba(240,237,230,0.15);
+  --shadow-card:4px 6px 0px rgba(0,0,0,0.5);
+  --shadow-sm:2px 3px 0px rgba(0,0,0,0.4);
+  --border:2px solid rgba(240,237,230,0.18);
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg)}
+body{font-family:'Nunito',sans-serif;color:var(--ink)}
+button{font-family:inherit;cursor:pointer;border:none;outline:none}
+input,textarea,select{font-family:inherit;outline:none}
+
+/* halftone dot texture */
+body::after{content:'';position:fixed;inset:0;z-index:9998;pointer-events:none;
+  background-image:radial-gradient(circle,rgba(10,10,10,0.05) 1px,transparent 1px);
+  background-size:16px 16px}
+
+/* screen system */
+.screen{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;
+  background:var(--bg);overflow:hidden;opacity:0;pointer-events:none;
+  transform:scale(0.96) translateY(12px);
+  transition:opacity 0.38s ease,transform 0.38s cubic-bezier(0.34,1.2,0.64,1)}
+.screen.active{opacity:1;pointer-events:all;transform:scale(1) translateY(0)}
+.screen.exit{opacity:0;transform:scale(1.04) translateY(-10px);pointer-events:none}
+
+/* app header */
+.app-header{flex-shrink:0;padding:12px 18px 10px;display:flex;justify-content:space-between;
+  align-items:center;background:var(--bg);border-bottom:var(--border);z-index:5}
+.app-logo{font-family:'Fraunces',serif;font-weight:900;font-size:1.5rem;letter-spacing:-2px;color:var(--ink)}
+.app-logo em{color:var(--yellow);font-style:italic;-webkit-text-stroke:1px var(--ink)}
+.header-pill{background:var(--white);border:var(--border);border-radius:var(--r-pill);
+  padding:5px 13px;font-size:11px;font-weight:800;cursor:pointer;
+  box-shadow:var(--shadow-sticker);transition:transform 0.1s,box-shadow 0.1s;
+  display:flex;align-items:center;gap:6px}
+.header-pill:active{transform:translateY(2px);box-shadow:none}
+
+/* quota badge */
+.quota-pill{background:var(--cream);border:var(--border);border-radius:var(--r-pill);
+  padding:5px 11px;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;
+  display:flex;align-items:center;gap:5px;box-shadow:var(--shadow-sm)}
+.quota-dot{width:7px;height:7px;border-radius:50%;background:var(--mint);border:1px solid var(--ink);
+  animation:qdot-pulse 2.4s ease-in-out infinite}
+.quota-dot.warn{background:var(--orange)} .quota-dot.low{background:var(--red)}
+@keyframes qdot-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.5)}}
+
+/* scrollable inner */
+.scroll-inner{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.scroll-inner::-webkit-scrollbar{display:none}
+
+/* ── SECTION LABEL */
+.section-label{font-size:9px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;
+  color:var(--muted);margin-bottom:8px}
+
+/* ── CHIPS */
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.chip{padding:6px 13px;border-radius:var(--r-pill);border:var(--border);background:var(--white);
+  font-size:11px;font-weight:800;color:var(--ink);cursor:pointer;box-shadow:var(--shadow-sm);
+  transition:all 0.15s cubic-bezier(0.34,1.56,0.64,1)}
+.chip:hover{transform:translateY(-2px)}
+.chip.active{background:var(--yellow);box-shadow:var(--shadow-sticker);transform:translateY(-2px)}
+.lang-chip{font-family:'Space Mono',monospace;font-size:10px;padding:5px 11px}
+
+/* ════════════════════════════════════
+   S-SCAN — THE PORTAL
+════════════════════════════════════ */
+.portal-section{display:flex;flex-direction:column;align-items:center;padding:16px 0 8px}
+.scan-eyebrow{font-family:'Space Mono',monospace;font-size:9px;font-weight:700;
+  letter-spacing:3px;text-transform:uppercase;color:var(--muted);margin-bottom:20px;text-align:center}
+
+/* portal rings */
+.portal-wrap{position:relative;width:220px;height:220px;display:flex;align-items:center;
+  justify-content:center;cursor:pointer;margin-bottom:18px}
+.portal-ring{position:absolute;border-radius:50%;pointer-events:none;
+  animation:portal-breath 3.8s ease-in-out infinite}
+.portal-ring:nth-child(1){width:220px;height:220px;border:1.5px solid rgba(10,10,10,0.12)}
+.portal-ring:nth-child(2){width:184px;height:184px;border:1.5px solid rgba(10,10,10,0.18);animation-delay:0.6s}
+.portal-ring:nth-child(3){width:148px;height:148px;border:1.5px solid rgba(10,10,10,0.25);animation-delay:1.2s}
+@keyframes portal-breath{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.035);opacity:1}}
+.portal-orbit{position:absolute;width:184px;height:184px;border-radius:50%;pointer-events:none;
+  animation:portal-orbit-spin 11s linear infinite}
+.portal-orbit:nth-child(5){width:148px;height:148px;animation-duration:16s;animation-direction:reverse}
+.portal-orbit-dot{position:absolute;top:-4px;left:50%;transform:translateX(-50%);
+  width:8px;height:8px;border-radius:50%;background:var(--yellow);border:1.5px solid var(--ink);
+  box-shadow:var(--shadow-sm)}
+.portal-orbit:nth-child(5) .portal-orbit-dot{background:var(--pink);top:auto;bottom:-4px;width:6px;height:6px}
+@keyframes portal-orbit-spin{to{transform:rotate(360deg)}}
+
+/* portal core (the tappable center) */
+.portal-core{width:118px;height:118px;border-radius:50%;background:var(--white);
+  border:var(--border);box-shadow:var(--shadow-sticker);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:4px;position:relative;z-index:2;
+  transition:transform 0.2s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.15s}
+.portal-core:hover{transform:scale(1.06);box-shadow:5px 6px 0px var(--ink)}
+.portal-core:active{transform:scale(0.96) translateY(2px);box-shadow:1px 2px 0px var(--ink)}
+.portal-icon{font-size:2.4rem;filter:drop-shadow(0 2px 0 rgba(10,10,10,0.2))}
+.portal-cta-text{font-family:'Fraunces',serif;font-size:9px;font-style:italic;font-weight:700;
+  color:var(--muted);animation:portal-breath 3.8s ease-in-out infinite;text-align:center}
+
+/* ── FIX: image preview (was broken — z-index war with portal-core) */
+.portal-preview-wrap{position:absolute;inset:42px;border-radius:50%;
+  overflow:hidden;border:var(--border);z-index:4;display:none;
+  box-shadow:var(--shadow-sticker)}
+.portal-preview-wrap.visible{display:block}
+.portal-preview-wrap img{width:100%;height:100%;object-fit:cover;display:block}
+.portal-preview-badge{position:absolute;bottom:0;left:0;right:0;padding:4px;
+  background:rgba(255,255,255,0.92);border-top:var(--border);
+  font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:1px;
+  text-align:center;font-family:'Space Mono',monospace}
+
+/* quality strip */
+.quality-strip{display:none;width:100%;background:var(--white);border:var(--border);
+  border-radius:var(--r);padding:9px 14px;box-shadow:var(--shadow-sm);
+  gap:10px;align-items:center;margin-bottom:10px}
+.quality-strip.visible{display:flex}
+.qs-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px;flex-shrink:0}
+.qs-bar{flex:1;height:8px;background:#E8E4DE;border:1.5px solid var(--ink);border-radius:4px;overflow:hidden}
+.qs-fill{height:100%;width:0%;border-radius:3px;transition:width 0.9s cubic-bezier(0.34,1.56,0.64,1);background:var(--mint)}
+.qs-badge{font-size:10px;font-weight:800;color:var(--mint);font-family:'Space Mono',monospace;white-space:nowrap}
+
+/* scan action buttons */
+.scan-btn-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.scan-btn{background:var(--white);border:var(--border);border-radius:var(--r);padding:12px 10px;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  font-size:13px;font-weight:800;color:var(--ink);box-shadow:var(--shadow-card);
+  transition:transform 0.15s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.1s}
+.scan-btn:active{transform:translateY(3px);box-shadow:none}
+
+/* analyse CTA */
+.analyse-cta{display:none;width:100%;background:var(--ink);color:var(--yellow);
+  border:var(--border);border-radius:var(--r-pill);padding:15px;
+  font-family:'Fraunces',serif;font-weight:900;font-size:1.1rem;font-style:italic;
+  letter-spacing:-0.5px;box-shadow:var(--shadow-sticker);margin-bottom:13px;
+  transition:transform 0.15s,box-shadow 0.1s}
+.analyse-cta:active{transform:translateY(3px);box-shadow:none}
+.analyse-cta.visible{display:block}
+
+/* voice logging */
+.voice-btn{width:100%;background:var(--cream);border:var(--border);border-radius:var(--r);
+  padding:12px;display:flex;align-items:center;gap:10px;
+  font-size:13px;font-weight:800;box-shadow:var(--shadow-sm);margin-bottom:12px;
+  transition:all 0.2s}
+.voice-btn.listening{background:var(--pink);color:#fff;animation:voice-pulse 1s ease-in-out infinite}
+.voice-transcript{font-size:11px;font-weight:600;color:var(--muted);flex:1;text-align:left;font-style:italic}
+@keyframes voice-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.02)}}
+
+/* ════════════════════════════════════
+   S-CAMERA — LIVE VIEWFINDER
+════════════════════════════════════ */
+#s-camera{background:#000;z-index:20}
+.camera-viewport{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+#camera-video{width:100%;height:100%;object-fit:cover;display:block}
+/* AR-style reticle */
+.camera-reticle{position:absolute;width:220px;height:220px;pointer-events:none}
+.reticle-corner{position:absolute;width:24px;height:24px;border-color:#FFD600;border-style:solid;border-width:3px}
+.rc-tl{top:0;left:0;border-right:none;border-bottom:none}
+.rc-tr{top:0;right:0;border-left:none;border-bottom:none}
+.rc-bl{bottom:0;left:0;border-right:none;border-top:none}
+.rc-br{bottom:0;right:0;border-left:none;border-top:none}
+.reticle-scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(to right,transparent,#FFD600,transparent);
+  animation:scan-sweep 2s ease-in-out infinite}
+@keyframes scan-sweep{0%{top:10%}50%{top:85%}100%{top:10%}}
+/* barcode hit indicator */
+.barcode-hit{position:absolute;background:rgba(255,214,0,0.25);border:2px solid var(--yellow);
+  border-radius:8px;pointer-events:none;display:none;
+  transition:all 0.15s}
+/* nutrition overlay (AR display) */
+.camera-overlay-pill{position:absolute;top:16px;left:50%;transform:translateX(-50%);
+  background:rgba(10,10,10,0.85);color:var(--yellow);border-radius:var(--r-pill);
+  padding:6px 14px;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;
+  letter-spacing:1px;white-space:nowrap;opacity:0;transition:opacity 0.3s}
+.camera-overlay-pill.show{opacity:1}
+/* camera controls */
+.camera-controls{flex-shrink:0;background:#111;padding:16px 24px 24px;
+  display:flex;align-items:center;justify-content:space-between}
+.cam-ctrl-btn{width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.1);
+  border:1.5px solid rgba(255,255,255,0.2);color:#fff;font-size:1.3rem;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:all 0.15s}
+.cam-ctrl-btn:active{transform:scale(0.9);background:rgba(255,255,255,0.2)}
+.cam-ctrl-btn.on{background:rgba(255,214,0,0.2);border-color:var(--yellow);color:var(--yellow)}
+.capture-btn{width:72px;height:72px;border-radius:50%;background:var(--white);
+  border:4px solid rgba(255,255,255,0.4);cursor:pointer;position:relative;
+  transition:transform 0.15s,box-shadow 0.15s;
+  box-shadow:0 0 0 4px rgba(255,255,255,0.15)}
+.capture-btn::after{content:'';position:absolute;inset:8px;border-radius:50%;background:var(--white)}
+.capture-btn:active{transform:scale(0.92)}
+.camera-mode-row{flex-shrink:0;background:#111;padding:6px 18px 10px;
+  display:flex;gap:8px;justify-content:center}
+.cam-mode-btn{padding:6px 14px;border-radius:var(--r-pill);border:1.5px solid rgba(255,255,255,0.2);
+  background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.5);font-size:10px;font-weight:800;
+  letter-spacing:1px;text-transform:uppercase;transition:all 0.15s}
+.cam-mode-btn.active{background:rgba(255,214,0,0.15);border-color:var(--yellow);color:var(--yellow)}
+
+/* ════════════════════════════════════
+   S-READING — VINE LOADER
+════════════════════════════════════ */
+#s-reading{justify-content:center;align-items:center}
+.reading-wrap{display:flex;flex-direction:column;align-items:center;padding:32px 24px;width:100%;max-width:420px}
+.reading-title{font-family:'Fraunces',serif;font-size:1.6rem;font-weight:900;font-style:italic;
+  color:var(--ink);margin-bottom:36px;text-align:center;line-height:1.15}
+.reading-title em{color:var(--yellow);-webkit-text-stroke:1px var(--ink)}
+.vine-wrap{position:relative;width:2px;height:160px;margin-bottom:32px}
+.vine-track{position:absolute;inset:0;background:rgba(10,10,10,0.1)}
+.vine-fill{position:absolute;bottom:0;left:0;width:2px;height:0%;background:var(--ink);
+  transition:height 0.4s ease;box-shadow:0 -4px 16px rgba(10,10,10,0.25)}
+.vine-nodes{position:absolute;inset:0}
+.vine-node{position:absolute;left:50%;transform:translateX(-50%);width:12px;height:12px;border-radius:50%;
+  background:var(--bg);border:2px solid rgba(10,10,10,0.2);transition:border-color 0.3s,background 0.3s}
+.vine-node.lit{border-color:var(--ink);background:var(--yellow);box-shadow:0 0 0 3px rgba(255,214,0,0.3)}
+.vine-node-label{position:absolute;left:20px;white-space:nowrap;font-size:10px;font-weight:700;
+  letter-spacing:1px;text-transform:uppercase;color:rgba(10,10,10,0.3);transition:color 0.3s}
+.vine-node.lit .vine-node-label{color:var(--ink)}
+.reading-text{font-family:'Space Mono',monospace;font-size:10px;color:rgba(10,10,10,0.4);
+  line-height:1.8;max-width:300px;text-align:center;min-height:48px}
+.reading-text .char{opacity:0;animation:char-appear 0.05s forwards}
+@keyframes char-appear{to{opacity:1}}
+
+/* ════════════════════════════════════
+   S-REVEAL — RESULTS
+════════════════════════════════════ */
+#s-reveal{overflow:hidden}
+.reveal-scroll{flex:1;overflow-y:auto;padding:0 18px;scrollbar-width:none}
+.reveal-scroll::-webkit-scrollbar{display:none}
+
+.reveal-top{display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0 8px}
+.reveal-product{font-family:'Fraunces',serif;font-weight:900;font-size:1.3rem;
+  letter-spacing:-0.5px;line-height:1.2;max-width:200px}
+.reveal-score-group{text-align:right;flex-shrink:0}
+.reveal-score{font-family:'Fraunces',serif;font-weight:900;font-size:3.6rem;
+  letter-spacing:-4px;line-height:0.95;display:block}
+.reveal-verdict-label{font-size:9px;font-weight:800;letter-spacing:2px;
+  text-transform:uppercase;margin-top:4px;display:block}
+.reveal-thumb{width:48px;height:48px;border-radius:10px;object-fit:cover;
+  border:var(--border);box-shadow:var(--shadow-sm);flex-shrink:0;margin-right:8px}
+
+/* confidence strip */
+.confidence-strip{display:flex;align-items:center;gap:8px;padding:6px 0 10px;
+  font-family:'Space Mono',monospace;font-size:9px;color:var(--muted)}
+.conf-dot{width:6px;height:6px;border-radius:50%;background:var(--mint);border:1px solid var(--ink)}
+
+/* satellite orb */
+.orb-stage{display:flex;justify-content:center;padding:6px 0 4px;position:relative}
+.score-orb-wrap{position:relative;width:190px;height:190px}
+.score-orb{position:absolute;inset:28px;border-radius:50%;background:var(--white);
+  border:var(--border);box-shadow:var(--shadow-sticker);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  cursor:pointer;z-index:2;transition:transform 0.2s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.1s}
+.score-orb:hover{transform:scale(1.05);box-shadow:5px 6px 0 var(--ink)}
+.score-orb:active{transform:scale(0.96) translateY(2px);box-shadow:1px 2px 0 var(--ink)}
+.orb-num{font-family:'Fraunces',serif;font-weight:900;font-size:2.8rem;letter-spacing:-3px;line-height:1}
+.orb-denom{font-size:11px;font-weight:700;color:var(--muted);font-family:'Space Mono',monospace}
+.orb-pulse-ring{position:absolute;inset:22px;border-radius:50%;border:1.5px solid;
+  opacity:0.4;animation:orb-pulse 2.8s ease-in-out infinite}
+@keyframes orb-pulse{0%,100%{transform:scale(1);opacity:.4}50%{transform:scale(1.08);opacity:.8}}
+.orb-satellite{position:absolute;display:flex;flex-direction:column;align-items:center;cursor:pointer;z-index:3}
+.sat-dot{width:34px;height:34px;border-radius:10px;border:2px solid var(--ink);
+  display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;
+  box-shadow:var(--shadow-sm);transition:transform 0.2s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.1s}
+.sat-dot:hover{transform:scale(1.2) rotate(-4deg)}
+.sat-dot:active{transform:translateY(2px);box-shadow:none}
+.sat-label{font-size:7px;font-weight:800;letter-spacing:1px;text-transform:uppercase;margin-top:3px}
+.sat-0{top:-4px;left:50%;transform:translateX(-50%)}
+.sat-1{top:50%;right:-8px;transform:translateY(-50%)}
+.sat-2{bottom:-4px;left:50%;transform:translateX(-50%)}
+.sat-3{top:50%;left:-8px;transform:translateY(-50%)}
+.sat-4{top:10px;right:0}
+.sat-5{bottom:10px;right:0}
+
+/* satellite expand sheet */
+.sat-expand{position:fixed;bottom:0;left:0;right:0;z-index:200;
+  background:var(--white);border-top:var(--border);border-radius:20px 20px 0 0;
+  padding:18px 20px 36px;box-shadow:0 -4px 0 var(--ink);
+  transform:translateY(100%);transition:transform 0.32s cubic-bezier(0.34,1.2,0.64,1)}
+.sat-expand.open{transform:translateY(0)}
+.sat-expand-handle{width:36px;height:4px;background:rgba(10,10,10,0.15);border-radius:2px;margin:0 auto 14px}
+.sat-expand-close{position:absolute;top:16px;right:16px;background:var(--bg);border:var(--border);
+  width:30px;height:30px;border-radius:50%;font-size:13px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-sm);cursor:pointer}
+.sat-expand-close:active{transform:scale(0.9)}
+.sat-expand-name{font-family:'Fraunces',serif;font-weight:900;font-size:1.4rem;margin-bottom:4px}
+.sat-expand-val{font-family:'Fraunces',serif;font-weight:900;font-size:1.8rem;margin-bottom:10px}
+.sat-expand-desc{font-size:13px;color:#444;line-height:1.75}
+
+/* verdict tape */
+.verdict-tape{margin:6px 0 10px;border:var(--border);border-radius:var(--r);
+  background:var(--white);box-shadow:var(--shadow-card);padding:13px 15px;
+  display:flex;gap:11px;align-items:flex-start}
+.vt-stamp{width:48px;height:48px;border-radius:10px;border:var(--border);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:1.4rem;box-shadow:var(--shadow-sm)}
+.vt-title{font-weight:900;font-size:13.5px;margin-bottom:3px}
+.vt-desc{font-size:12px;color:#555;line-height:1.7}
+
+/* ── INGREDIENT RISK FLAGS (NEW) */
+.risk-flags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.risk-flag{display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:var(--r-pill);
+  font-size:11px;font-weight:800;border:1.5px solid;cursor:pointer;
+  transition:transform 0.15s}
+.risk-flag:hover{transform:scale(1.05)}
+.rf-red{background:rgba(255,23,68,0.1);border-color:var(--red);color:var(--red)}
+.rf-orange{background:rgba(255,107,0,0.1);border-color:var(--orange);color:var(--orange)}
+.rf-yellow{background:rgba(255,214,0,0.2);border-color:#C8A800;color:#665500}
+.rf-green{background:rgba(0,200,150,0.1);border-color:var(--mint);color:var(--green)}
+.rf-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* nutrient sticker pack */
+.pack-label{font-size:9px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;
+  color:var(--muted);padding:4px 0 10px}
+.nutrient-pack{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.ns-card{border:2px solid var(--ink);border-radius:var(--r);padding:11px 9px;
+  box-shadow:var(--shadow-sticker);cursor:pointer;text-align:center;position:relative;overflow:hidden;
+  opacity:0;transform:scale(0) rotate(8deg);
+  transition:opacity 0.4s cubic-bezier(0.34,1.56,0.64,1),transform 0.4s cubic-bezier(0.34,1.56,0.64,1)}
+.ns-card.visible{opacity:1;transform:rotate(var(--rot,2deg))}
+.ns-card:hover{transform:translateY(-5px) rotate(0deg) scale(1.06)!important}
+.ns-card:active{transform:translateY(1px)!important;box-shadow:var(--shadow-sm)}
+.ns-rating-badge{position:absolute;top:5px;right:5px;width:16px;height:16px;border-radius:50%;
+  border:1.5px solid var(--ink);background:var(--white);display:flex;align-items:center;
+  justify-content:center;font-size:8px;font-weight:800}
+.ns-icon{font-size:1.2rem;display:block;margin-bottom:4px}
+.ns-name{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:3px}
+.ns-val{font-family:'Fraunces',serif;font-weight:900;font-size:1rem;letter-spacing:-0.5px}
+.ns-bar{height:4px;background:rgba(10,10,10,0.12);border-radius:2px;margin-top:7px;overflow:hidden}
+.ns-fill{height:100%;width:0%;border-radius:2px;transition:width 1.2s cubic-bezier(0.34,1.56,0.64,1);background:var(--ink);opacity:0.35}
+
+/* ingredient tags */
+.ingr-section{padding:4px 0 8px}
+.ingr-tags{display:flex;flex-wrap:wrap;gap:6px}
+.ingr-tag{padding:5px 11px;border:1.5px solid;border-radius:var(--r-pill);font-size:11px;
+  font-weight:700;cursor:pointer;transition:transform 0.15s}
+.ingr-tag:hover{transform:scale(1.07)}
+.itag-good{background:rgba(0,200,150,0.12);border-color:var(--mint);color:#006644}
+.itag-ok{background:rgba(255,214,0,0.25);border-color:#C8A800;color:#665500}
+.itag-warn{background:rgba(255,45,120,0.1);border-color:var(--pink);color:var(--red)}
+
+/* pro-con */
+.pro-con-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.pc-card{border:var(--border);border-radius:var(--r);padding:11px 12px;
+  background:var(--white);box-shadow:var(--shadow-card)}
+.pc-head{font-size:9px;font-weight:800;letter-spacing:2px;text-transform:uppercase;margin-bottom:7px}
+.pc-head.pros{color:var(--mint)} .pc-head.cons{color:var(--pink)}
+.pc-item{font-size:11px;color:#444;line-height:1.5;padding-bottom:5px;margin-bottom:5px;
+  border-bottom:1px solid #eee}
+.pc-item:last-child{border:none;padding:0;margin:0}
+
+/* age warnings */
+.age-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-bottom:10px}
+.age-card{border:var(--border);border-radius:var(--r);padding:10px 11px;background:var(--white);box-shadow:var(--shadow-sm)}
+.age-card.safe{border-color:var(--mint)} .age-card.caution{border-color:#C8A800} .age-card.avoid{border-color:var(--red)}
+.ac-group{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px}
+.age-card.safe .ac-group{color:var(--mint)} .age-card.caution .ac-group{color:#8B6900} .age-card.avoid .ac-group{color:var(--red)}
+.ac-msg{font-size:11px;color:#555;line-height:1.5}
+
+/* alt card */
+.alt-card{display:flex;gap:10px;align-items:flex-start;background:rgba(255,214,0,0.12);
+  border:1.5px solid #C8A800;border-radius:var(--r);padding:11px 12px;margin-bottom:10px}
+.alt-label{font-size:9px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#8B6900;margin-bottom:3px}
+.alt-text{font-size:12px;color:#555;line-height:1.6}
+
+/* insight tabs */
+.insight-tabs{display:flex;gap:5px;margin-bottom:0}
+.itab{flex:1;padding:8px;border:var(--border);border-radius:var(--r);background:var(--white);
+  font-size:11px;font-weight:800;color:var(--muted);box-shadow:var(--shadow-sm);transition:all 0.15s}
+.itab.active{background:var(--yellow);color:var(--ink);box-shadow:var(--shadow-sticker)}
+.insight-panel{display:none;padding:13px 0}
+.insight-panel.active{display:block}
+.insight-text{font-size:13px;color:#444;line-height:1.75}
+
+/* actions */
+.result-actions{display:flex;gap:7px;margin-bottom:12px;overflow-x:auto}
+.result-actions::-webkit-scrollbar{display:none}
+.rac-btn{flex-shrink:0;padding:8px 13px;background:var(--white);border:var(--border);
+  border-radius:var(--r-pill);font-size:11px;font-weight:800;color:var(--ink);
+  box-shadow:var(--shadow-sm);transition:transform 0.15s,box-shadow 0.1s}
+.rac-btn:active{transform:translateY(2px);box-shadow:none}
+
+.blur-notice{display:none;margin-bottom:10px;background:rgba(255,107,0,0.08);
+  border:1.5px solid var(--orange);border-radius:var(--r);padding:10px 12px;
+  font-size:12px;color:#7A3500;line-height:1.5}
+.blur-notice.visible{display:block}
+
+/* empty state */
+.result-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:70px 24px;gap:12px;text-align:center}
+.result-empty-icon{font-size:3rem}
+.result-empty-title{font-family:'Fraunces',serif;font-weight:900;font-size:1.1rem}
+.result-empty-sub{font-size:12px;color:var(--muted);line-height:1.7;max-width:240px}
+.result-empty-btn{margin-top:4px;padding:10px 24px;background:var(--ink);color:var(--yellow);
+  border:var(--border);border-radius:var(--r-pill);font-family:'Fraunces',serif;
+  font-weight:900;font-size:1rem;box-shadow:var(--shadow-sticker);cursor:pointer;
+  transition:transform 0.1s,box-shadow 0.1s}
+.result-empty-btn:active{transform:translateY(2px);box-shadow:none}
+
+/* ════════════════════════════════════
+   S-HISTORY — FULL HISTORY SCREEN
+════════════════════════════════════ */
+.hist-filter-row{display:flex;gap:6px;padding:10px 0 12px;flex-shrink:0;overflow-x:auto}
+.hist-filter-row::-webkit-scrollbar{display:none}
+.hf-btn{flex-shrink:0;padding:6px 14px;background:var(--white);border:var(--border);
+  border-radius:var(--r-pill);font-size:11px;font-weight:800;box-shadow:var(--shadow-sm);
+  transition:all 0.15s}
+.hf-btn.active{background:var(--yellow);box-shadow:var(--shadow-sticker)}
+.hf-btn:active{transform:translateY(2px);box-shadow:none}
+
+/* daily summary banner */
+.daily-banner{background:var(--white);border:var(--border);border-radius:var(--r);
+  padding:12px 14px;box-shadow:var(--shadow-card);margin-bottom:12px;flex-shrink:0}
+.db-title{font-size:9px;font-weight:800;letter-spacing:2px;text-transform:uppercase;
+  color:var(--muted);margin-bottom:8px}
+.db-macros{display:flex;gap:8px}
+.db-macro{flex:1;text-align:center}
+.db-macro-val{font-family:'Fraunces',serif;font-weight:900;font-size:1.3rem;letter-spacing:-1px;line-height:1}
+.db-macro-label{font-size:8px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-top:2px}
+.db-progress-bar{height:6px;background:#E8E4DE;border:1.5px solid var(--ink);border-radius:3px;overflow:hidden;margin-top:8px}
+.db-progress-fill{height:100%;border-radius:2px;background:var(--yellow);
+  transition:width 1s cubic-bezier(0.34,1.56,0.64,1)}
+
+/* history date group */
+.hist-date-header{font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;
+  color:var(--muted);padding:4px 2px;margin-bottom:6px;border-bottom:1px solid rgba(10,10,10,0.1)}
+.hist-item{display:flex;align-items:center;gap:11px;background:var(--white);border:var(--border);
+  border-radius:var(--r);padding:11px 13px;margin-bottom:7px;cursor:pointer;
+  box-shadow:var(--shadow-card);transition:transform 0.15s cubic-bezier(0.34,1.56,0.64,1),box-shadow 0.1s}
+.hist-item:active{transform:translateY(2px);box-shadow:var(--shadow-sm)}
+.hist-thumb{width:48px;height:48px;border-radius:10px;object-fit:cover;border:var(--border);
+  flex-shrink:0;background:var(--bg)}
+.hist-thumb-placeholder{width:48px;height:48px;border-radius:10px;border:var(--border);
+  flex-shrink:0;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:1.4rem}
+.hist-info{flex:1;min-width:0}
+.hist-name{font-weight:900;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
+.hist-meta{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace}
+.hist-verdict{font-size:11px;color:#555;margin-top:2px}
+.hist-score-badge{width:40px;height:40px;border-radius:10px;border:1.5px solid var(--ink);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  font-family:'Fraunces',serif;font-weight:900;font-size:1.2rem}
+.hist-empty{padding:60px 20px;text-align:center;color:var(--muted);font-size:13px;line-height:1.7}
+.hist-empty-icon{font-size:2.5rem;margin-bottom:8px}
+
+/* streak display */
+.streak-card{background:var(--yellow);border:var(--border);border-radius:var(--r);
+  padding:12px 14px;box-shadow:var(--shadow-sticker);margin-bottom:12px;
+  display:flex;align-items:center;gap:12px;flex-shrink:0}
+.streak-num{font-family:'Fraunces',serif;font-weight:900;font-size:2.2rem;letter-spacing:-2px;line-height:1}
+.streak-label{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.streak-text{font-size:13px;font-weight:700}
+.badges-row{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.badge{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;
+  transition:transform 0.2s cubic-bezier(0.34,1.56,0.64,1)}
+.badge:hover{transform:translateY(-4px) rotate(-2deg) scale(1.08)}
+.badge-icon{width:52px;height:52px;border:var(--border);border-radius:var(--r);
+  display:flex;align-items:center;justify-content:center;font-size:1.5rem;
+  box-shadow:var(--shadow-sticker)}
+.badge-icon.locked{background:#E8E4DE;filter:grayscale(1);opacity:0.5}
+.badge-name{font-size:8.5px;font-weight:800;letter-spacing:0.5px;text-transform:uppercase;max-width:52px;text-align:center}
+
+/* ════════════════════════════════════
+   S-PROFILE
+════════════════════════════════════ */
+.profile-avatar{width:72px;height:72px;border-radius:50%;background:var(--yellow);
+  border:var(--border);box-shadow:var(--shadow-sticker);
+  display:flex;align-items:center;justify-content:center;font-size:2rem;
+  margin-right:14px;flex-shrink:0}
+.profile-header{display:flex;align-items:center;padding:14px 0 16px;flex-shrink:0}
+.profile-name-disp{font-family:'Fraunces',serif;font-weight:900;font-size:1.4rem;letter-spacing:-0.5px}
+.profile-plan{font-size:10px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;
+  color:var(--mint);margin-top:2px}
+
+/* macro rings */
+.macro-rings{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+.macro-ring-wrap{display:flex;flex-direction:column;align-items:center;gap:5px}
+.macro-ring{position:relative;width:56px;height:56px}
+.macro-ring svg{transform:rotate(-90deg)}
+.macro-ring-bg{fill:none;stroke:#E8E4DE;stroke-width:5}
+.macro-ring-fill{fill:none;stroke-width:5;stroke-linecap:round;
+  stroke-dasharray:141.4;stroke-dashoffset:141.4;transition:stroke-dashoffset 1.2s cubic-bezier(0.34,1.56,0.64,1)}
+.macro-ring-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:'Fraunces',serif;font-weight:900;font-size:0.85rem;letter-spacing:-1px}
+.macro-ring-label{font-size:8.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+
+/* profile form */
+.form-section{background:var(--white);border:var(--border);border-radius:var(--r);
+  padding:14px;box-shadow:var(--shadow-card);margin-bottom:12px}
+.form-section-title{font-size:9px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;
+  color:var(--muted);margin-bottom:11px}
+.form-row{display:flex;gap:10px;margin-bottom:10px}
+.form-row:last-child{margin-bottom:0}
+.form-group{flex:1}
+.form-label{font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;
+  color:var(--muted);margin-bottom:4px;display:block}
+.form-input{width:100%;padding:9px 11px;background:var(--bg);border:var(--border);
+  border-radius:var(--r-pill);font-size:13px;font-weight:700;transition:border-color 0.2s}
+.form-input:focus{border-color:var(--yellow);background:var(--cream)}
+.form-select{width:100%;padding:9px 11px;background:var(--bg);border:var(--border);
+  border-radius:var(--r-pill);font-size:12px;font-weight:700;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;background-size:18px;
+  padding-right:30px}
+.save-profile-btn{width:100%;background:var(--ink);color:var(--yellow);border:var(--border);
+  border-radius:var(--r-pill);padding:14px;font-family:'Fraunces',serif;font-weight:900;
+  font-size:1.05rem;font-style:italic;box-shadow:var(--shadow-sticker);
+  transition:transform 0.1s,box-shadow 0.1s}
+.save-profile-btn:active{transform:translateY(2px);box-shadow:none}
+
+/* TDEE display */
+.tdee-card{background:var(--yellow);border:var(--border);border-radius:var(--r);
+  padding:14px;box-shadow:var(--shadow-sticker);margin-bottom:12px;text-align:center;flex-shrink:0}
+.tdee-label{font-size:9px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;margin-bottom:4px}
+.tdee-val{font-family:'Fraunces',serif;font-weight:900;font-size:2.4rem;letter-spacing:-2px;line-height:1}
+.tdee-sub{font-size:11px;font-weight:700;color:rgba(10,10,10,0.6);margin-top:4px}
+.macro-targets{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;flex-shrink:0}
+.mt-chip{background:var(--white);border:var(--border);border-radius:var(--r);padding:10px 8px;
+  text-align:center;box-shadow:var(--shadow-card)}
+.mt-val{font-family:'Fraunces',serif;font-weight:900;font-size:1.3rem;letter-spacing:-1px;line-height:1}
+.mt-label{font-size:8px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-top:2px}
+
+/* ════════════════════════════════════
+   S-MAP — CONSTELLATION
+════════════════════════════════════ */
+#s-map{overflow:hidden}
+.map-header-inner{flex-shrink:0;padding:10px 18px 10px;
+  display:flex;justify-content:space-between;align-items:center}
+.map-title{font-family:'Fraunces',serif;font-weight:900;font-size:1.3rem;letter-spacing:-0.5px}
+.map-subtitle{font-family:'Space Mono',monospace;font-size:8px;letter-spacing:2px;
+  text-transform:uppercase;color:var(--muted);margin-top:2px}
+.map-legend{display:flex;flex-direction:column;gap:3px;align-items:flex-end}
+.legend-item{display:flex;align-items:center;gap:5px;font-family:'Space Mono',monospace;font-size:8px;color:var(--muted)}
+.legend-dot{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--ink);flex-shrink:0}
+#constellation-canvas{flex:1;width:100%;display:block;cursor:crosshair;touch-action:none}
+.ingr-tooltip{position:fixed;z-index:100;pointer-events:none;opacity:0;
+  background:var(--white);border:var(--border);border-radius:var(--r);padding:11px 13px;
+  max-width:205px;box-shadow:var(--shadow-sticker);transition:opacity 0.18s}
+.ingr-tooltip.show{opacity:1}
+.tt-name{font-family:'Fraunces',serif;font-weight:700;font-size:0.95rem;margin-bottom:3px}
+.tt-type{font-family:'Space Mono',monospace;font-size:8px;font-weight:700;
+  letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+.tt-desc{font-size:11px;color:#555;line-height:1.6}
+
+/* ════════════════════════════════════
+   BOTTOM NAV
+════════════════════════════════════ */
+/* FIX: added env(safe-area-inset-bottom) so the bar is never hidden
+   behind iOS home indicator. Height is the visible bar height PLUS the
+   safe area — padding-bottom pushes the content above the indicator. */
+.bottom-nav{
+  position:fixed;bottom:0;left:0;right:0;z-index:50;display:none;
+  height:calc(var(--nav-h) + var(--nav-bottom));
+  padding-bottom:var(--nav-bottom);
+  background:var(--white);border-top:var(--border);
+}
+.bottom-nav.visible{display:flex}
+/* pad-bottom must account for the full nav height including safe area */
+.pad-bottom{padding-bottom:calc(var(--nav-h) + var(--nav-bottom) + 16px)}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;cursor:pointer;background:transparent;transition:all 0.15s;
+  border-right:1px solid rgba(10,10,10,0.08);padding:4px}
+.nav-btn:last-child{border:none}
+.nav-btn.active{background:var(--yellow)}
+.nav-icon{font-size:1.2rem;transition:transform 0.2s}
+.nav-label{font-size:8px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink)}
+.nav-btn.active .nav-icon{transform:scale(1.18) translateY(-2px)}
+
+/* ════════════════════════════════════
+   PAYWALL + MODALS
+════════════════════════════════════ */
+.paywall-overlay{display:none;position:fixed;inset:0;z-index:400;
+  background:rgba(10,10,10,0.6);align-items:flex-end}
+.paywall-overlay.open{display:flex}
+.paywall-sheet{width:100%;background:var(--white);border-top:var(--border);
+  border-radius:20px 20px 0 0;padding:22px 20px 36px;box-shadow:0 -4px 0 var(--ink);
+  animation:sheet-up 0.3s cubic-bezier(0.34,1.2,0.64,1) both}
+@keyframes sheet-up{from{transform:translateY(100%)}to{transform:none}}
+.pw-handle{width:36px;height:4px;background:rgba(10,10,10,0.15);border-radius:2px;margin:0 auto 16px}
+.pw-title{font-family:'Fraunces',serif;font-weight:900;font-style:italic;font-size:1.5rem;text-align:center;margin-bottom:4px}
+.pw-title em{color:var(--yellow);-webkit-text-stroke:1px var(--ink)}
+.pw-sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:15px;line-height:1.5}
+.pw-features{display:flex;flex-direction:column;gap:8px;margin-bottom:15px}
+.pw-feat{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:700}
+.pw-cta{width:100%;padding:15px;background:var(--ink);color:var(--yellow);border:var(--border);
+  border-radius:var(--r-pill);font-family:'Fraunces',serif;font-weight:900;font-size:1.05rem;font-style:italic;
+  box-shadow:var(--shadow-sticker);margin-bottom:8px;transition:transform 0.1s,box-shadow 0.1s}
+.pw-cta:active{transform:translateY(2px);box-shadow:none}
+.pw-dismiss{width:100%;padding:11px;background:none;color:var(--muted);font-size:13px;font-weight:800}
+
+/* ingredient detail sheet */
+.ing-detail-overlay{display:none;position:fixed;inset:0;z-index:300;
+  background:rgba(10,10,10,0.5);align-items:flex-end}
+.ing-detail-overlay.open{display:flex}
+.ing-detail-sheet{width:100%;max-height:70vh;overflow-y:auto;background:var(--white);
+  border-top:var(--border);border-radius:20px 20px 0 0;padding:20px 20px 36px;
+  box-shadow:0 -4px 0 var(--ink);animation:sheet-up 0.3s cubic-bezier(0.34,1.2,0.64,1) both}
+.ing-handle{width:36px;height:4px;background:rgba(10,10,10,0.15);border-radius:2px;margin:0 auto 14px}
+.ing-detail-name{font-family:'Fraunces',serif;font-weight:900;font-size:1.4rem;margin-bottom:4px}
+.ing-detail-risk{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;
+  border-radius:var(--r-pill);font-size:10px;font-weight:800;letter-spacing:1px;
+  text-transform:uppercase;margin-bottom:12px;border:1.5px solid}
+.ing-section-lbl{font-size:9px;font-weight:800;letter-spacing:2px;text-transform:uppercase;
+  color:var(--muted);margin-bottom:5px;margin-top:12px}
+.ing-detail-text{font-size:13px;color:#444;line-height:1.7}
+.ing-fact-box{background:rgba(255,214,0,0.1);border:1.5px solid #C8A800;border-radius:var(--r);
+  padding:11px 13px;margin-top:10px}
+.ing-fact-lbl{font-size:9px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#8B6900;margin-bottom:4px}
+.ing-fact-text{font-size:12px;color:#665500;line-height:1.6}
+
+/* scan flash */
+.scan-flash{position:fixed;inset:0;z-index:199;pointer-events:none;
+  background:rgba(255,255,255,0.7);opacity:0;transition:opacity 0.08s}
+.scan-flash.flash{opacity:1}
+
+/* ════════════════════════════════════
+   CONFETTI + STICKER POP
+════════════════════════════════════ */
+.confetti-piece{position:fixed;pointer-events:none;z-index:9000;width:9px;height:9px;border-radius:2px;
+  animation:confetti-fall 1.1s cubic-bezier(0.4,0,0.2,1) forwards}
+@keyframes confetti-fall{0%{opacity:1;transform:translateY(0) rotate(0deg) scale(1)}
+  100%{opacity:0;transform:translateY(130px) rotate(720deg) scale(0.2)}}
+.sticker-pop{position:fixed;pointer-events:none;z-index:9000;font-size:2rem;
+  animation:sticker-pop-anim 0.9s cubic-bezier(0.34,1.56,0.64,1) forwards}
+@keyframes sticker-pop-anim{
+  0%{opacity:0;transform:scale(0) rotate(-20deg)}
+  40%{opacity:1;transform:scale(1.3) rotate(8deg)}
+  80%{opacity:1;transform:scale(1) rotate(0deg)}
+  100%{opacity:0;transform:scale(0.8) translateY(-60px)}}
+
+/* toast */
+.toast{position:fixed;bottom:72px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:var(--ink);color:var(--yellow);border:2px solid var(--ink);border-radius:var(--r-pill);
+  padding:9px 20px;font-weight:800;font-size:12px;letter-spacing:0.5px;opacity:0;
+  white-space:nowrap;transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  box-shadow:3px 3px 0 rgba(0,0,0,0.2);pointer-events:none;z-index:9999}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+input[type="file"]{display:none}
+
+/* ════════════════════════════════════
+   DARK MODE COMPONENT OVERRIDES
+════════════════════════════════════ */
+[data-theme="dark"] body::after{
+  background-image:radial-gradient(circle,rgba(240,237,230,0.04) 1px,transparent 1px);
+}
+[data-theme="dark"] .app-header,
+[data-theme="dark"] .bottom-nav,
+[data-theme="dark"] .paywall-sheet,
+[data-theme="dark"] .ing-detail-sheet {
+  background:var(--white);
+}
+[data-theme="dark"] .header-pill,
+[data-theme="dark"] .quota-pill {
+  background:rgba(240,237,230,0.08);
+  border-color:rgba(240,237,230,0.18);
+  color:var(--ink);
+}
+[data-theme="dark"] .chip,
+[data-theme="dark"] .lang-chip {
+  background:rgba(240,237,230,0.07);
+  border-color:rgba(240,237,230,0.15);
+  color:var(--ink);
+}
+[data-theme="dark"] .chip.active,
+[data-theme="dark"] .lang-chip.active {
+  background:var(--yellow);
+  color:#0A0A0A;
+  border-color:var(--yellow);
+}
+[data-theme="dark"] .portal-core{
+  background:rgba(255,214,0,0.06);
+}
+[data-theme="dark"] .rac-btn {
+  background:rgba(240,237,230,0.08);
+  border-color:rgba(240,237,230,0.2);
+  color:var(--ink);
+}
+[data-theme="dark"] .ns-card {
+  filter:brightness(0.85);
+}
+[data-theme="dark"] .score-orb {
+  background:var(--white);
+  border-color:rgba(240,237,230,0.2);
+}
+[data-theme="dark"] .sat-expand {
+  background:var(--white);
+  border-color:rgba(240,237,230,0.18);
+}
+[data-theme="dark"] .reveal-score-group,
+[data-theme="dark"] .reveal-product {
+  color:var(--ink);
+}
+[data-theme="dark"] .result-empty-btn {
+  background:var(--ink);
+  color:var(--yellow);
+}
+[data-theme="dark"] .pw-feats,
+[data-theme="dark"] .pw-feat {
+  color:var(--ink);
+}
+[data-theme="dark"] .history-card {
+  background:rgba(240,237,230,0.05);
+  border-color:rgba(240,237,230,0.12);
+}
+[data-theme="dark"] .form-input {
+  background:rgba(240,237,230,0.07);
+  border-color:rgba(240,237,230,0.2);
+  color:var(--ink);
+}
+[data-theme="dark"] .form-input:focus {
+  border-color:var(--yellow);
+  background:rgba(255,214,0,0.06);
+}
+[data-theme="dark"] .ingr-tooltip {
+  background:var(--white);
+  border-color:rgba(240,237,230,0.2);
+  color:var(--ink);
+}
+[data-theme="dark"] .risk-flag {
+  filter:brightness(0.9);
+}
+/* dark mode toggle icon flip */
+#theme-toggle { transition: transform 0.25s; }
+[data-theme="dark"] #theme-toggle { content:'☀️'; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════
+     S-SCAN — PORTAL
+═══════════════════════ -->
+<div class="screen active" id="s-scan">
+  <div class="app-header">
+    <div class="app-logo">Eat<em>l</em>ytic</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div class="quota-pill"><span class="quota-dot" id="qdot"></span><span id="quota-text">5 left</span></div>
+      <button class="header-pill" id="theme-toggle" onclick="toggleDark()" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
+      <button class="header-pill" onclick="goTo('camera')">📷 Scan</button>
+    </div>
+  </div>
+  <div class="scroll-inner pad-bottom" style="padding:0 18px">
+    <div class="portal-section">
+      <div class="scan-eyebrow">Point · Capture · Discover</div>
+      <div class="portal-wrap" id="portal-wrap"
+           onclick="handlePortalTap()"
+           ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <div class="portal-ring"></div>
+        <div class="portal-ring"></div>
+        <div class="portal-ring"></div>
+        <div class="portal-orbit"><div class="portal-orbit-dot"></div></div>
+        <div class="portal-orbit"><div class="portal-orbit-dot"></div></div>
+        <div class="portal-core" id="portal-core">
+          <div class="portal-icon" id="portal-icon">🌿</div>
+          <div class="portal-cta-text">tap to invoke</div>
+        </div>
+        <!-- FIXED: preview now sits at z-index:4, outside portal-core -->
+        <div class="portal-preview-wrap" id="portal-preview-wrap">
+          <img id="preview-img" src="" alt="">
+          <div class="portal-preview-badge" id="preview-badge">Ready to analyse</div>
+        </div>
+      </div>
+      <div style="font-family:'Space Mono',monospace;font-size:8px;color:var(--muted);text-align:center;margin-top:4px">or drag &amp; drop · or tap camera →</div>
+    </div>
+
+    <div class="quality-strip" id="quality-strip">
+      <span class="qs-label" id="qs-label">Quality</span>
+      <div class="qs-bar"><div class="qs-fill" id="qs-fill"></div></div>
+      <span class="qs-badge" id="qs-badge">—</span>
+    </div>
+
+    <div class="scan-btn-row">
+      <button class="scan-btn" onclick="goTo('camera')">📷 Live Camera</button>
+      <button class="scan-btn" onclick="triggerUpload()">🖼 Gallery</button>
+    </div>
+
+    <button class="analyse-cta" id="analyse-cta" onclick="runAnalysis()">✦ Analyse this Label →</button>
+
+    <!-- voice logging -->
+    <button class="voice-btn" id="voice-btn" onclick="toggleVoice()">
+      <span id="voice-icon">🎤</span>
+      <span class="voice-transcript" id="voice-transcript">Say what you ate… e.g. "two scrambled eggs and toast"</span>
+    </button>
+
+    <div class="section-label">Eating profile</div>
+    <div class="chip-row" id="persona-row">
+      <div class="chip active" data-persona="General Adult">🏠 General</div>
+      <div class="chip" data-persona="Fitness / Bodybuilding">💪 Gym</div>
+      <div class="chip" data-persona="Parent / For children">👶 Baby</div>
+      <div class="chip" data-persona="Skin Health">✨ Skin</div>
+      <div class="chip" data-persona="Ketogenic Diet">🥑 Keto</div>
+      <div class="chip" data-persona="Heart Health">❤️ Heart</div>
+    </div>
+    <div class="section-label">Output language</div>
+    <div class="chip-row" id="lang-row">
+      <div class="chip lang-chip active" data-lang="en">EN</div>
+      <div class="chip lang-chip" data-lang="hi">HI</div>
+      <div class="chip lang-chip" data-lang="zh">ZH</div>
+      <div class="chip lang-chip" data-lang="ar">AR</div>
+      <div class="chip lang-chip" data-lang="fr">FR</div>
+      <div class="chip lang-chip" data-lang="de">DE</div>
+      <div class="chip lang-chip" data-lang="pt">PT</div>
+      <div class="chip lang-chip" data-lang="es">ES</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════
+     S-CAMERA — LIVE VIEWFINDER
+═══════════════════════ -->
+<div class="screen" id="s-camera" style="background:#000">
+  <!-- Camera mode tabs -->
+  <div class="camera-mode-row">
+    <button class="cam-mode-btn active" id="cam-mode-scan" onclick="setCamMode('scan')">📸 LABEL</button>
+  </div>
+
+  <div class="camera-viewport">
+    <video id="camera-video" autoplay playsinline muted></video>
+    <!-- AR nutrition overlay -->
+    <div class="camera-overlay-pill" id="cam-overlay-pill">Point at a food label</div>
+    <!-- Barcode hit box -->
+    <div class="barcode-hit" id="barcode-hit"></div>
+    <!-- Reticle (scan mode) -->
+    <div class="camera-reticle" id="camera-reticle">
+      <div class="reticle-corner rc-tl"></div>
+      <div class="reticle-corner rc-tr"></div>
+      <div class="reticle-corner rc-bl"></div>
+      <div class="reticle-corner rc-br"></div>
+      <div class="reticle-scan-line"></div>
+    </div>
+  </div>
+
+  <div class="camera-controls">
+    <button class="cam-ctrl-btn" id="torch-btn" onclick="toggleTorch()" title="Torch">🔦</button>
+    <button class="capture-btn" id="capture-btn" onclick="captureFrame()"></button>
+    <button class="cam-ctrl-btn" onclick="flipCamera()" title="Flip">🔄</button>
+  </div>
+
+  <!-- Close camera -->
+  <div style="position:absolute;top:14px;right:14px;z-index:30">
+    <button class="cam-ctrl-btn" onclick="stopCamera()" style="background:rgba(0,0,0,0.5);border-color:rgba(255,255,255,0.3)">✕</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════
+     S-READING — VINE LOADER
+═══════════════════════ -->
+<div class="screen" id="s-reading">
+  <div class="app-header">
+    <div class="app-logo">Eat<em>l</em>ytic</div>
+    <button class="header-pill" onclick="cancelAnalysis()">Cancel</button>
+  </div>
+  <div class="reading-wrap">
+    <div class="reading-title">The Oracle<br>is <em>reading</em>…</div>
+    <div style="position:relative;display:flex;justify-content:center">
+      <div class="vine-wrap">
+        <div class="vine-track"></div>
+        <div class="vine-fill" id="vine-fill"></div>
+        <div class="vine-nodes" id="vine-nodes"></div>
+      </div>
+    </div>
+    <div class="reading-text" id="reading-text"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════
+     S-REVEAL — RESULTS
+═══════════════════════ -->
+<div class="screen" id="s-reveal">
+  <div class="app-header">
+    <div class="app-logo">Eat<em>l</em>ytic</div>
+    <div style="display:flex;gap:8px">
+      <button class="header-pill" onclick="goTo('scan')">← Scan</button>
+      <button class="header-pill" onclick="goTo('map')">✦ Map</button>
+    </div>
+  </div>
+  <div class="reveal-scroll pad-bottom" id="reveal-scroll">
+    <div class="result-empty">
+      <div class="result-empty-icon">🌿</div>
+      <div class="result-empty-title">No scan yet</div>
+      <div class="result-empty-sub">Scan a food label through the Portal to see your full report here.</div>
+      <button class="result-empty-btn" onclick="goTo('scan')">Open the Portal →</button>
+    </div>
+  </div>
+  <div class="sat-expand" id="sat-expand">
+    <div class="sat-expand-handle"></div>
+    <button class="sat-expand-close" onclick="closeSatellite()">✕</button>
+    <div class="sat-expand-name" id="se-name">Nutrient</div>
+    <div class="sat-expand-val" id="se-val">—</div>
+    <div class="sat-expand-desc" id="se-desc">Tap a satellite for detail.</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════
+     S-HISTORY
+═══════════════════════ -->
+<div class="screen" id="s-history">
+  <div class="app-header">
+    <div class="app-logo">Eat<em>l</em>ytic</div>
+    <button class="header-pill" onclick="clearHistory()" style="font-size:10px;box-shadow:var(--shadow-sm)">🗑 Clear</button>
+  </div>
+  <div class="scroll-inner pad-bottom" style="padding:0 18px" id="history-scroll">
+    <!-- injected -->
+  </div>
+</div>
+
+<!-- ═══════════════════════
+     S-MAP — CONSTELLATION
+═══════════════════════ -->
+<div class="screen" id="s-map">
+  <div class="app-header">
+    <div class="app-logo">Eat<em>l</em>ytic</div>
+    <button class="header-pill" onclick="goTo('reveal')">← Report</button>
+  </div>
+  <div class="map-header-inner">
+    <div>
+      <div class="map-title">Ingredient Map</div>
+      <div class="map-subtitle">tap any star to explore</div>
+    </div>
+    <div class="map-legend">
+      <div class="legend-item"><div class="legend-dot" style="background:var(--mint)"></div>Natural</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div>Seasoning</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--pink)"></div>Additive</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--lilac)"></div>Vitamin</div>
+    </div>
+  </div>
+  <canvas id="constellation-canvas"></canvas>
+  <div class="ingr-tooltip" id="ingr-tooltip">
+    <div class="tt-name" id="tt-name"></div>
+    <div class="tt-type" id="tt-type"></div>
+    <div class="tt-desc" id="tt-desc"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════
+     S-PROFILE
+═══════════════════════ -->
+<div class="screen" id="s-profile">
+  <div class="app-header">
+    <div class="app-logo">Eat<em>l</em>ytic</div>
+    <button class="header-pill" onclick="saveProfile()" style="background:var(--yellow);box-shadow:var(--shadow-sticker)">Save</button>
+  </div>
+  <div class="scroll-inner pad-bottom" style="padding:0 18px" id="profile-scroll">
+    <div class="profile-header">
+      <div class="profile-avatar" id="profile-avatar">🌿</div>
+      <div>
+        <div class="profile-name-disp" id="profile-name-disp">Your Profile</div>
+        <div class="profile-plan" id="profile-plan-badge">FREE PLAN</div>
+      </div>
+    </div>
+
+    <!-- TDEE display -->
+    <div class="tdee-card" id="tdee-card" style="display:none">
+      <div class="tdee-label">Daily Calorie Target (TDEE)</div>
+      <div class="tdee-val" id="tdee-val">—</div>
+      <div class="tdee-sub" id="tdee-sub">Based on your profile</div>
+    </div>
+
+    <!-- Macro targets -->
+    <div class="macro-targets" id="macro-targets" style="display:none">
+      <div class="mt-chip">
+        <div class="mt-val" id="mt-protein">—</div>
+        <div class="mt-label">Protein g</div>
+      </div>
+      <div class="mt-chip">
+        <div class="mt-val" id="mt-carbs">—</div>
+        <div class="mt-label">Carbs g</div>
+      </div>
+      <div class="mt-chip">
+        <div class="mt-val" id="mt-fat">—</div>
+        <div class="mt-label">Fat g</div>
+      </div>
+    </div>
+
+    <!-- Today's progress rings -->
+    <div class="form-section" id="today-progress" style="display:none">
+      <div class="form-section-title">Today's Progress</div>
+      <div class="macro-rings" id="macro-rings">
+        <div class="macro-ring-wrap">
+          <div class="macro-ring"><svg viewBox="0 0 56 56"><circle class="macro-ring-bg" cx="28" cy="28" r="22.5"/><circle id="ring-cal" class="macro-ring-fill" cx="28" cy="28" r="22.5" stroke="#FFD600"/></svg><div class="macro-ring-text" id="ring-cal-text">0</div></div>
+          <div class="macro-ring-label">Cals</div>
+        </div>
+        <div class="macro-ring-wrap">
+          <div class="macro-ring"><svg viewBox="0 0 56 56"><circle class="macro-ring-bg" cx="28" cy="28" r="22.5"/><circle id="ring-prot" class="macro-ring-fill" cx="28" cy="28" r="22.5" stroke="#FF2D78"/></svg><div class="macro-ring-text" id="ring-prot-text">0g</div></div>
+          <div class="macro-ring-label">Protein</div>
+        </div>
+        <div class="macro-ring-wrap">
+          <div class="macro-ring"><svg viewBox="0 0 56 56"><circle class="macro-ring-bg" cx="28" cy="28" r="22.5"/><circle id="ring-carb" class="macro-ring-fill" cx="28" cy="28" r="22.5" stroke="#0047FF"/></svg><div class="macro-ring-text" id="ring-carb-text">0g</div></div>
+          <div class="macro-ring-label">Carbs</div>
+        </div>
+        <div class="macro-ring-wrap">
+          <div class="macro-ring"><svg viewBox="0 0 56 56"><circle class="macro-ring-bg" cx="28" cy="28" r="22.5"/><circle id="ring-fat" class="macro-ring-fill" cx="28" cy="28" r="22.5" stroke="#FF6B00"/></svg><div class="macro-ring-text" id="ring-fat-text">0g</div></div>
+          <div class="macro-ring-label">Fat</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Profile form -->
+    <div class="form-section">
+      <div class="form-section-title">Personal Info</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Name</label>
+          <input class="form-input" id="pf-name" placeholder="Your name" type="text">
+        </div>
+        <div class="form-group" style="max-width:100px">
+          <label class="form-label">Age</label>
+          <input class="form-input" id="pf-age" placeholder="25" type="number" min="10" max="110">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Gender</label>
+          <select class="form-select" id="pf-gender">
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Activity</label>
+          <select class="form-select" id="pf-activity">
+            <option value="1.2">Sedentary</option>
+            <option value="1.375">Light</option>
+            <option value="1.55" selected>Moderate</option>
+            <option value="1.725">Active</option>
+            <option value="1.9">Very Active</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Weight (kg)</label>
+          <input class="form-input" id="pf-weight" placeholder="70" type="number" min="30" max="300">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Height (cm)</label>
+          <input class="form-input" id="pf-height" placeholder="170" type="number" min="100" max="250">
+        </div>
+      </div>
+    </div>
+    <div class="form-section" style="margin-bottom:14px">
+      <div class="form-section-title">Goal</div>
+      <div class="chip-row" id="goal-row" style="margin-bottom:0">
+        <div class="chip active" data-goal="lose">🔥 Lose Weight</div>
+        <div class="chip" data-goal="maintain">⚖️ Maintain</div>
+        <div class="chip" data-goal="gain">💪 Build Muscle</div>
+      </div>
+    </div>
+    <button class="save-profile-btn" onclick="saveProfile()">Calculate My Targets →</button>
+  </div>
+</div>
+
+<!-- BOTTOM NAV -->
+<nav class="bottom-nav" id="bottom-nav">
+  <button class="nav-btn active" id="nav-scan" onclick="goTo('scan')"><span class="nav-icon">◉</span><span class="nav-label">Portal</span></button>
+  <button class="nav-btn" id="nav-reveal" onclick="goTo('reveal')"><span class="nav-icon">✦</span><span class="nav-label">Reveal</span></button>
+  <button class="nav-btn" id="nav-history" onclick="goTo('history')"><span class="nav-icon">📋</span><span class="nav-label">History</span></button>
+  <button class="nav-btn" id="nav-map" onclick="goTo('map')"><span class="nav-icon">✧</span><span class="nav-label">Map</span></button>
+  <button class="nav-btn" id="nav-profile" onclick="goTo('profile')"><span class="nav-icon">🌿</span><span class="nav-label">Profile</span></button>
+</nav>
+
+<!-- PAYWALL -->
+<div class="paywall-overlay" id="paywall-overlay" onclick="if(event.target===this)closePaywall()">
+  <div class="paywall-sheet">
+    <div class="pw-handle"></div>
+    <div class="pw-title">Eatlytic <em>Pro</em></div>
+    <div class="pw-sub" id="pw-sub">Unlock unlimited food intelligence.</div>
+    <div class="pw-features">
+      <div class="pw-feat">♾ <span><strong>Unlimited scans</strong> — no daily cap</span></div>
+      <div class="pw-feat">📊 <span><strong>Full nutrient satellites</strong> + constellation map</span></div>
+      <div class="pw-feat">🌱 <span><strong>Unlimited history</strong> + PDF export</span></div>
+      <div class="pw-feat">🌐 <span><strong>Hindi, Tamil</strong> + 8 languages</span></div>
+    </div>
+    <button class="pw-cta" onclick="activatePro()">Upgrade Now → ₹199/month</button>
+    <button class="pw-dismiss" onclick="closePaywall()">Maybe later</button>
+  </div>
+</div>
+
+<!-- INGREDIENT DETAIL SHEET -->
+<div class="ing-detail-overlay" id="ing-detail-overlay" onclick="if(event.target===this)closeIngDetail()">
+  <div class="ing-detail-sheet">
+    <div class="ing-handle"></div>
+    <div class="ing-detail-name" id="ing-detail-name"></div>
+    <div class="ing-detail-risk" id="ing-detail-risk"></div>
+    <div class="ing-section-lbl">What it is</div>
+    <div class="ing-detail-text" id="ing-detail-what"></div>
+    <div class="ing-section-lbl">Health impact</div>
+    <div class="ing-detail-text" id="ing-detail-impact"></div>
+    <div class="ing-fact-box">
+      <div class="ing-fact-lbl">✦ Curiosity</div>
+      <div class="ing-fact-text" id="ing-detail-fact"></div>
+    </div>
+  </div>
+</div>
+
+<div class="scan-flash" id="scan-flash"></div>
+<div class="toast" id="toast"></div>
+<input type="file" id="file-input" accept="image/*" onchange="handleFile(event)">
+<canvas id="capture-canvas" style="display:none"></canvas>
+
+<script>
+/* ═══════════════════════════════════════
+   CONSTANTS & STATE
+═══════════════════════════════════════ */
+const API = '';
+const HISTORY_KEY = 'eatlytic_v5';
+const PROFILE_KEY = 'eatlytic_profile';
+const STREAK_KEY  = 'eatlytic_streak';
+const SAT_COLORS  = ['var(--yellow)','var(--pink)','var(--mint)','var(--blue)','var(--orange)','var(--lilac)'];
+const SAT_BG      = ['#FFF8C0','#FFE0EC','#C0FFE8','#C8D8FF','#FFE8C0','#F0C0FF'];
+const CONFETTI_COLORS = ['#FFD600','#FF2D78','#0047FF','#00C896','#FF6B00','#C084FC','#0A0A0A'];
+
+let state = {
+  blob:null, persona:'General Adult', language:'en',
+  lastResult:null, abortCtrl:null, quotaRemaining:5, isPro:false,
+  cameraStream:null, cameraFacing:'environment', torchOn:false,
+  camMode:'scan', barcodeReader:null, barcodeTimer:null,
+  voiceRecog:null, isListening:false,
+  conIngredients:[],
+  histFilter:'today',
+  currentIngDetail:null,
+};
+
+/* ═══════════════════════════════════════
+   NAVIGATION
+═══════════════════════════════════════ */
+function goTo(name) {
+  const prev = document.querySelector('.screen.active');
+  if (prev) { prev.classList.add('exit'); setTimeout(() => prev.classList.remove('active','exit'), 400); }
+  setTimeout(() => {
+    const next = document.getElementById('s-'+name);
+    if (next) next.classList.add('active');
+  }, 55);
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  const nb = document.getElementById('nav-'+name);
+  if (nb) nb.classList.add('active');
+  if (name === 'map')     setTimeout(initConstellation, 280);
+  if (name === 'history') setTimeout(renderHistory, 100);
+  if (name === 'profile') setTimeout(renderProfile, 100);
+  if (name !== 'camera' && state.cameraStream) stopCamera();
+}
+
+/* ═══════════════════════════════════════
+   CHIPS
+═══════════════════════════════════════ */
+document.getElementById('persona-row').addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  document.querySelectorAll('#persona-row .chip').forEach(x => x.classList.remove('active'));
+  c.classList.add('active'); state.persona = c.dataset.persona;
+});
+document.getElementById('lang-row').addEventListener('click', e => {
+  const c = e.target.closest('.lang-chip'); if (!c) return;
+  document.querySelectorAll('.lang-chip').forEach(x => x.classList.remove('active'));
+  c.classList.add('active'); state.language = c.dataset.lang;
+});
+document.getElementById('goal-row')?.addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  document.querySelectorAll('#goal-row .chip').forEach(x => x.classList.remove('active'));
+  c.classList.add('active');
+});
+
+/* ═══════════════════════════════════════
+   CAMERA — LIVE VIEWFINDER (FIXED)
+═══════════════════════════════════════ */
+async function openCamera() {
+  goTo('camera');
+  await startCameraStream();
+}
+
+async function startCameraStream() {
+  stopCamera();
+  try {
+    const constraints = {
+      video: {
+        facingMode: state.cameraFacing,
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+      audio: false
+    };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    state.cameraStream = stream;
+    const video = document.getElementById('camera-video');
+    video.srcObject = stream;
+    await video.play();
+    showToast('📷 Camera active');
+    if (state.camMode === 'barcode') startBarcodeDetection();
+  } catch(err) {
+    showToast('⚠️ Camera unavailable: ' + (err.message || err.name));
+    goTo('scan');
+  }
+}
+
+function stopCamera() {
+  stopBarcodeDetection();
+  if (state.cameraStream) {
+    state.cameraStream.getTracks().forEach(t => t.stop());
+    state.cameraStream = null;
+  }
+  const video = document.getElementById('camera-video');
+  if (video) { video.srcObject = null; }
+}
+
+async function flipCamera() {
+  state.cameraFacing = state.cameraFacing === 'environment' ? 'user' : 'environment';
+  await startCameraStream();
+}
+
+async function toggleTorch() {
+  if (!state.cameraStream) return;
+  const track = state.cameraStream.getVideoTracks()[0];
+  const caps  = track.getCapabilities?.() || {};
+  if (!caps.torch) { showToast('Torch not supported'); return; }
+  state.torchOn = !state.torchOn;
+  await track.applyConstraints({ advanced: [{ torch: state.torchOn }] });
+  document.getElementById('torch-btn').classList.toggle('on', state.torchOn);
+}
+
+function setCamMode(mode) {
+  state.camMode = 'scan';  // always label mode
+  document.querySelectorAll('.cam-mode-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('cam-mode-scan')?.classList.add('active');
+  const reticle = document.getElementById('camera-reticle');
+  stopBarcodeDetection();
+  reticle.style.display = '';
+  document.getElementById('cam-overlay-pill').textContent = 'Point at a food label';
+}
+
+/* capture a frame from the live video */
+function captureFrame() {
+  const video  = document.getElementById('camera-video');
+  const canvas = document.getElementById('capture-canvas');
+  if (!video.readyState || video.readyState < 2) { showToast('Camera not ready'); return; }
+  canvas.width  = video.videoWidth  || 1280;
+  canvas.height = video.videoHeight || 720;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  canvas.toBlob(blob => {
+    if (!blob) { showToast('Capture failed'); return; }
+    stopCamera();
+    processFile(blob);
+    goTo('scan');
+    // flash
+    const fl = document.getElementById('scan-flash');
+    fl.classList.add('flash'); setTimeout(() => fl.classList.remove('flash'), 130);
+    spawnConfetti(window.innerWidth/2, window.innerHeight/2);
+  }, 'image/jpeg', 0.93);
+}
+
+/* ── BARCODE DETECTION using BarcodeDetector API */
+function startBarcodeDetection() {
+  stopBarcodeDetection();
+  if (!('BarcodeDetector' in window)) {
+    document.getElementById('cam-overlay-pill').textContent = 'Barcode API not supported on this device';
+    document.getElementById('cam-overlay-pill').classList.add('show');
+    return;
+  }
+  const detector = new BarcodeDetector({ formats: [
+    'ean_13','ean_8','upc_a','upc_e','qr_code','code_128','code_39','itf','data_matrix'
+  ]});
+  const pill = document.getElementById('cam-overlay-pill');
+  pill.textContent = '▦ Scanning for barcodes…';
+  pill.classList.add('show');
+
+  state.barcodeTimer = setInterval(async () => {
+    const video = document.getElementById('camera-video');
+    if (!video || !video.readyState || video.readyState < 2) return;
+    try {
+      const barcodes = await detector.detect(video);
+      if (barcodes.length > 0) {
+        const bc = barcodes[0];
+        stopBarcodeDetection();
+        pill.textContent = '✓ Barcode: ' + bc.rawValue;
+        showBarcodeHit(bc.boundingBox);
+        setTimeout(() => fetchBarcodeProduct(bc.rawValue), 400);
+      }
+    } catch {}
+  }, 300);
+}
+
+function stopBarcodeDetection() {
+  if (state.barcodeTimer) { clearInterval(state.barcodeTimer); state.barcodeTimer = null; }
+  const pill = document.getElementById('cam-overlay-pill');
+  if (pill) { pill.classList.remove('show'); pill.textContent = ''; }
+  const hit = document.getElementById('barcode-hit');
+  if (hit) hit.style.display = 'none';
+}
+
+function showBarcodeHit(box) {
+  const hit    = document.getElementById('barcode-hit');
+  const canvas = document.getElementById('camera-video');
+  if (!hit || !canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const scX  = rect.width  / (canvas.videoWidth  || rect.width);
+  const scY  = rect.height / (canvas.videoHeight || rect.height);
+  hit.style.cssText = `display:block;left:${rect.left + box.x*scX}px;top:${rect.top+box.y*scY}px;
+    width:${box.width*scX}px;height:${box.height*scY}px`;
+}
+
+async function fetchBarcodeProduct(barcode) {
+  stopCamera();
+  goTo('reading');
+  startVine();
+  try {
+    const res  = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+    const json = await res.json();
+    if (json.status !== 1 || !json.product) {
+      showToast('Product not found — try label scan');
+      goTo('scan'); return;
+    }
+    const p = json.product;
+    const n = p.nutriments || {};
+    // Map Open Food Facts to our result schema
+    const data = {
+      product_name:    p.product_name || barcode,
+      product_category:p.categories_tags?.[0]?.replace('en:','') || 'Packaged food',
+      score: Math.max(1, Math.min(10, Math.round(10 - (n['nova-group'] || 3) * 1.5))),
+      verdict: ['Excellent','Excellent','Good','Acceptable','Poor','Poor'][Math.min(5,p.nutriscore_score ? Math.floor(p.nutriscore_score/20) : 2)],
+      summary: p.ingredients_text_en || p.ingredients_text || 'No ingredient text available.',
+      nutrient_breakdown: [
+        {name:'Calories',    value:Math.round(n['energy-kcal_100g']||0), unit:'kcal', rating:'moderate', impact:'Total energy per 100g'},
+        {name:'Protein',     value:Math.round(n['proteins_100g']||0),     unit:'g',    rating:'good',     impact:'Amino acid source'},
+        {name:'Carbs',       value:Math.round(n['carbohydrates_100g']||0),unit:'g',    rating:'moderate', impact:'Primary energy source'},
+        {name:'Fat',         value:Math.round(n['fat_100g']||0),           unit:'g',    rating:'moderate', impact:'Macronutrient fat'},
+        {name:'Sugar',       value:Math.round(n['sugars_100g']||0),        unit:'g',    rating: n['sugars_100g']>12?'bad':'moderate', impact:'Simple carbohydrates'},
+        {name:'Fibre',       value:Math.round((n['fiber_100g']||0)*10)/10, unit:'g',    rating: n['fiber_100g']>6?'good':'moderate', impact:'Dietary fibre'},
+        {name:'Sodium',      value:Math.round(n['sodium_100g']*1000||0),   unit:'mg',   rating: n['sodium_100g']>0.6?'bad':'moderate', impact:'Salt content'},
+      ],
+      pros: p.nutriments?.['proteins_100g']>10 ? ['Good protein content'] : ['Packaged food'],
+      cons: n['sugars_100g']>10 ? ['High sugar content'] : [],
+      ingredients_spotlight: (p.ingredients || []).slice(0,12).map(i => ({
+        name: i.text, type: i.vegetarian === 'yes' ? 'natural' : 'additive',
+        health_impact: `Present at ${Math.round((i.percent_estimate||0))}% of product`
+      })),
+      better_alternative: null,
+      is_barcode_scan: true,
+      nutriscore: p.nutriscore_grade?.toUpperCase(),
+      nova_group: n['nova-group'],
+    };
+    buildRiskFlags(data, p);
+    state.lastResult = data;
+    saveHistory(data, null);
+    buildConstellationData(data);
+    setTimeout(() => { renderReveal(data); goTo('reveal'); }, 2200);
+  } catch(e) {
+    showToast('⚠️ Could not fetch product. Try label scan.');
+    goTo('scan');
+  }
+}
+
+function buildRiskFlags(data, product) {
+  const additives = (product.additives_tags || []);
+  const flags = [];
+  if (data.nova_group >= 4) flags.push({label:'Ultra-processed',level:'red',icon:'⚠️'});
+  if (additives.some(a => a.includes('621'))) flags.push({label:'MSG',level:'orange',icon:'🧪'});
+  if (additives.some(a => a.includes('102') || a.includes('104') || a.includes('110') || a.includes('122'))) flags.push({label:'Artificial colour',level:'red',icon:'🎨'});
+  if (additives.some(a => a.includes('211'))) flags.push({label:'Sodium benzoate',level:'orange',icon:'⚗️'});
+  if ((data.nutrient_breakdown?.find(n=>n.name==='Sugar')?.value||0) > 15) flags.push({label:'High sugar',level:'red',icon:'🍬'});
+  if ((data.nutrient_breakdown?.find(n=>n.name==='Sodium')?.value||0) > 800) flags.push({label:'High sodium',level:'orange',icon:'🧂'});
+  if (product.allergens_tags?.includes('en:milk')) flags.push({label:'Dairy',level:'yellow',icon:'🥛'});
+  if (product.allergens_tags?.includes('en:gluten')) flags.push({label:'Gluten',level:'yellow',icon:'🌾'});
+  if (product.allergens_tags?.includes('en:peanuts')) flags.push({label:'Peanuts',level:'red',icon:'🥜'});
+  data.risk_flags = flags;
+}
+
+/* ── FILE UPLOAD */
+function handlePortalTap() {
+  if (!state.blob) openCamera();
+}
+function triggerUpload() { document.getElementById('file-input').click(); }
+function handleFile(e) { const f = e.target.files?.[0]; if (f) processFile(f); e.target.value=''; }
+function onDragOver(e)  { e.preventDefault(); document.getElementById('portal-core').style.transform='scale(1.05)'; }
+function onDragLeave()  { document.getElementById('portal-core').style.transform=''; }
+function onDrop(e) {
+  e.preventDefault(); document.getElementById('portal-core').style.transform='';
+  const f = e.dataTransfer.files?.[0];
+  if (f && f.type.startsWith('image/')) processFile(f);
+  else showToast('⚠️ Drop an image file');
+}
+
+/* FIXED: processFile — preview now renders inside portal-preview-wrap */
+function processFile(file) {
+  state.blob = file;
+  const url  = URL.createObjectURL(file);
+  const img  = document.getElementById('preview-img');
+  img.onload = null; // clear any stale handler
+  img.src    = url;
+  // Show preview wrap (z-index:4 sits above portal-core z-index:2)
+  const wrap = document.getElementById('portal-preview-wrap');
+  wrap.classList.add('visible');
+  document.getElementById('preview-badge').textContent = '✓ Ready to analyse';
+  document.getElementById('analyse-cta').classList.add('visible');
+  const fl = document.getElementById('scan-flash');
+  fl.classList.add('flash'); setTimeout(() => fl.classList.remove('flash'), 120);
+  spawnConfetti(window.innerWidth/2, window.innerHeight*0.38);
+  checkQuality(file);
+}
+
+async function checkQuality(file) {
+  const strip = document.getElementById('quality-strip');
+  strip.classList.add('visible');
+  try {
+    const fd = new FormData(); fd.append('image', file);
+    const res = await fetch(`${API}/check-image`, { method:'POST', body:fd });
+    if (!res.ok) { setQualityLocal(file); return; }
+    const d   = await res.json();
+    applyQuality(d.blur_severity || 'none', Math.max(5, Math.min(100, 100-(d.blur_score||50))));
+  } catch { setQualityLocal(file); }
+}
+
+async function setQualityLocal(file) {
+  // Local canvas-based sharpness estimate when API unavailable
+  const bmp  = await createImageBitmap(file);
+  const c    = document.createElement('canvas');
+  c.width=Math.min(200,bmp.width); c.height=Math.min(200,bmp.height);
+  const ctx  = c.getContext('2d');
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  const px   = ctx.getImageData(0,0,c.width,c.height).data;
+  let lap=0;
+  for (let i=4; i<px.length-4; i+=4) {
+    const d = Math.abs(px[i] - px[i+4]) + Math.abs(px[i] - px[i-4]);
+    lap += d;
+  }
+  const score = Math.min(100, Math.round(lap / (c.width*c.height) * 2));
+  const sev   = score>60?'none':score>30?'mild':'blurry';
+  applyQuality(sev, score);
+}
+
+function applyQuality(sev, pct) {
+  const fill  = document.getElementById('qs-fill');
+  const badge = document.getElementById('qs-badge');
+  const label = document.getElementById('qs-label');
+  fill.style.width = pct+'%';
+  if (sev === 'none') {
+    fill.style.background='var(--mint)'; badge.style.color='var(--mint)';
+    badge.textContent='✓ Clear'; label.textContent='Great quality';
+  } else if (sev === 'mild') {
+    fill.style.background='var(--orange)'; badge.style.color='var(--orange)';
+    badge.textContent='~ Fair'; label.textContent='Auto-correct on';
+  } else {
+    fill.style.background='var(--red)'; badge.style.color='var(--red)';
+    badge.textContent='⚠ Blurry'; label.textContent='AI will enhance';
+  }
+}
+
+/* ═══════════════════════════════════════
+   VOICE LOGGING
+═══════════════════════════════════════ */
+function setupVoice() {
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) { document.getElementById('voice-btn').style.display='none'; return; }
+  const recog = new SpeechRec();
+  recog.lang = 'en-US';
+  recog.continuous = false;
+  recog.interimResults = true;
+  recog.maxAlternatives = 1;
+  recog.onresult = e => {
+    let transcript = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      transcript += e.results[i][0].transcript;
+    }
+    document.getElementById('voice-transcript').textContent = transcript;
+    if (e.results[e.resultIndex]?.isFinal) parseVoiceMeal(transcript);
+  };
+  recog.onerror = e => { showToast('Voice error: '+e.error); stopVoice(); };
+  recog.onend = () => stopVoice();
+  state.voiceRecog = recog;
+}
+
+function toggleVoice() {
+  if (state.isListening) stopVoice();
+  else startVoice();
+}
+
+function startVoice() {
+  if (!state.voiceRecog) { showToast('Voice not supported'); return; }
+  state.isListening = true;
+  document.getElementById('voice-btn').classList.add('listening');
+  document.getElementById('voice-icon').textContent = '🔴';
+  document.getElementById('voice-transcript').textContent = 'Listening…';
+  try { state.voiceRecog.start(); } catch {}
+}
+
+function stopVoice() {
+  state.isListening = false;
+  document.getElementById('voice-btn').classList.remove('listening');
+  document.getElementById('voice-icon').textContent = '🎤';
+  try { state.voiceRecog?.stop(); } catch {}
+}
+
+async function parseVoiceMeal(transcript) {
+  stopVoice();
+  document.getElementById('voice-transcript').textContent = '🧠 Parsing "' + transcript + '"…';
+  // Use the API to parse the meal text
+  try {
+    const fd = new FormData();
+    fd.append('text', transcript);
+    fd.append('persona', state.persona);
+    fd.append('language', state.language);
+    const res = await fetch(`${API}/parse-voice-meal`, { method:'POST', body:fd });
+    if (!res.ok) throw new Error('API unavailable');
+    const d = await res.json();
+    if (d.error) throw new Error(d.message||d.error);
+    state.lastResult = d;
+    saveHistory(d, null);
+    buildConstellationData(d);
+    renderReveal(d);
+    goTo('reveal');
+    spawnConfetti(window.innerWidth/2, window.innerHeight/2);
+    document.getElementById('voice-transcript').textContent = 'Say what you ate…';
+  } catch {
+    // Graceful fallback — store as a text entry
+    const fakeResult = {
+      product_name: transcript,
+      score: 5, verdict: 'Voice logged',
+      summary: 'Logged via voice: "' + transcript + '". Analysis requires image scan.',
+      nutrient_breakdown: [],
+      pros:[], cons:[], ingredients_spotlight:[], is_voice_log:true,
+    };
+    state.lastResult = fakeResult;
+    saveHistory(fakeResult, null);
+    renderReveal(fakeResult);
+    goTo('reveal');
+    document.getElementById('voice-transcript').textContent = '✓ Logged: ' + transcript;
+    showToast('✓ Voice meal logged!');
+    spawnStickerPop('🎤', window.innerWidth/2, window.innerHeight/2);
+  }
+}
+
+/* ═══════════════════════════════════════
+   VINE LOADER
+═══════════════════════════════════════ */
+const VINE_STEPS = [
+  {label:'Image clarity', pct:18},
+  {label:'Blur correction', pct:35},
+  {label:'OCR extraction', pct:55},
+  {label:'Web search', pct:72},
+  {label:'AI synthesis', pct:90},
+  {label:'Complete', pct:100},
+];
+
+function startVine() {
+  const fill  = document.getElementById('vine-fill');
+  const nodes = document.getElementById('vine-nodes');
+  const txt   = document.getElementById('reading-text');
+  fill.style.height='0%'; nodes.innerHTML=''; txt.innerHTML='';
+  VINE_STEPS.forEach((step, i) => {
+    const top = (1 - step.pct/100)*100;
+    const nd  = document.createElement('div');
+    nd.className='vine-node'; nd.id='vn-'+i; nd.style.top=top+'%';
+    const lbl = document.createElement('div');
+    lbl.className='vine-node-label'; lbl.textContent=step.label;
+    nd.appendChild(lbl); nodes.appendChild(nd);
+  });
+  let step=0;
+  function advance() {
+    if (step>=VINE_STEPS.length) return;
+    fill.style.height=VINE_STEPS[step].pct+'%';
+    document.getElementById('vn-'+step)?.classList.add('lit');
+    step++; setTimeout(advance, step>=VINE_STEPS.length?400:500);
+  }
+  setTimeout(advance,300);
+}
+
+function crystallizeText(text) {
+  const el=document.getElementById('reading-text');
+  el.innerHTML='';
+  [...text].forEach((ch,i)=>{
+    const s=document.createElement('span');
+    s.className='char'; s.textContent=ch;
+    s.style.animationDelay=(i*18)+'ms';
+    el.appendChild(s);
+  });
+}
+
+/* ═══════════════════════════════════════
+   RUN ANALYSIS
+═══════════════════════════════════════ */
+async function runAnalysis() {
+  if (!state.blob) return;
+  if (state.quotaRemaining<=0 && !state.isPro) { openPaywall('limit'); return; }
+  goTo('reading');
+  startVine();
+  state.abortCtrl = new AbortController();
+  const tid = setTimeout(()=>state.abortCtrl?.abort(), 90000);
+
+  // Capture thumbnail for history
+  let thumbData = null;
+  try {
+    const bmp = await createImageBitmap(state.blob);
+    const tc  = document.createElement('canvas');
+    tc.width=80; tc.height=80;
+    const tctx=tc.getContext('2d');
+    const ar=bmp.width/bmp.height;
+    if(ar>1){tctx.drawImage(bmp,(bmp.width-bmp.height)/2,0,bmp.height,bmp.height,0,0,80,80);}
+    else{tctx.drawImage(bmp,0,(bmp.height-bmp.width)/2,bmp.width,bmp.width,0,0,80,80);}
+    thumbData = tc.toDataURL('image/jpeg',0.6);
+  } catch{}
+
+  const fd = new FormData();
+  fd.append('image',state.blob);
+  fd.append('persona',state.persona);
+  fd.append('language',state.language);
+  fd.append('age_group','adult');
+  fd.append('product_category','general');
+
+  try {
+    const res  = await fetch(`${API}/analyze`, {method:'POST',body:fd,signal:state.abortCtrl.signal});
+    clearTimeout(tid);
+    const data = await res.json();
+    if (res.status===429 || data.error==='quota_exceeded') { goTo('scan'); openPaywall('limit'); return; }
+    // Pass the specific error type so showError can show the right icon + message
+    if (data.error) {
+      const errType = data.error === 'no_label' && data.tip === 'wrong_side'
+        ? 'wrong_side' : data.error;
+      goTo('scan');
+      showError(errType, data.message || 'Analysis failed.');
+      return;
+    }
+    if (data.quota) { state.quotaRemaining=data.quota.remaining??state.quotaRemaining; updateQuota(); }
+
+    const sampleText = data.extracted_text
+      ? data.extracted_text.substring(0,80)+'…'
+      : 'Ingredients: '+(data.ingredients_spotlight?.map(i=>i.name)||[]).slice(0,5).join(', ')+'…';
+    crystallizeText(sampleText);
+
+    if (!data.risk_flags) buildRiskFlagsFromAnalysis(data);
+    state.lastResult = data;
+    saveHistory(data, thumbData);
+    buildConstellationData(data);
+    updateStreak();
+
+    setTimeout(() => {
+      renderReveal(data); goTo('reveal'); resetPortal();
+    }, 2200);
+  } catch(e) {
+    clearTimeout(tid); goTo('scan');
+    if (e.name==='AbortError') showToast('⏱ Analysis cancelled');
+    else showError('error', e.message||'Network error.');
+  }
+}
+
+function buildRiskFlagsFromAnalysis(data) {
+  const flags = [];
+  const nutr  = data.nutrient_breakdown || [];
+  const ingrs = data.ingredients_spotlight || [];
+  const sodium= nutr.find(n=>n.name?.toLowerCase().includes('sodium'))?.value||0;
+  const sugar = nutr.find(n=>n.name?.toLowerCase().includes('sugar'))?.value||0;
+  const addrs = ingrs.filter(i=>i.type==='additive'||i.type==='preservative');
+  if (addrs.length>0)  flags.push({label:'Additives ('+addrs.length+')',level:'orange',icon:'⚗️'});
+  if (sugar>15)        flags.push({label:'High sugar',level:'red',icon:'🍬'});
+  if (sodium>700)      flags.push({label:'High sodium',level:'orange',icon:'🧂'});
+  if (ingrs.some(i=>['e102','e110','e122','tartrazine'].some(k=>i.name?.toLowerCase().includes(k))))
+    flags.push({label:'Artificial dye',level:'red',icon:'🎨'});
+  if (data.score>=8)   flags.push({label:'Clean label',level:'green',icon:'✓'});
+  data.risk_flags = flags;
+}
+
+function cancelAnalysis() { state.abortCtrl?.abort(); goTo('scan'); }
+
+function showError(type, message) {
+  // Choose icon and title based on error type
+  const icon  = type==='no_label'  ? '🔄'
+              : type==='wrong_side'? '🔄'
+              : type==='no_text'   ? '🔍'
+              : type==='invalid_image'?'🖼': '❌';
+  const title = type==='no_label'   ? 'No Nutrition Label Found'
+              : type==='wrong_side' ? "That's the Front — Flip It Over!"
+              : type==='no_text'    ? 'No Text Detected'
+              : type==='invalid_image'?'Invalid Image'
+              : 'Analysis Failed';
+  // For wrong-side errors, show a helpful flip instruction
+  const extra = (type==='no_label' || type==='wrong_side')
+    ? `<div style="margin:10px auto;max-width:220px;display:flex;align-items:center;justify-content:center;gap:12px;font-size:1.8rem">
+        <span title="Front">🟥</span>
+        <span style="font-size:1rem;color:var(--muted)">→ flip →</span>
+        <span title="Back label">🟩</span>
+       </div>
+       <div style="font-size:11px;color:var(--muted);margin-bottom:4px">
+         Scan the <strong>back</strong> of the pack — look for the nutrition table &amp; ingredients list.
+       </div>`
+    : '';
+  document.getElementById('reveal-scroll').innerHTML=`
+    <div class="result-empty">
+      <div class="result-empty-icon">${icon}</div>
+      <div class="result-empty-title">${title}</div>
+      ${extra}
+      <div class="result-empty-sub">${esc(message)}</div>
+      <button class="result-empty-btn" onclick="goTo('scan')">Try Again →</button>
+    </div>`;
+  goTo('reveal');
+}
+
+/* ═══════════════════════════════════════
+   RENDER REVEAL
+═══════════════════════════════════════ */
+function renderReveal(d) {
+  const score      = d.score??0;
+  const scoreColor = score>=7?'var(--mint)':score>=4?'var(--orange)':'var(--red)';
+  const glyph      = score>=7?'✅':score>=4?'⚠️':'❌';
+  let html='';
+
+  /* header */
+  html+=`<div class="reveal-top">
+    <div class="reveal-product">${esc(d.product_name||'Unknown Product')}</div>
+    <div class="reveal-score-group">
+      <span class="reveal-score" style="color:${scoreColor}">${score}</span>
+      <span class="reveal-verdict-label" style="color:${scoreColor}">${esc(d.verdict||'')}</span>
+    </div>
+  </div>`;
+
+  /* confidence + metadata strip */
+  const meta = [
+    d.product_category && esc(d.product_category),
+    d.nutriscore && 'Nutri-Score: '+esc(d.nutriscore),
+    d.nova_group  && 'NOVA: '+d.nova_group,
+    d.is_barcode_scan && 'Barcode scan',
+    d.is_voice_log    && 'Voice logged',
+  ].filter(Boolean);
+  if (meta.length) {
+    html+=`<div class="confidence-strip">
+      <div class="conf-dot"></div>
+      <span style="font-size:9px;letter-spacing:1.5px">${meta.join(' · ')}</span>
+    </div>`;
+  }
+
+  /* actions */
+  html+=`<div class="result-actions">
+    <button class="rac-btn" onclick="shareResult()">📤 Share</button>
+    <button class="rac-btn" onclick="goTo('map')">✦ Map</button>
+    <button class="rac-btn" onclick="goTo('history')">📋 History</button>
+    <button class="rac-btn" onclick="goTo('scan')">🔄 Rescan</button>
+  </div>`;
+
+  /* risk flags (NEW) */
+  if (d.risk_flags?.length) {
+    html+=`<div class="risk-flags">`;
+    d.risk_flags.forEach(f => {
+      const cls='rf-'+f.level;
+      html+=`<div class="risk-flag ${cls}"><div class="rf-dot"></div>${esc(f.icon)} ${esc(f.label)}</div>`;
+    });
+    html+=`</div>`;
+  }
+
+  /* Oracle satellite orb */
+  html+=`<div class="orb-stage">
+    <div class="score-orb-wrap" id="sorb-wrap">
+      <div class="orb-pulse-ring" style="border-color:${scoreColor}"></div>
+      <div class="score-orb" onclick="expandSatellite('summary')">
+        <div class="orb-num" style="color:${scoreColor}">${score}</div>
+        <div class="orb-denom">/10</div>
+      </div>
+    </div>
+  </div>`;
+
+  /* blur notice */
+  if (d.blur_info?.detected) {
+    html+=`<div class="blur-notice visible">
+      ${d.blur_info.deblurred
+        ?`<strong>🔧 Enhanced</strong> — ${d.blur_info.method_log||'AI deblur'}.`
+        :`<strong>📷 Blur detected</strong> (${d.blur_info.severity}) — results may vary.`}
+    </div>`;
+  }
+
+  /* nutrient sticker pack */
+  if (d.nutrient_breakdown?.length) {
+    html+=`<div class="pack-label">Your Nutrient Pack — ${d.nutrient_breakdown.length} cards</div>
+    <div class="nutrient-pack" id="nutrient-pack">`;
+    d.nutrient_breakdown.forEach((n,i)=>{
+      const bg  = SAT_BG[i%SAT_BG.length];
+      const rot = ((i%2===0?1:-1)*(i%3+1))+'deg';
+      const rIcon={good:'✓',moderate:'~',caution:'~',bad:'!'}[n.rating]||'?';
+      html+=`<div class="ns-card" id="nsc-${i}" style="background:${bg};--rot:${rot}" onclick="flipNutrientCard(${i})">
+        <div class="ns-rating-badge">${rIcon}</div>
+        <span class="ns-icon">${getNutrientIcon(n.name)}</span>
+        <div class="ns-name">${esc(n.name)}</div>
+        <div class="ns-val">${n.value}<small style="font-size:0.55em;font-weight:700"> ${n.unit||''}</small></div>
+        <div class="ns-bar"><div class="ns-fill" id="nsf-${i}"></div></div>
+      </div>`;
+    });
+    html+=`</div>`;
+  }
+
+  /* verdict tape */
+  if (d.summary) {
+    html+=`<div class="verdict-tape">
+      <div class="vt-stamp" style="background:${score>=7?'var(--mint)':score>=4?'var(--yellow)':'var(--pink)'}">${glyph}</div>
+      <div><div class="vt-title">${esc(d.verdict||'')}</div><div class="vt-desc">${esc(d.summary)}</div></div>
+    </div>`;
+  }
+
+  /* ingredient tags */
+  if (d.ingredients_spotlight?.length) {
+    html+=`<div class="ingr-section">
+      <div class="section-label" style="margin-bottom:8px">Ingredients spotted</div>
+      <div class="ingr-tags">`;
+    d.ingredients_spotlight.forEach(ing=>{
+      const t = ing.type?.toLowerCase();
+      const cls = (t==='additive'||t==='preservative') ? 'itag-warn' : (ing.safety_rating?.toLowerCase()==='safe'||t==='natural'||t==='vitamin') ? 'itag-good' : 'itag-ok';
+      html+=`<div class="ingr-tag ${cls}" onclick="showIngDetail(${JSON.stringify(ing).replace(/"/g,'&quot;')})">${esc(ing.name)}</div>`;
+    });
+    html+=`</div></div>`;
+  }
+
+  /* pros/cons */
+  if (d.pros?.length||d.cons?.length) {
+    html+=`<div class="pro-con-grid">`;
+    if (d.pros?.length) {
+      html+=`<div class="pc-card"><div class="pc-head pros">Benefits</div>`;
+      d.pros.forEach(p=>{html+=`<div class="pc-item">${esc(p)}</div>`;});
+      html+=`</div>`;
+    }
+    if (d.cons?.length) {
+      html+=`<div class="pc-card"><div class="pc-head cons">Concerns</div>`;
+      d.cons.forEach(c=>{html+=`<div class="pc-item">${esc(c)}</div>`;});
+      html+=`</div>`;
+    }
+    html+=`</div>`;
+  }
+
+  /* age warnings */
+  if (d.age_warnings?.length) {
+    html+=`<div class="section-label" style="padding:4px 0 8px">Who should be cautious?</div>
+    <div class="age-grid">`;
+    d.age_warnings.forEach(w=>{
+      html+=`<div class="age-card ${w.status||'caution'}">
+        <div class="ac-group">${w.emoji||''} ${esc(w.group)}</div>
+        <div class="ac-msg">${esc(w.message)}</div>
+      </div>`;
+    });
+    html+=`</div>`;
+  }
+
+  /* insight tabs */
+  if (d.summary&&(d.eli5_explanation||d.molecular_insight)) {
+    html+=`<div class="insight-tabs">
+      ${d.summary?`<button class="itab active" onclick="switchInsight(event,'is0')">Summary</button>`:''}
+      ${d.eli5_explanation?`<button class="itab" onclick="switchInsight(event,'is1')">Simple</button>`:''}
+      ${d.molecular_insight?`<button class="itab" onclick="switchInsight(event,'is2')">Science</button>`:''}
+    </div>
+    ${d.summary?`<div class="insight-panel active" id="is0"><div class="insight-text">${esc(d.summary)}</div></div>`:''}
+    ${d.eli5_explanation?`<div class="insight-panel" id="is1"><div class="insight-text">${esc(d.eli5_explanation)}</div></div>`:''}
+    ${d.molecular_insight?`<div class="insight-panel" id="is2"><div class="insight-text">${esc(d.molecular_insight)}</div></div>`:''}`;
+  }
+
+  /* better alternative */
+  if (d.better_alternative) {
+    html+=`<div class="alt-card">
+      <div style="font-size:1.2rem">💡</div>
+      <div><div class="alt-label">Better Alternative</div><div class="alt-text">${esc(d.better_alternative)}</div></div>
+    </div>`;
+  }
+
+  document.getElementById('reveal-scroll').innerHTML = html;
+  buildSatellites(d);
+
+  /* animate sticker cards */
+  requestAnimationFrame(()=>{
+    document.querySelectorAll('.ns-card').forEach((card,i)=>{
+      setTimeout(()=>{
+        card.classList.add('visible');
+        const fill=document.getElementById('nsf-'+i);
+        if (!fill) return;
+        const n=d.nutrient_breakdown?.[i];
+        if (n) {
+          const pct=Math.min(100,Math.round(((n.value||0)/(n.unit==='g'?50:n.unit==='mg'?2400:100))*100));
+          setTimeout(()=>{fill.style.width=pct+'%';},500);
+        }
+      }, i*130);
+    });
+  });
+}
+
+/* ingredient detail sheet */
+function showIngDetail(ing) {
+  if (typeof ing === 'string') {
+    try { ing = JSON.parse(ing); } catch { return; }
+  }
+  const risk = ing.type?.toLowerCase();
+  const riskColor = {additive:'#FF2D78',preservative:'#FF2D78',natural:'#00A878',vitamin:'#C084FC'}[risk]||'#FF6B00';
+  const riskLabel = {additive:'Additive',preservative:'Preservative',natural:'Natural',vitamin:'Vitamin',emulsifier:'Emulsifier',seasoning:'Seasoning'}[risk]||(risk||'Ingredient');
+  document.getElementById('ing-detail-name').textContent = ing.name||'Ingredient';
+  const riskEl = document.getElementById('ing-detail-risk');
+  riskEl.style.cssText = `background:${riskColor}18;border-color:${riskColor};color:${riskColor}`;
+  riskEl.textContent = riskLabel;
+  document.getElementById('ing-detail-what').textContent = ing.what_it_is||'An ingredient found in this product.';
+  document.getElementById('ing-detail-impact').textContent = ing.health_impact||'Effects vary based on quantity consumed.';
+  document.getElementById('ing-detail-fact').textContent = ing.curiosity_fact||ing.health_impact||'Tap the Constellation Map for more details.';
+  document.getElementById('ing-detail-overlay').classList.add('open');
+}
+function closeIngDetail() { document.getElementById('ing-detail-overlay').classList.remove('open'); }
+
+/* satellites */
+function buildSatellites(d) {
+  const wrap=document.getElementById('sorb-wrap');
+  if (!wrap) return;
+  wrap.querySelectorAll('.orb-satellite').forEach(e=>e.remove());
+  const sats=(d.nutrient_breakdown||[]).slice(0,6).map((n,i)=>({
+    label:n.name.split(' ')[0], val:n.value+(n.unit||''),
+    color:SAT_COLORS[i%SAT_COLORS.length], bg:SAT_BG[i%SAT_BG.length],
+    desc:n.impact||`${n.name}: ${n.value}${n.unit||''} in this product.`, full:n,
+  }));
+  sats.forEach((sat,i)=>{
+    const el=document.createElement('div');
+    el.className='orb-satellite sat-'+i;
+    el.innerHTML=`<div class="sat-dot" style="background:${sat.bg}"><span style="font-size:9px;font-weight:800;color:var(--ink)">${sat.val}</span></div><div class="sat-label">${esc(sat.label)}</div>`;
+    el.onclick=()=>expandSatelliteData(sat);
+    wrap.appendChild(el);
+  });
+}
+
+function expandSatelliteData(sat) {
+  document.getElementById('se-name').textContent=sat.full?.name||sat.label;
+  document.getElementById('se-val').textContent=sat.val;
+  document.getElementById('se-val').style.color=sat.color;
+  document.getElementById('se-desc').textContent=sat.desc;
+  document.getElementById('sat-expand').classList.add('open');
+}
+function expandSatellite(key) {
+  if (key==='summary'&&state.lastResult) {
+    document.getElementById('se-name').textContent=state.lastResult.product_name||'Product';
+    document.getElementById('se-val').textContent=state.lastResult.score+'/10';
+    document.getElementById('se-val').style.color='var(--ink)';
+    document.getElementById('se-desc').textContent=state.lastResult.summary||'';
+    document.getElementById('sat-expand').classList.add('open');
+  }
+}
+function closeSatellite() { document.getElementById('sat-expand').classList.remove('open'); }
+
+function flipNutrientCard(i) {
+  const card=document.getElementById('nsc-'+i);
+  const n=state.lastResult?.nutrient_breakdown?.[i];
+  if (!card||!n) return;
+  spawnStickerPop(getNutrientIcon(n.name),card.getBoundingClientRect().left+20,card.getBoundingClientRect().top);
+  showToast(getNutrientIcon(n.name)+' '+n.name+': '+(n.impact||n.value+(n.unit||'')));
+  card.style.transform='scale(1.18) rotate(0deg)';
+  setTimeout(()=>{if(card.classList.contains('visible'))card.style.transform='';},500);
+}
+function switchInsight(e,panel) {
+  document.querySelectorAll('.itab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.insight-panel').forEach(p=>p.classList.remove('active'));
+  e.target.classList.add('active');
+  document.getElementById(panel)?.classList.add('active');
+}
+function getNutrientIcon(name) {
+  const n=name?.toLowerCase()||'';
+  if(n.includes('sodium')||n.includes('salt'))return'🧂';
+  if(n.includes('protein'))return'💪';
+  if(n.includes('calorie')||n.includes('energy'))return'⚡';
+  if(n.includes('carb')||n.includes('sugar'))return'🌾';
+  if(n.includes('fat'))return'🫒';
+  if(n.includes('fibre')||n.includes('fiber'))return'🌱';
+  if(n.includes('vitamin')||n.includes('calcium')||n.includes('iron'))return'💊';
+  return'🔬';
+}
+
+/* ═══════════════════════════════════════
+   HISTORY SCREEN (FULL)
+═══════════════════════════════════════ */
+function renderHistory() {
+  const allHist = getHistory();
+  const filter  = state.histFilter;
+  const now     = new Date();
+
+  // Filter history
+  const filtered = allHist.filter(h => {
+    const ts = new Date(h.ts);
+    if (filter==='today') return ts.toDateString()===now.toDateString();
+    if (filter==='week') {
+      const weekAgo=new Date(now); weekAgo.setDate(now.getDate()-7);
+      return ts>=weekAgo;
+    }
+    if (filter==='month') {
+      return ts.getMonth()===now.getMonth()&&ts.getFullYear()===now.getFullYear();
+    }
+    return true; // all
+  });
+
+  // Build streak + badges
+  const streak = getStreak();
+  const todayCals = allHist.filter(h=>new Date(h.ts).toDateString()===now.toDateString())
+    .reduce((s,h)=>{
+      const cal=(h.data?.nutrient_breakdown||[]).find(n=>n.name?.toLowerCase().includes('calorie'));
+      return s+(cal?.value||0);
+    },0);
+  const profile=getProfile();
+  const tdee=computeTDEE(profile)||2000;
+
+  let html='';
+
+  /* streak card */
+  html+=`<div class="streak-card">
+    <div><div class="streak-num">🔥${streak.count}</div></div>
+    <div><div class="streak-text">Day Streak</div><div class="streak-label">${streak.count===1?'Keep it up!':streak.count>=7?'On fire!':'Stay consistent'}</div></div>
+    <div style="margin-left:auto;text-align:right">
+      <div style="font-family:'Fraunces',serif;font-weight:900;font-size:1.1rem">${allHist.length}</div>
+      <div style="font-size:8px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Total Scans</div>
+    </div>
+  </div>`;
+
+  /* daily summary */
+  if (todayCals>0) {
+    const calPct=Math.min(100,Math.round(todayCals/tdee*100));
+    html+=`<div class="daily-banner">
+      <div class="db-title">Today — ${todayCals} kcal logged</div>
+      <div class="db-macros">
+        <div class="db-macro"><div class="db-macro-val">${todayCals}</div><div class="db-macro-label">Calories</div></div>
+        <div class="db-macro"><div class="db-macro-val">${tdee}</div><div class="db-macro-label">Target</div></div>
+        <div class="db-macro"><div class="db-macro-val">${Math.max(0,tdee-todayCals)}</div><div class="db-macro-label">Remaining</div></div>
+      </div>
+      <div class="db-progress-bar"><div class="db-progress-fill" style="width:${calPct}%;background:${calPct>100?'var(--red)':calPct>75?'var(--orange)':'var(--yellow)'}"></div></div>
+    </div>`;
+  }
+
+  /* badges */
+  const badges = computeBadges(allHist, streak);
+  if (badges.length) {
+    html+=`<div class="section-label">Achievements</div>
+    <div class="badges-row">`;
+    badges.forEach(b=>{
+      html+=`<div class="badge" onclick="showToast('${b.locked?'🔒 '+b.cond:'🎉 '+b.name+' unlocked!'}')" title="${b.cond}">
+        <div class="badge-icon${b.locked?' locked':''}" style="${b.locked?'':'background:'+b.color}">${b.icon}</div>
+        <div class="badge-name">${b.name}</div>
+      </div>`;
+    });
+    html+=`</div>`;
+  }
+
+  /* filter tabs */
+  html+=`<div class="hist-filter-row">
+    ${['today','week','month','all'].map(f=>`<button class="hf-btn${state.histFilter===f?' active':''}" onclick="setHistFilter('${f}')">${{today:'Today',week:'Week',month:'Month',all:'All'}[f]}</button>`).join('')}
+  </div>`;
+
+  /* list */
+  if (!filtered.length) {
+    html+=`<div class="hist-empty">
+      <div class="hist-empty-icon">${filter==='today'?'🌱':'📋'}</div>
+      ${filter==='today'?'No scans today.<br>Use the Portal to log your first meal!':'No scans in this period.'}
+    </div>`;
+  } else {
+    // Group by date
+    const grouped={};
+    filtered.forEach(h=>{
+      const key=new Date(h.ts).toDateString();
+      if(!grouped[key]) grouped[key]=[];
+      grouped[key].push(h);
+    });
+    Object.entries(grouped).forEach(([dateStr,items])=>{
+      const label=dateStr===now.toDateString()?'Today':new Date(dateStr).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
+      html+=`<div class="hist-date-header">${label}</div>`;
+      items.forEach(h=>{
+        const score=h.score||0;
+        const scoreColor=score>=7?'var(--mint)':score>=4?'var(--orange)':'var(--red)';
+        const scoreBg=score>=7?'#C0FFE8':score>=4?'#FFE8C0':'#FFE0EC';
+        const time=new Date(h.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+        const cal=(h.data?.nutrient_breakdown||[]).find(n=>n.name?.toLowerCase().includes('calorie'));
+        const calStr=cal?cal.value+'kcal':'—';
+        html+=`<div class="hist-item" onclick="replayHistoryItem('${h.id}')">
+          ${h.thumb
+            ?`<img class="hist-thumb" src="${h.thumb}" alt="">`
+            :`<div class="hist-thumb-placeholder">${h.is_voice?'🎤':h.is_barcode?'▦':'🌿'}</div>`}
+          <div class="hist-info">
+            <div class="hist-name">${esc(h.product_name)}</div>
+            <div class="hist-meta">${time} · ${esc(h.category)||'Food'} · ${calStr}</div>
+            <div class="hist-verdict">${esc(h.verdict)}</div>
+          </div>
+          <div class="hist-score-badge" style="background:${scoreBg};border-color:${scoreColor};color:${scoreColor}">${score}</div>
+        </div>`;
+      });
+    });
+  }
+
+  document.getElementById('history-scroll').innerHTML=html;
+}
+
+function setHistFilter(f) { state.histFilter=f; renderHistory(); }
+
+function replayHistoryItem(id) {
+  const item=getHistory().find(h=>String(h.id)===String(id));
+  if (!item) return;
+  state.lastResult=item.data;
+  buildConstellationData(item.data);
+  renderReveal(item.data);
+  goTo('reveal');
+}
+
+function computeBadges(hist, streak) {
+  return [
+    {icon:'🌱',name:'First Scan',color:'#C0FFE8',cond:'Complete your first scan',locked:hist.length<1},
+    {icon:'🔥',name:'3-Day Streak',color:'#FFE8C0',cond:'Scan 3 days in a row',locked:streak.count<3},
+    {icon:'🏆',name:'10 Scans',color:'#FFF8C0',cond:'Complete 10 total scans',locked:hist.length<10},
+    {icon:'💯',name:'Perfect Score',color:'#C0FFE8',cond:'Get a 10/10 scan',locked:!hist.some(h=>h.score>=10)},
+    {icon:'🥗',name:'Clean Eater',color:'#C0FFE8',cond:'Get 5 scans scoring 8+',locked:hist.filter(h=>h.score>=8).length<5},
+    {icon:'🔬',name:'Scientist',color:'#F0C0FF',cond:'View 5 constellation maps',locked:false},
+    {icon:'🌍',name:'Multilingual',color:'#C8D8FF',cond:'Scan in another language',locked:hist.every(h=>!h.language||h.language==='en')},
+  ];
+}
+
+/* ═══════════════════════════════════════
+   STREAK ENGINE
+═══════════════════════════════════════ */
+function getStreak() {
+  try { return JSON.parse(localStorage.getItem(STREAK_KEY)||'{"count":0,"lastDate":""}'); } catch { return {count:0,lastDate:''}; }
+}
+function updateStreak() {
+  const streak=getStreak();
+  const today=new Date().toDateString();
+  if (streak.lastDate===today) return; // already counted today
+  const yesterday=new Date(); yesterday.setDate(yesterday.getDate()-1);
+  if (streak.lastDate===yesterday.toDateString()) {
+    streak.count++; // consecutive
+  } else {
+    streak.count=1; // reset
+  }
+  streak.lastDate=today;
+  localStorage.setItem(STREAK_KEY, JSON.stringify(streak));
+  if (streak.count===3||streak.count===7||streak.count===14||streak.count===30) {
+    spawnConfetti(window.innerWidth/2, window.innerHeight/2);
+    showToast('🔥 '+streak.count+'-day streak! Keep it up!');spawnConfetti(window.innerWidth/2,window.innerHeight/2);
+  }
+}
+
+/* ═══════════════════════════════════════
+   PROFILE SCREEN
+═══════════════════════════════════════ */
+function getProfile() {
+  try { return JSON.parse(localStorage.getItem(PROFILE_KEY)||'{}'); } catch { return {}; }
+}
+
+function renderProfile() {
+  const p=getProfile();
+  if (p.name) {
+    document.getElementById('pf-name').value=p.name;
+    document.getElementById('profile-name-disp').textContent=p.name;
+    const avatars=['🌿','🥦','🍎','🥗','💪','🌱','🥑','🍊'];
+    document.getElementById('profile-avatar').textContent=avatars[p.name.charCodeAt(0)%avatars.length];
+  }
+  if (p.age)    document.getElementById('pf-age').value=p.age;
+  if (p.weight) document.getElementById('pf-weight').value=p.weight;
+  if (p.height) document.getElementById('pf-height').value=p.height;
+  if (p.gender) document.getElementById('pf-gender').value=p.gender;
+  if (p.activity) document.getElementById('pf-activity').value=p.activity;
+  if (p.goal) {
+    document.querySelectorAll('#goal-row .chip').forEach(c=>c.classList.toggle('active',c.dataset.goal===p.goal));
+  }
+  if (p.tdee) {
+    showTDEE(p.tdee, p.goal);
+    updateProgressRings(p.tdee, p.goal);
+  }
+}
+
+function computeTDEE(p) {
+  if (!p.weight||!p.height||!p.age||!p.gender) return null;
+  // Mifflin-St Jeor
+  let bmr;
+  if (p.gender==='male') bmr=10*p.weight+6.25*p.height-5*p.age+5;
+  else bmr=10*p.weight+6.25*p.height-5*p.age-161;
+  const pal=parseFloat(p.activity||1.55);
+  const tdee=Math.round(bmr*pal);
+  const adj={lose:-500,maintain:0,gain:+300};
+  return tdee+(adj[p.goal||'maintain']||0);
+}
+
+function showTDEE(tdee, goal) {
+  document.getElementById('tdee-card').style.display='';
+  document.getElementById('macro-targets').style.display='';
+  document.getElementById('today-progress').style.display='';
+  document.getElementById('tdee-val').textContent=tdee+' kcal';
+  document.getElementById('tdee-sub').textContent={lose:'Weight loss target',maintain:'Maintenance target',gain:'Muscle building target'}[goal]||'Daily target';
+  // Macro split
+  const prot=Math.round((tdee*0.30)/4);
+  const fat =Math.round((tdee*0.28)/9);
+  const carb=Math.round((tdee*0.42)/4);
+  document.getElementById('mt-protein').textContent=prot+'g';
+  document.getElementById('mt-carbs').textContent=carb+'g';
+  document.getElementById('mt-fat').textContent=fat+'g';
+}
+
+function updateProgressRings(tdee, goal) {
+  const today = new Date().toDateString();
+  const hist  = getHistory().filter(h=>new Date(h.ts).toDateString()===today);
+  let totCal=0,totProt=0,totCarb=0,totFat=0;
+  hist.forEach(h=>{
+    const n=h.data?.nutrient_breakdown||[];
+    totCal +=(n.find(x=>x.name?.toLowerCase().includes('calorie'))?.value||0);
+    totProt+=(n.find(x=>x.name?.toLowerCase().includes('protein'))?.value||0);
+    totCarb+=(n.find(x=>x.name?.toLowerCase().includes('carb'))?.value||0);
+    totFat +=(n.find(x=>x.name?.toLowerCase().includes('fat'))?.value||0);
+  });
+  const prot=Math.round((tdee*0.30)/4);
+  const fat =Math.round((tdee*0.28)/9);
+  const carb=Math.round((tdee*0.42)/4);
+  setRing('ring-cal',  totCal,  tdee, totCal+'',     '#FFD600');
+  setRing('ring-prot', totProt, prot, totProt+'g',   '#FF2D78');
+  setRing('ring-carb', totCarb, carb, totCarb+'g',   '#0047FF');
+  setRing('ring-fat',  totFat,  fat,  totFat+'g',    '#FF6B00');
+}
+
+function setRing(id,val,max,label,color) {
+  const circ=141.4;
+  const pct =Math.min(1, val/(max||1));
+  const offset=circ-(pct*circ);
+  const el=document.getElementById(id);
+  if (el) el.style.strokeDashoffset=offset;
+  const txt=document.getElementById(id+'-text');
+  if (txt) { txt.textContent=label; txt.style.color=pct>0.9?'var(--red)':pct>0.7?'var(--orange)':color; }
+}
+
+function saveProfile() {
+  const name     = document.getElementById('pf-name').value.trim();
+  const age      = parseFloat(document.getElementById('pf-age').value)||0;
+  const weight   = parseFloat(document.getElementById('pf-weight').value)||0;
+  const height   = parseFloat(document.getElementById('pf-height').value)||0;
+  const gender   = document.getElementById('pf-gender').value;
+  const activity = document.getElementById('pf-activity').value;
+  const goal     = document.querySelector('#goal-row .chip.active')?.dataset.goal||'maintain';
+  const p        = {name,age,weight,height,gender,activity,goal};
+  const tdee     = computeTDEE(p);
+  if (tdee) p.tdee=tdee;
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+  if (name) { document.getElementById('profile-name-disp').textContent=name; }
+  if (tdee) { showTDEE(tdee,goal); updateProgressRings(tdee,goal); }
+  spawnConfetti(window.innerWidth/2,200);
+  showToast('✓ Profile saved — target: '+(tdee||'?')+' kcal');
+}
+
+/* ═══════════════════════════════════════
+   CONSTELLATION MAP
+═══════════════════════════════════════ */
+function buildConstellationData(data) {
+  const colorMap={natural:'#00C896',seasoning:'#C8A800',additive:'#FF2D78',
+    preservative:'#FF2D78',vitamin:'#C084FC',emulsifier:'#0047FF',flavour:'#FF6B00'};
+  state.conIngredients=(data.ingredients_spotlight||[]).map(ing=>{
+    const type=ing.type?.toLowerCase()||'natural';
+    return {name:ing.name,type,color:colorMap[type]||'#0047FF',
+      size:10+Math.random()*8,x:0.08+Math.random()*0.84,y:0.08+Math.random()*0.84,
+      desc:ing.health_impact||ing.what_it_is||'Ingredient in this product.',
+      what:ing.what_it_is||'',fact:ing.curiosity_fact||''};
+  });
+  if (!state.conIngredients.length) buildDemoConstellation();
+}
+
+function buildDemoConstellation() {
+  state.conIngredients=[
+    {name:'Wheat flour',type:'natural',color:'#00C896',size:14,x:0.18,y:0.22,desc:'Refined wheat, low fibre, high GI.',what:'Refined wheat flour used as the primary structural base.',fact:'A single wheat grain contains 22+ nutrients, almost all removed during refining.'},
+    {name:'Palm oil',type:'natural',color:'#C8A800',size:10,x:0.28,y:0.15,desc:'Vegetable oil, high saturated fats.',what:'Vegetable fat extracted from palm fruit.',fact:'Palm oil is 50% saturated fat — higher than lard.'},
+    {name:'Salt',type:'seasoning',color:'#C8A800',size:9,x:0.22,y:0.38,desc:'Sodium chloride, high sodium.',what:'Sodium chloride used as a preservative and flavour enhancer.',fact:'Excess sodium displaces potassium, raising blood pressure over time.'},
+    {name:'MSG (INS 621)',type:'additive',color:'#FF2D78',size:13,x:0.52,y:0.72,desc:'Flavour enhancer, causes sensitivity in some.',what:'Monosodium glutamate — the sodium salt of glutamic acid.',fact:'MSG occurs naturally in tomatoes and parmesan cheese at much lower levels.'},
+    {name:'INS 211',type:'preservative',color:'#FF2D78',size:10,x:0.62,y:0.80,desc:'Sodium benzoate, hyperactivity link in children.',what:'A preservative that prevents mould and bacteria growth.',fact:'INS 211 can convert to benzene (a carcinogen) in presence of vitamin C.'},
+    {name:'Tartrazine E102',type:'additive',color:'#FF2D78',size:11,x:0.72,y:0.70,desc:'Yellow dye, banned in some countries.',what:'A synthetic yellow azo dye used for colouring.',fact:'Tartrazine is banned in Norway and Austria; triggers reactions in 1 in 10,000 people.'},
+    {name:'Niacin (B3)',type:'vitamin',color:'#C084FC',size:8,x:0.72,y:0.18,desc:'Supports energy metabolism.',what:'Water-soluble vitamin added as flour fortification.',fact:'Niacin was added to flour in 1941 to combat pellagra, eliminating the disease in the US.'},
+    {name:'Thiamine (B1)',type:'vitamin',color:'#C084FC',size:7,x:0.80,y:0.28,desc:'Carbohydrate metabolism vitamin.',what:'B-vitamin essential for converting carbohydrates to energy.',fact:'A severe thiamine deficiency causes beriberi — a disease that killed millions before rice enrichment.'},
+  ];
+}
+
+let conCanvas,conCtx,conW,conH,hoveredIngr=-1;
+
+function initConstellation() {
+  conCanvas=document.getElementById('constellation-canvas');
+  if (!conCanvas) return;
+  conW=conCanvas.offsetWidth; conH=conCanvas.offsetHeight;
+  conCanvas.width=conW; conCanvas.height=conH;
+  conCtx=conCanvas.getContext('2d');
+  if (!state.lastResult) buildDemoConstellation();
+  drawConstellation();
+  conCanvas.onmousemove=e=>{
+    const r=conCanvas.getBoundingClientRect();
+    const idx=nearestIngr(e.clientX-r.left,e.clientY-r.top);
+    if(idx!==hoveredIngr){hoveredIngr=idx;drawConstellation();}
+  };
+  conCanvas.ontouchmove=e=>{
+    e.preventDefault();
+    const r=conCanvas.getBoundingClientRect();
+    const t=e.touches[0];
+    const idx=nearestIngr(t.clientX-r.left,t.clientY-r.top);
+    if(idx!==hoveredIngr){hoveredIngr=idx;drawConstellation();}
+  };
+  conCanvas.onclick=e=>{
+    const r=conCanvas.getBoundingClientRect();
+    const idx=nearestIngr(e.clientX-r.left,e.clientY-r.top);
+    if(idx>=0) { showConTooltip(idx,e.clientX,e.clientY); }
+    else hideConTooltip();
+  };
+  conCanvas.ontouchend=e=>{
+    const r=conCanvas.getBoundingClientRect();
+    const t=e.changedTouches[0];
+    const idx=nearestIngr(t.clientX-r.left,t.clientY-r.top);
+    if(idx>=0) showConTooltip(idx,t.clientX,t.clientY);
+  };
+}
+function ix(i){return state.conIngredients[i].x*conW;}
+function iy(i){return state.conIngredients[i].y*conH;}
+function nearestIngr(px,py){
+  let best=-1,bestD=999;
+  state.conIngredients.forEach((ing,i)=>{
+    const dx=ix(i)-px,dy=iy(i)-py;
+    const d=Math.sqrt(dx*dx+dy*dy);
+    if(d<ing.size*2.8&&d<bestD){bestD=d;best=i;}
+  });
+  return best;
+}
+function drawConstellation(){
+  if(!conCtx) return;
+  conCtx.clearRect(0,0,conW,conH);
+  conCtx.fillStyle='rgba(245,243,238,0.4)';
+  conCtx.fillRect(0,0,conW,conH);
+  // nebulae
+  [{x:0.2,y:0.25,r:0.15,c:'rgba(0,200,150,0.06)'},{x:0.75,y:0.23,r:0.12,c:'rgba(192,132,252,0.06)'},
+   {x:0.55,y:0.76,r:0.17,c:'rgba(255,45,120,0.06)'},{x:0.48,y:0.48,r:0.11,c:'rgba(200,168,0,0.05)'}
+  ].forEach(n=>{
+    const g=conCtx.createRadialGradient(n.x*conW,n.y*conH,0,n.x*conW,n.y*conH,n.r*Math.min(conW,conH));
+    g.addColorStop(0,n.c); g.addColorStop(1,'transparent');
+    conCtx.beginPath(); conCtx.arc(n.x*conW,n.y*conH,n.r*Math.min(conW,conH),0,Math.PI*2);
+    conCtx.fillStyle=g; conCtx.fill();
+  });
+  // connectors
+  state.conIngredients.forEach((a,i)=>{
+    state.conIngredients.forEach((b,j)=>{
+      if(j<=i||a.type!==b.type) return;
+      const dx=ix(i)-ix(j),dy=iy(i)-iy(j);
+      if(Math.sqrt(dx*dx+dy*dy)>conW*0.28) return;
+      conCtx.beginPath(); conCtx.moveTo(ix(i),iy(i)); conCtx.lineTo(ix(j),iy(j));
+      conCtx.strokeStyle=a.color+'22'; conCtx.lineWidth=1; conCtx.stroke();
+    });
+  });
+  // stars
+  state.conIngredients.forEach((ing,i)=>{
+    const x=ix(i),y=iy(i),r=ing.size*(hoveredIngr===i?1.45:1),hov=hoveredIngr===i;
+    const grd=conCtx.createRadialGradient(x,y,0,x,y,r*3.5);
+    grd.addColorStop(0,ing.color+(hov?'28':'14')); grd.addColorStop(1,'transparent');
+    conCtx.beginPath(); conCtx.arc(x,y,r*3.5,0,Math.PI*2); conCtx.fillStyle=grd; conCtx.fill();
+    conCtx.beginPath(); conCtx.arc(x,y,r,0,Math.PI*2);
+    conCtx.fillStyle=ing.color+(hov?'EE':'BB'); conCtx.fill();
+    conCtx.lineWidth=1.5; conCtx.strokeStyle='rgba(10,10,10,0.4)'; conCtx.stroke();
+    if(hov){
+      conCtx.beginPath(); conCtx.arc(x,y,r+8,0,Math.PI*2);
+      conCtx.strokeStyle=ing.color+'55'; conCtx.lineWidth=1.5; conCtx.stroke();
+      conCtx.font=`700 11px 'Nunito',sans-serif`;
+      conCtx.fillStyle='rgba(10,10,10,0.85)';
+      conCtx.textAlign=x<conW*0.6?'left':'right';
+      conCtx.fillText(ing.name,x+(x<conW*0.6?r+12:-r-12),y+4);
+    }
+  });
+}
+function showConTooltip(idx,cx,cy){
+  const ing=state.conIngredients[idx];
+  const tt=document.getElementById('ingr-tooltip');
+  document.getElementById('tt-name').textContent=ing.name;
+  const types={natural:'Natural',seasoning:'Seasoning',additive:'Additive',
+    preservative:'Preservative',vitamin:'Vitamin',emulsifier:'Emulsifier',flavour:'Flavour'};
+  const ttType=document.getElementById('tt-type');
+  ttType.textContent=types[ing.type]||ing.type;
+  ttType.style.color=ing.color;
+  document.getElementById('tt-desc').textContent=ing.desc;
+  let left=cx+14,top=cy-70;
+  if(left+215>window.innerWidth) left=cx-225;
+  if(top<10) top=cy+14;
+  tt.style.left=left+'px'; tt.style.top=top+'px';
+  tt.classList.add('show');
+}
+function hideConTooltip(){document.getElementById('ingr-tooltip').classList.remove('show');}
+
+/* ═══════════════════════════════════════
+   HISTORY (localStorage) — WITH THUMBNAILS
+═══════════════════════════════════════ */
+function getHistory(){try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');}catch{return[];}}
+function saveHistory(result, thumb) {
+  const hist=getHistory();
+  hist.unshift({
+    id:Date.now(), ts:new Date().toISOString(),
+    product_name:result.product_name||'Unknown',
+    score:result.score||0, verdict:result.verdict||'',
+    category:result.product_category||'',
+    language:state.language,
+    thumb:thumb||null,
+    is_voice:result.is_voice_log||false,
+    is_barcode:result.is_barcode_scan||false,
+    data:result,
+  });
+  if(hist.length>50) hist.pop();
+  try{localStorage.setItem(HISTORY_KEY,JSON.stringify(hist));}catch{}
+}
+function clearHistory(){
+  if(!confirm('Clear all history?')) return;
+  localStorage.removeItem(HISTORY_KEY);
+  localStorage.removeItem(STREAK_KEY);
+  renderHistory();
+  showToast('🗑 History cleared');
+}
+
+/* ═══════════════════════════════════════
+   QUOTA + PAYWALL
+═══════════════════════════════════════ */
+async function loadQuota(){
+  try{
+    const res=await fetch(`${API}/scan-quota`);
+    const d=await res.json();
+    state.quotaRemaining=d.remaining??d.scans_remaining??5;
+    state.isPro=d.is_pro??false;
+    updateQuota();
+  }catch{}
+}
+function updateQuota(){
+  const t=document.getElementById('quota-text'),dot=document.getElementById('qdot');
+  if(state.isPro){t.textContent='∞';dot.className='quota-dot';}
+  else{
+    t.textContent=state.quotaRemaining+' left';
+    dot.className=state.quotaRemaining<=1?'quota-dot low':state.quotaRemaining<=3?'quota-dot warn':'quota-dot';
+  }
+}
+function openPaywall(trigger=''){
+  if(trigger==='limit') document.getElementById('pw-sub').textContent="You've used all free scans today. Upgrade to keep going.";
+  document.getElementById('paywall-overlay').classList.add('open');
+}
+function closePaywall(){document.getElementById('paywall-overlay').classList.remove('open');}
+async function activatePro(){
+  try{
+    const fd=new FormData(); fd.append('payment_id','demo_'+Date.now());
+    const res=await fetch(`${API}/activate-pro`,{method:'POST',body:fd});
+    const d=await res.json();
+    if(d.status==='activated'){
+      state.isPro=true;state.quotaRemaining=99999;
+      closePaywall();updateQuota();showToast('🎉 Pro activated!');
+      spawnConfetti(window.innerWidth/2,window.innerHeight/2);
+    }
+  }catch{showToast('❌ Payment failed.');}
+}
+
+/* ═══════════════════════════════════════
+   SHARE
+═══════════════════════════════════════ */
+async function shareResult(){
+  if(!state.lastResult){showToast('⚠️ No result to share');return;}
+  const d=state.lastResult;
+  const text=`Eatlytic — ${d.product_name} — ${d.score}/10\n${d.verdict}\n\n${d.summary}`;
+  try{
+    if(navigator.share) await navigator.share({title:'Eatlytic',text});
+    else{await navigator.clipboard.writeText(text);showToast('📋 Copied!');}
+  }catch{showToast('📋 Share unavailable');}
+}
+
+/* ═══════════════════════════════════════
+   PORTAL RESET
+═══════════════════════════════════════ */
+function resetPortal(){
+  state.blob=null;
+  const img=document.getElementById('preview-img');
+  if(img.src) URL.revokeObjectURL(img.src);
+  img.src='';
+  document.getElementById('portal-preview-wrap').classList.remove('visible');
+  document.getElementById('analyse-cta').classList.remove('visible');
+  document.getElementById('quality-strip').classList.remove('visible');
+}
+
+/* ═══════════════════════════════════════
+   CONFETTI + STICKER POP
+═══════════════════════════════════════ */
+function spawnConfetti(cx,cy){
+  for(let i=0;i<22;i++){
+    const p=document.createElement('div');
+    p.className='confetti-piece';
+    p.style.cssText=`left:${cx+(Math.random()-.5)*80}px;top:${cy-8}px;background:${CONFETTI_COLORS[i%CONFETTI_COLORS.length]};transform:rotate(${Math.random()*360}deg);animation-duration:${0.7+Math.random()*.6}s;animation-delay:${Math.random()*.18}s;border-radius:${Math.random()>.5?'50%':'2px'}`;
+    document.body.appendChild(p);
+    setTimeout(()=>p.remove(),1500);
+  }
+}
+function spawnStickerPop(emoji,cx,cy){
+  const p=document.createElement('div');
+  p.className='sticker-pop';p.textContent=emoji;
+  p.style.cssText=`left:${cx-20}px;top:${cy-30}px`;
+  document.body.appendChild(p);
+  setTimeout(()=>p.remove(),1000);
+}
+
+/* ═══════════════════════════════════════
+   TOAST
+═══════════════════════════════════════ */
+let toastTimer;
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),2800);
+}
+
+/* ═══════════════════════════════════════
+   UTILS
+═══════════════════════════════════════ */
+function esc(s){
+  if(!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ═══════════════════════════════════════
+   INIT
+═══════════════════════════════════════ */
+document.getElementById('bottom-nav').classList.add('visible');
+loadQuota();
+setupVoice();
+
+// Preload profile
+setTimeout(()=>{
+  const p=getProfile();
+  if(p.name){
+    document.getElementById('profile-name-disp').textContent=p.name;
+  }
+}, 100);
+
+// Handle back button for camera
+window.addEventListener('popstate',()=>{ if(state.cameraStream) stopCamera(); });
+
+/* ═══════════════════════════════════════
+   DARK MODE
+═══════════════════════════════════════ */
+function toggleDark(){
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  setDark(!isDark);
+}
+function setDark(on){
+  document.documentElement.setAttribute('data-theme', on ? 'dark' : 'light');
+  // Update toggle button icon
+  const btn = document.getElementById('theme-toggle');
+  if(btn) btn.textContent = on ? '☀️' : '🌙';
+  try{ localStorage.setItem('eatlytic-theme', on ? 'dark' : 'light'); }catch{}
+}
+// Restore saved preference, or auto-detect system preference
+(function initTheme(){
+  let saved = null;
+  try{ saved = localStorage.getItem('eatlytic-theme'); }catch{}
+  if(saved){
+    setDark(saved === 'dark');
+  } else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches){
+    setDark(true);
+  }
+  // Live-follow system preference changes (only if user hasn't manually set it)
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+    let saved = null;
+    try{ saved = localStorage.getItem('eatlytic-theme'); }catch{}
+    if(!saved) setDark(e.matches);
+  });
+})();
+
+/* ═══════════════════════════════════════
+   FOOTER / NAV KEYBOARD FIX
+   On mobile, the virtual keyboard shrinks the viewport and pushes
+   the fixed bottom-nav off-screen. We use visualViewport to detect
+   the keyboard and temporarily hide the nav while an input is focused,
+   then restore it when the keyboard dismisses.
+═══════════════════════════════════════ */
+(function initNavKeyboardFix(){
+  const nav = document.getElementById('bottom-nav');
+  if(!nav) return;
+
+  function onViewportResize(){
+    // If the visual viewport height is significantly smaller than the
+    // window height, the keyboard is likely open — hide the nav.
+    const keyboardOpen = (window.visualViewport
+      ? window.visualViewport.height < window.innerHeight * 0.75
+      : false);
+    nav.style.transform = keyboardOpen ? 'translateY(110%)' : '';
+    nav.style.transition = 'transform 0.2s ease';
+  }
+
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize',  onViewportResize);
+    window.visualViewport.addEventListener('scroll',  onViewportResize);
+  }
+
+  // Fallback: hide nav on input focus, show on blur
+  document.addEventListener('focusin',  e => {
+    if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)){
+      nav.style.transform = 'translateY(110%)';
+      nav.style.transition = 'transform 0.2s ease';
+    }
+  });
+  document.addEventListener('focusout', () => {
+    // Small delay so the keyboard animation finishes first
+    setTimeout(() => {
+      const keyboardOpen = window.visualViewport
+        ? window.visualViewport.height < window.innerHeight * 0.75
+        : false;
+      if(!keyboardOpen){
+        nav.style.transform = '';
+      }
+    }, 150);
+  });
+})();
+</script>
+</body>
+</html>

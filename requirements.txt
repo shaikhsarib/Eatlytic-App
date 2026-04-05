@@ -1,0 +1,40 @@
+# Core
+fastapi
+uvicorn[standard]
+python-multipart
+requests
+httpx
+pydantic
+
+# Image processing
+pillow
+opencv-python-headless
+numpy
+
+# OCR
+easyocr
+
+# AI / LLM
+groq
+
+# Search
+duckduckgo-search==6.3.7
+
+# Rate limiting
+slowapi
+
+# PDF export
+reportlab
+
+# WhatsApp
+twilio
+
+# Auth (optional)
+# supabase
+
+# Payments
+# razorpay
+
+# Testing
+pytest
+pytest-asyncio
