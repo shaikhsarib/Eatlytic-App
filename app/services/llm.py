@@ -80,10 +80,24 @@ def build_analysis_prompt(
         )
         blur_ctx = f"IMAGE: {blur_info['severity']}ly blurry ({verb}). Only report confident values."
 
+    persona_rules = "GENERAL ADULT: Apply standard FSSAI limits."
+    p_lower = persona.lower()
+    if "diabetic" in p_lower:
+        persona_rules = "DIABETIC RULES: Multiply sugar penalty by 3x. Flag any Maltodextrin or Dextrose exactly like sugar."
+    elif "child" in p_lower or "baby" in p_lower or "parent" in p_lower:
+        persona_rules = "CHILD RULES: Multiply sodium penalty by 2x. Flag all artificial colors."
+    elif "pregnant" in p_lower:
+        persona_rules = "PREGNANCY RULES: Give bonus for folic acid and protein. Flag any raw/unpasteurized ingredients."
+    elif "senior" in p_lower:
+        persona_rules = "SENIOR RULES: Flag low fiber content strongly. Flag high sodium."
+    elif "gym" in p_lower or "athlete" in p_lower or "fitness" in p_lower:
+        persona_rules = "ATHLETE RULES: High sugar allowed if pre/post workout. High protein gives score bonus."
+
     return f"""[INST]
 You are an expert nutritional scientist and food safety auditor.
 CRITICAL: Respond ENTIRELY in {lang_name}. Every text field MUST be in {lang_name}.
 Persona: {persona} | Age: {age_group} | Category: {product_category}
+{persona_rules}
 {conf_note}
 {blur_ctx}
 Label Text: "{extracted_text}"
@@ -93,8 +107,10 @@ Return ONLY valid JSON — no markdown, no preamble:
 {{
   "product_name"      : "Short name from label",
   "product_category"  : "Snack|Dairy|Beverage|Cereal|Supplement|etc.",
-  "score"             : <INTEGER 1-10 per SCORING RUBRIC — never default to 6 or 7>,
+  "score"             : <INTEGER 1-10 per SCORING RUBRIC — modified by persona rules>,
   "verdict"           : "Two-word verdict in {lang_name}",
+  "fake_claim_detected": <true if text claims 'No Added Sugar'/'Sugar-Free' BUT ingredients have Maltodextrin, Dextrose, Fructose, Corn Syrup, Date Syrup>,
+  "ingredients_raw"   : "Comma, separated, list, of, ingredients, extracted",
   "chart_data"        : [<Safe%>, <Moderate%>, <Risky%>],
   "summary"           : "2-sentence professional summary in {lang_name}.",
   "eli5_explanation"  : "Child-friendly explanation with emojis in {lang_name}.",
@@ -189,6 +205,26 @@ def sanitise_result(result: dict) -> dict:
     if atwater_error:
         result["atwater_warning"] = atwater_error
         result["is_low_confidence"] = True
+
+    # LIE DETECTOR CHECK
+    if result.get("fake_claim_detected"):
+        result["verdict"] = "🚨 FAKE CLAIM: Brand claims 'No Sugar' but contains Sugar alternatives"
+        result["score"] = min(result.get("score", 5), 2)
+        if "Hidden Sugar" not in result.get("cons", []):
+            result.setdefault("cons", []).append("Hidden Sugar (Maltodextrin/Dextrose)")
+
+    # NOVA CLASSIFIER CHECK
+    raw_ing = str(result.get("ingredients_raw", "")).lower()
+    if raw_ing:
+        nova_triggers = [
+            "e471", "e442", "glycerol", "aspartame", "sucralose", 
+            "hydrogenated", "maltodextrin", "emulsifier", "artificial"
+        ]
+        hits = [t for t in nova_triggers if t in raw_ing]
+        if len(hits) >= 2:
+            result["nova_group"] = 4
+            result.setdefault("cons", []).append("⚠️ NOVA 4: Ultra-processed food")
+            result["score"] = min(result.get("score", 5), 3)
 
     result.setdefault("score", 5)
     result.setdefault("verdict", "Analyzed")

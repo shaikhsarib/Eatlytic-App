@@ -188,10 +188,7 @@ body::after{content:'';position:fixed;inset:0;z-index:9998;pointer-events:none;
 .reticle-scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(to right,transparent,#FFD600,transparent);
   animation:scan-sweep 2s ease-in-out infinite}
 @keyframes scan-sweep{0%{top:10%}50%{top:85%}100%{top:10%}}
-/* barcode hit indicator */
-.barcode-hit{position:absolute;background:rgba(255,214,0,0.25);border:2px solid var(--yellow);
-  border-radius:8px;pointer-events:none;display:none;
-  transition:all 0.15s}
+
 /* nutrition overlay (AR display) */
 .camera-overlay-pill{position:absolute;top:16px;left:50%;transform:translateX(-50%);
   background:rgba(10,10,10,0.85);color:var(--yellow);border-radius:var(--r-pill);
@@ -839,8 +836,7 @@ input[type="file"]{display:none}
     <video id="camera-video" autoplay playsinline muted></video>
     <!-- AR nutrition overlay -->
     <div class="camera-overlay-pill" id="cam-overlay-pill">Point at a food label</div>
-    <!-- Barcode hit box -->
-    <div class="barcode-hit" id="barcode-hit"></div>
+
     <!-- Reticle (scan mode) -->
     <div class="camera-reticle" id="camera-reticle">
       <div class="reticle-corner rc-tl"></div>
@@ -1135,7 +1131,7 @@ let state = {
   blob:null, persona:'General Adult', language:'en',
   lastResult:null, abortCtrl:null, quotaRemaining:5, isPro:false,
   cameraStream:null, cameraFacing:'environment', torchOn:false,
-  camMode:'scan', barcodeReader:null, barcodeTimer:null,
+  camMode:'scan',
   voiceRecog:null, isListening:false,
   conIngredients:[],
   histFilter:'today',
@@ -1205,7 +1201,7 @@ async function startCameraStream() {
     video.srcObject = stream;
     await video.play();
     showToast('📷 Camera active');
-    if (state.camMode === 'barcode') startBarcodeDetection();
+
   } catch(err) {
     showToast('⚠️ Camera unavailable: ' + (err.message || err.name));
     goTo('scan');
@@ -1213,7 +1209,7 @@ async function startCameraStream() {
 }
 
 function stopCamera() {
-  stopBarcodeDetection();
+
   if (state.cameraStream) {
     state.cameraStream.getTracks().forEach(t => t.stop());
     state.cameraStream = null;
@@ -1242,7 +1238,7 @@ function setCamMode(mode) {
   document.querySelectorAll('.cam-mode-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('cam-mode-scan')?.classList.add('active');
   const reticle = document.getElementById('camera-reticle');
-  stopBarcodeDetection();
+
   reticle.style.display = '';
   document.getElementById('cam-overlay-pill').textContent = 'Point at a food label';
 }
@@ -1268,121 +1264,6 @@ function captureFrame() {
   }, 'image/jpeg', 0.93);
 }
 
-/* ── BARCODE DETECTION using BarcodeDetector API */
-function startBarcodeDetection() {
-  stopBarcodeDetection();
-  if (!('BarcodeDetector' in window)) {
-    document.getElementById('cam-overlay-pill').textContent = 'Barcode API not supported on this device';
-    document.getElementById('cam-overlay-pill').classList.add('show');
-    return;
-  }
-  const detector = new BarcodeDetector({ formats: [
-    'ean_13','ean_8','upc_a','upc_e','qr_code','code_128','code_39','itf','data_matrix'
-  ]});
-  const pill = document.getElementById('cam-overlay-pill');
-  pill.textContent = '▦ Scanning for barcodes…';
-  pill.classList.add('show');
-
-  state.barcodeTimer = setInterval(async () => {
-    const video = document.getElementById('camera-video');
-    if (!video || !video.readyState || video.readyState < 2) return;
-    try {
-      const barcodes = await detector.detect(video);
-      if (barcodes.length > 0) {
-        const bc = barcodes[0];
-        stopBarcodeDetection();
-        pill.textContent = '✓ Barcode: ' + bc.rawValue;
-        showBarcodeHit(bc.boundingBox);
-        setTimeout(() => fetchBarcodeProduct(bc.rawValue), 400);
-      }
-    } catch {}
-  }, 300);
-}
-
-function stopBarcodeDetection() {
-  if (state.barcodeTimer) { clearInterval(state.barcodeTimer); state.barcodeTimer = null; }
-  const pill = document.getElementById('cam-overlay-pill');
-  if (pill) { pill.classList.remove('show'); pill.textContent = ''; }
-  const hit = document.getElementById('barcode-hit');
-  if (hit) hit.style.display = 'none';
-}
-
-function showBarcodeHit(box) {
-  const hit    = document.getElementById('barcode-hit');
-  const canvas = document.getElementById('camera-video');
-  if (!hit || !canvas) return;
-  const rect = canvas.getBoundingClientRect();
-  const scX  = rect.width  / (canvas.videoWidth  || rect.width);
-  const scY  = rect.height / (canvas.videoHeight || rect.height);
-  hit.style.cssText = `display:block;left:${rect.left + box.x*scX}px;top:${rect.top+box.y*scY}px;
-    width:${box.width*scX}px;height:${box.height*scY}px`;
-}
-
-async function fetchBarcodeProduct(barcode) {
-  stopCamera();
-  goTo('reading');
-  startVine();
-  try {
-    const res  = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
-    const json = await res.json();
-    if (json.status !== 1 || !json.product) {
-      showToast('Product not found — try label scan');
-      goTo('scan'); return;
-    }
-    const p = json.product;
-    const n = p.nutriments || {};
-    // Map Open Food Facts to our result schema
-    const data = {
-      product_name:    p.product_name || barcode,
-      product_category:p.categories_tags?.[0]?.replace('en:','') || 'Packaged food',
-      score: Math.max(1, Math.min(10, Math.round(10 - (n['nova-group'] || 3) * 1.5))),
-      verdict: ['Excellent','Excellent','Good','Acceptable','Poor','Poor'][Math.min(5,p.nutriscore_score ? Math.floor(p.nutriscore_score/20) : 2)],
-      summary: p.ingredients_text_en || p.ingredients_text || 'No ingredient text available.',
-      nutrient_breakdown: [
-        {name:'Calories',    value:Math.round(n['energy-kcal_100g']||0), unit:'kcal', rating:'moderate', impact:'Total energy per 100g'},
-        {name:'Protein',     value:Math.round(n['proteins_100g']||0),     unit:'g',    rating:'good',     impact:'Amino acid source'},
-        {name:'Carbs',       value:Math.round(n['carbohydrates_100g']||0),unit:'g',    rating:'moderate', impact:'Primary energy source'},
-        {name:'Fat',         value:Math.round(n['fat_100g']||0),           unit:'g',    rating:'moderate', impact:'Macronutrient fat'},
-        {name:'Sugar',       value:Math.round(n['sugars_100g']||0),        unit:'g',    rating: n['sugars_100g']>12?'bad':'moderate', impact:'Simple carbohydrates'},
-        {name:'Fibre',       value:Math.round((n['fiber_100g']||0)*10)/10, unit:'g',    rating: n['fiber_100g']>6?'good':'moderate', impact:'Dietary fibre'},
-        {name:'Sodium',      value:Math.round(n['sodium_100g']*1000||0),   unit:'mg',   rating: n['sodium_100g']>0.6?'bad':'moderate', impact:'Salt content'},
-      ],
-      pros: p.nutriments?.['proteins_100g']>10 ? ['Good protein content'] : ['Packaged food'],
-      cons: n['sugars_100g']>10 ? ['High sugar content'] : [],
-      ingredients_spotlight: (p.ingredients || []).slice(0,12).map(i => ({
-        name: i.text, type: i.vegetarian === 'yes' ? 'natural' : 'additive',
-        health_impact: `Present at ${Math.round((i.percent_estimate||0))}% of product`
-      })),
-      better_alternative: null,
-      is_barcode_scan: true,
-      nutriscore: p.nutriscore_grade?.toUpperCase(),
-      nova_group: n['nova-group'],
-    };
-    buildRiskFlags(data, p);
-    state.lastResult = data;
-    saveHistory(data, null);
-    buildConstellationData(data);
-    setTimeout(() => { renderReveal(data); goTo('reveal'); }, 2200);
-  } catch(e) {
-    showToast('⚠️ Could not fetch product. Try label scan.');
-    goTo('scan');
-  }
-}
-
-function buildRiskFlags(data, product) {
-  const additives = (product.additives_tags || []);
-  const flags = [];
-  if (data.nova_group >= 4) flags.push({label:'Ultra-processed',level:'red',icon:'⚠️'});
-  if (additives.some(a => a.includes('621'))) flags.push({label:'MSG',level:'orange',icon:'🧪'});
-  if (additives.some(a => a.includes('102') || a.includes('104') || a.includes('110') || a.includes('122'))) flags.push({label:'Artificial colour',level:'red',icon:'🎨'});
-  if (additives.some(a => a.includes('211'))) flags.push({label:'Sodium benzoate',level:'orange',icon:'⚗️'});
-  if ((data.nutrient_breakdown?.find(n=>n.name==='Sugar')?.value||0) > 15) flags.push({label:'High sugar',level:'red',icon:'🍬'});
-  if ((data.nutrient_breakdown?.find(n=>n.name==='Sodium')?.value||0) > 800) flags.push({label:'High sodium',level:'orange',icon:'🧂'});
-  if (product.allergens_tags?.includes('en:milk')) flags.push({label:'Dairy',level:'yellow',icon:'🥛'});
-  if (product.allergens_tags?.includes('en:gluten')) flags.push({label:'Gluten',level:'yellow',icon:'🌾'});
-  if (product.allergens_tags?.includes('en:peanuts')) flags.push({label:'Peanuts',level:'red',icon:'🥜'});
-  data.risk_flags = flags;
-}
 
 /* ── FILE UPLOAD */
 function handlePortalTap() {

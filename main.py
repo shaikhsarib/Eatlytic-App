@@ -720,20 +720,34 @@ def get_server_ocr(content: bytes, lang_hint: str = "en") -> dict:
         img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
     img_np = np.array(img)
 
-    active_reader = get_reader_for(lang_hint)
-    results = active_reader.readtext(img_np, detail=1)
-    words = [r[1] for r in results]
-    confidences = [r[2] for r in results]
-    text = " ".join(words)
-    avg_conf = sum(confidences) / len(confidences) if confidences else 0
-    word_count = len(words)
+    def _run_ocr(lang):
+        active_reader = get_reader_for(lang)
+        results = active_reader.readtext(img_np, detail=1)
+        words = [r[1] for r in results]
+        confidences = [r[2] for r in results]
+        text = " ".join(words)
+        avg_conf = sum(confidences) / len(confidences) if confidences else 0
+        word_count = len(words)
+        return {
+            "text": text,
+            "word_count": word_count,
+            "avg_confidence": round(avg_conf, 3),
+            "is_readable": word_count >= 3 and avg_conf > 0.15,
+        }
 
-    result = {
-        "text": text,
-        "word_count": word_count,
-        "avg_confidence": round(avg_conf, 3),
-        "is_readable": word_count >= 3 and avg_conf > 0.15,
-    }
+    result = _run_ocr(lang_hint)
+
+    # INDIAN SCRIPT FALLBACK
+    if lang_hint == "en" and result["avg_confidence"] < 0.60:
+        logger.info("English confidence < 60%, triggering Indian Script Fallback (hi, ta)...")
+        res_hi = _run_ocr("hi")
+        res_ta = _run_ocr("ta")
+        
+        best_fallback = sorted([res_hi, res_ta], key=lambda x: x["avg_confidence"], reverse=True)[0]
+        if best_fallback["avg_confidence"] > result["avg_confidence"]:
+            result = best_fallback
+            logger.info("Indian script fallback selected over English.")
+
     ocr_cache[cache_key] = result
     save_cache(ocr_cache, OCR_CACHE_FILE)
     return result
@@ -1015,12 +1029,26 @@ async def analyze_product(
                     f"use your domain knowledge to infer likely values."
                 )
 
+        persona_rules = "GENERAL ADULT: Apply standard FSSAI limits."
+        p_lower = persona.lower()
+        if "diabetic" in p_lower:
+            persona_rules = "DIABETIC RULES: Multiply sugar penalty by 3x. Flag any Maltodextrin or Dextrose exactly like sugar."
+        elif "child" in p_lower or "baby" in p_lower or "parent" in p_lower:
+            persona_rules = "CHILD RULES: Multiply sodium penalty by 2x. Flag all artificial colors."
+        elif "pregnant" in p_lower:
+            persona_rules = "PREGNANCY RULES: Give bonus for folic acid and protein. Flag any raw/unpasteurized ingredients."
+        elif "senior" in p_lower:
+            persona_rules = "SENIOR RULES: Flag low fiber content strongly. Flag high sodium."
+        elif "gym" in p_lower or "athlete" in p_lower or "fitness" in p_lower:
+            persona_rules = "ATHLETE RULES: High sugar allowed if pre/post workout. High protein gives score bonus."
+
         prompt = f"""
 [INST] You are an expert nutritional scientist and health auditor. Analyze the product label below.
 {output_lang_instr}
 Target Persona: {persona}
 Age Group: {age_group}
 Product Category: {product_category}
+{persona_rules}
 {confidence_note}
 {blur_context}
 Label Text: "{extracted_text}"
@@ -1030,8 +1058,10 @@ Return ONLY valid JSON — no markdown, no preamble — with this exact structur
 {{
     "product_name": "Short product name from the label",
     "product_category": "Detected category (e.g. Snack, Dairy, Beverage)",
-    "score": <INTEGER 1-10 based on SCORING RUBRIC below — do NOT copy example numbers>,
+    "score": <INTEGER 1-10 based on SCORING RUBRIC below — modified by persona rules>,
     "verdict": "Two-word verdict",
+    "fake_claim_detected": <true if text claims 'No Added Sugar'/'Sugar-Free' BUT ingredients have Maltodextrin, Dextrose, Fructose, Corn Syrup, Date Syrup>,
+    "ingredients_raw": "Comma, separated, list, of, ingredients, extracted",
     "chart_data": [<Safe%>, <Moderate%>, <Risky%>],
     "summary": "Professional 2-sentence summary in {lang_name}.",
     "eli5_explanation": "Explain using simple words and emojis for a child in {lang_name}.",
@@ -1064,7 +1094,7 @@ STRICT SCORING RUBRIC — score MUST reflect actual label nutrition, not example
   1-2  : Ultra-processed, very high sugar/sodium/saturated fat, minimal nutritional value
 
 RULES:
-- score MUST match the actual nutrient values found — do NOT use 6 or 7 as a default
+- score MUST match the actual nutrient values found — modified by persona rules
 - chart_data must be [Safe%, Moderate%, Risky%] summing to exactly 100
 - nutrient "rating" must be one of: "good", "moderate", "caution", "bad"
 - age_warnings "status" must be one of: "good", "caution", "warning"
@@ -1093,6 +1123,25 @@ RULES:
             )
 
         result = json.loads(completion.choices[0].message.content)
+
+        # ── Step 7.5: Lie Detector & NOVA Classifier ──────────────────
+        if result.get("fake_claim_detected"):
+            result["verdict"] = "🚨 FAKE CLAIM: Brand claims 'No Sugar' but contains Sugar alternatives"
+            result["score"] = min(result.get("score", 5), 2)
+            if "Hidden Sugar" not in result.get("cons", []):
+                result.setdefault("cons", []).append("Hidden Sugar (Maltodextrin/Dextrose)")
+
+        raw_ing = str(result.get("ingredients_raw", "")).lower()
+        if raw_ing:
+            nova_triggers = [
+                "e471", "e442", "glycerol", "aspartame", "sucralose", 
+                "hydrogenated", "maltodextrin", "emulsifier", "artificial"
+            ]
+            hits = [t for t in nova_triggers if t in raw_ing]
+            if len(hits) >= 2:
+                result["nova_group"] = 4
+                result.setdefault("cons", []).append("⚠️ NOVA 4: Ultra-processed food")
+                result["score"] = min(result.get("score", 5), 3)
 
         # ── Step 8: Validate chart_data ───────────────────────────────
         if "chart_data" in result:
@@ -1574,22 +1623,58 @@ async def whatsapp_webhook(request: Request):
                 msg.body("⚠️ AI service unavailable. Full analysis at *eatlytic.com*")
             else:
                 web_ctx = get_live_search(f"health ingredients {ocr_r['text'][:80]}")
-                prompt = (
-                    f"In 5 bullet points, give a plain WhatsApp-friendly health "
-                    f'summary of this food label: "{ocr_r["text"][:400]}". '
-                    f"Start with the health score /10."
-                )
+                prompt = f"""
+[INST] CRITICAL: Respond ONLY in valid JSON. You are an expert.
+Target Persona: General Adult
+GENERAL ADULT: Apply standard FSSAI limits.
+Label Text: "{ocr_r['text']}"
+Web Context: "{web_ctx}"
+Return exactly this JSON:
+{{
+    "score": <1-10>,
+    "verdict": "Two-word verdict",
+    "fake_claim_detected": <true if text claims 'No Added Sugar'/'Sugar-Free' BUT ingredients have Maltodextrin, Dextrose, Fructose, Corn Syrup, Date Syrup>,
+    "ingredients_raw": "Comma, separated, list, of, ingredients, extracted",
+    "summary": "Professional 2-sentence summary",
+    "cons": ["Risk 1", "Risk 2"]
+}}
+[/INST]"""
                 comp = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
-                    max_tokens=400,
+                    max_tokens=600,
+                    response_format={"type": "json_object"}
                 )
-                summary = comp.choices[0].message.content.strip()
-                msg.body(
-                    f"🔍 *Eatlytic Analysis*\n\n{summary}\n\n"
-                    f"_Full analysis: eatlytic.com_"
-                )
+                
+                res = json.loads(comp.choices[0].message.content)
+                
+                # Apply Lie Detector + NOVA
+                if res.get("fake_claim_detected"):
+                    res["verdict"] = "🚨 FAKE CLAIM"
+                    res["score"] = min(res.get("score", 5), 2)
+                    if "Hidden Sugar" not in res.get("cons", []):
+                        res.setdefault("cons", []).append("Hidden Sugar (Maltodextrin/Dextrose/Fructose)")
+
+                raw_ing = str(res.get("ingredients_raw", "")).lower()
+                if raw_ing:
+                    hits = [t for t in ["e471", "e442", "glycerol", "aspartame", "sucralose", "hydrogenated", "maltodextrin", "emulsifier", "artificial"] if t in raw_ing]
+                    if len(hits) >= 2:
+                        res["score"] = min(res.get("score", 5), 3)
+                        res.setdefault("cons", []).append("⚠️ NOVA 4: Ultra-processed food")
+
+                def generate_whatsapp_response(r: dict, ocr: dict) -> str:
+                    if ocr.get("avg_confidence", 1) < 0.75:
+                        return "❌ Cannot Score\n\nThe label is too blurry or incomplete to provide a definitive score. Please send a clearer picture of the ingredients list."
+                    s = r.get("score", "?")
+                    v = r.get("verdict", "Analyzed")
+                    summ = r.get("summary", "")
+                    fl = r.get("cons", [])
+                    flags_t = "\n".join([f"- {f}" for f in fl]) if fl else "- None"
+                    return f"Eatlytic Score: {s}/10\n\n[{v}]\n{summ}\n\n⚠️ Risk Flags:\n{flags_t}"
+
+                final_text = generate_whatsapp_response(res, ocr_r)
+                msg.body(final_text)
         except Exception as e:
             logger.error(f"WhatsApp error: {e}")
             msg.body("⚠️ Something went wrong. Try again or visit *eatlytic.com*")
