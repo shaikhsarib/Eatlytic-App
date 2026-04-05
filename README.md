@@ -71,4 +71,4 @@ docker-compose up --build -d
 
 ## License
 
-This project is licensed under the MIT License.
+This is a proprietary, closed-source project. All rights reserved. No license is granted for unauthorized use, distribution, or reproduction.
