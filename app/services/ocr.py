@@ -3,6 +3,7 @@ app/services/ocr.py
 EasyOCR wrapper with lazy loading, caching, and label-presence detection.
 """
 
+import os
 import re
 import logging
 import hashlib
@@ -13,19 +14,21 @@ from io import BytesIO
 from app.models.db import get_ocr_cache, set_ocr_cache
 
 logger = logging.getLogger(__name__)
-DATA_DIR = __import__("os").path.join(__import__("os").getcwd(), "data")
-CACHE_DIR = __import__("os").environ.get("HF_HOME", "/app/.cache")
-MODEL_DIR = __import__("os").path.join(CACHE_DIR, "easyocr_models")
+DATA_DIR = os.path.join(os.getcwd(), "data")
+# Robust cache path: use local project dir on Windows, /app/.cache in Docker
+CACHE_DIR = os.environ.get("HF_HOME", os.path.join(os.getcwd(), ".cache"))
+MODEL_DIR = os.path.join(CACHE_DIR, "easyocr_models")
 
 _LANG_READERS: dict = {}
 _READERS_LOCK = threading.Lock()
+INDIAN_LANG_SET = ["en", "hi", "ta"]
 _EASYOCR_LANG_MAP = {
     "en": ["en"],
-    "hi": ["en", "hi"],
-    "zh": ["en", "ch_sim"],
-    "ta": ["en", "ta"],
+    "hi": INDIAN_LANG_SET,
+    "ta": INDIAN_LANG_SET,
     "te": ["en", "te"],
     "bn": ["en", "bn"],
+    "zh": ["en", "ch_sim"],
 }
 
 
@@ -52,7 +55,12 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
         return cached
 
     img = Image.open(BytesIO(content)).convert("RGB")
-    img.thumbnail((1200, 1200))
+    # Optimize: 1600px is the sweet spot for dense tables
+    w, h = img.size
+    max_dim = 1600
+    if max(w, h) > max_dim:
+        ratio = max_dim / max(w, h)
+        img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
     img_np = np.array(img)
     results = get_reader_for(lang_hint).readtext(img_np, detail=1)
     words = [r[1] for r in results]
@@ -92,6 +100,7 @@ LABEL_KEYWORDS = [
     "vitamin",
     "calcium",
     "iron",
+    "potassium",
     "per 100g",
     "per 100 g",
     "daily value",
@@ -103,7 +112,24 @@ LABEL_KEYWORDS = [
     "preservative",
     "flavour",
     "flavor",
+    "colour",
+    "color",
     "emulsifier",
+    "stabilizer",
+    "antioxidant",
+    "wheat",
+    "milk",
+    "soy",
+    "salt",
+    "water",
+    "oil",
+    "starch",
+    "extract",
+    "atta",
+    "maida",
+    "lecithin",
+    "maltodextrin",
+    "rising",
     "mg",
     "mcg",
     "kcal",
@@ -113,12 +139,15 @@ LABEL_KEYWORDS = [
     "g per",
     "per serving",
     "fssai",
+    "veg",
+    "non-veg",
     "best before",
     "mfg",
     "mrp",
     "net wt",
     "manufactured",
     "packed",
+    "distributed",
 ]
 FRONT_PACK_SIGNALS = [
     "new",
@@ -139,6 +168,19 @@ FRONT_PACK_SIGNALS = [
     "light",
     "baked",
     "roasted",
+    "flavor",
+    "crisps",
+    "chips",
+    "potato",
+    "style",
+    "authentic",
+    "traditional",
+    "indulge",
+    "real",
+    "nature",
+    "best",
+    "quality",
+    "value",
 ]
 NUTRITION_TABLE_ANCHORS = [
     "per 100g",
@@ -155,19 +197,27 @@ NUTRITION_TABLE_ANCHORS = [
     "kcal",
     "kj",
     "energy",
+    "protein",
+    "carbohydrate",
+    "fat",
+    "sugars",
     "nutrition facts",
     "nutritional information",
+    "nutrition information",
     "total fat",
     "saturated fat",
     "trans fat",
     "total carbohydrate",
     "dietary fiber",
+    "total sugars",
     "ingredients:",
+    "ingredients list",
     "fssai",
     "best before",
     "mfg",
     "mrp",
     "net wt",
+    "nutrichoice",
 ]
 
 
@@ -221,15 +271,18 @@ def detect_label_presence(ocr_text: str) -> dict:
     }
 
 
-OCR_CONFIDENCE_THRESHOLD = 0.70
+# Gate rejects if confidence is too low.
+# Tuning: 30% is much safer for noisy labels, especially with word-count bypass
+OCR_CONFIDENCE_THRESHOLD = 0.30
 
 
 def passes_confidence_gate(ocr_result: dict) -> tuple[bool, str]:
     """Check if OCR confidence meets minimum threshold. Returns (pass, message)."""
     avg_conf = ocr_result.get("avg_confidence", 0.0)
-    if avg_conf < OCR_CONFIDENCE_THRESHOLD:
+    word_count = ocr_result.get("word_count", 0)
+    if avg_conf < OCR_CONFIDENCE_THRESHOLD and word_count < 20:
         return False, (
-            f"\u26a0\ufe0f Image too blurry (confidence: {avg_conf:.0%}). "
-            "Please retake the photo in better lighting."
+            f"⚠️ Image quality too low (confidence: {avg_conf:.0%}). "
+            "Please take a closer photo of the label."
         )
     return True, ""

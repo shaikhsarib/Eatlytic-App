@@ -95,23 +95,23 @@ class TestOCRConfidenceGate:
     def test_low_confidence_blocked(self):
         from app.services.ocr import passes_confidence_gate
 
-        ocr = {"text": "Pr te n 8g F t 5g", "avg_confidence": 0.45, "word_count": 8}
+        ocr = {"text": "Pr te n 8g F t 5g", "avg_confidence": 0.15, "word_count": 8}
         passes, msg = passes_confidence_gate(ocr)
         assert passes is False
-        assert "too blurry" in msg.lower()
+        assert "too low" in msg.lower()
 
     def test_threshold_boundary(self):
-        """Exactly 0.70 should pass."""
+        """Exactly 0.30 should pass."""
         from app.services.ocr import passes_confidence_gate
 
-        ocr = {"text": "test", "avg_confidence": 0.70, "word_count": 1}
+        ocr = {"text": "test", "avg_confidence": 0.30, "word_count": 1}
         passes, msg = passes_confidence_gate(ocr)
         assert passes is True
 
     def test_just_below_threshold_blocked(self):
         from app.services.ocr import passes_confidence_gate
 
-        ocr = {"text": "test", "avg_confidence": 0.69, "word_count": 1}
+        ocr = {"text": "test", "avg_confidence": 0.29, "word_count": 1}
         passes, msg = passes_confidence_gate(ocr)
         assert passes is False
 

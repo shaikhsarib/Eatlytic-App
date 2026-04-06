@@ -33,7 +33,7 @@ twilio
 # supabase
 
 # Payments
-# razorpay
+razorpay
 
 # Testing
 pytest

@@ -13,7 +13,7 @@ from io import BytesIO
 logger = logging.getLogger(__name__)
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
-MAX_DIMENSION = 2048
+MAX_DIMENSION = 1600
 
 
 def validate_image(content: bytes) -> bytes:
@@ -80,7 +80,7 @@ def assess_image_quality(content: bytes) -> dict:
             severity, is_blurry = "severe", True
         elif comp < 35:
             severity, is_blurry = "moderate", True
-        elif comp < 55:
+        elif comp < 50:
             severity, is_blurry = "mild", True
         else:
             severity, is_blurry = "none", False
@@ -93,7 +93,7 @@ def assess_image_quality(content: bytes) -> dict:
             "local_median_score": round(loc, 2),
             "is_blurry": is_blurry,
             "blur_severity": severity,
-            "quality": "poor" if comp < 35 else ("fair" if comp < 55 else "good"),
+            "quality": "poor" if comp < 30 else ("fair" if comp < 50 else "good"),
         }
     except Exception as exc:
         logger.error("Blur detection error: %s", exc)

@@ -93,6 +93,9 @@ def build_analysis_prompt(
     elif "gym" in p_lower or "athlete" in p_lower or "fitness" in p_lower:
         persona_rules = "ATHLETE RULES: High sugar allowed if pre/post workout. High protein gives score bonus."
 
+    # Sanitise extracted_text to prevent prompt injection
+    safe_text = extracted_text.replace('"', "'").replace("\n", " ").strip()
+    
     return f"""[INST]
 You are an expert nutritional scientist and food safety auditor.
 CRITICAL: Respond ENTIRELY in {lang_name}. Every text field MUST be in {lang_name}.
@@ -100,7 +103,7 @@ Persona: {persona} | Age: {age_group} | Category: {product_category}
 {persona_rules}
 {conf_note}
 {blur_ctx}
-Label Text: "{extracted_text}"
+Label Text: "{safe_text}"
 Web Context: "{web_context}"
 
 Return ONLY valid JSON — no markdown, no preamble:
@@ -194,7 +197,8 @@ def sanitise_result(result: dict) -> dict:
             scaled[scaled.index(max(scaled))] += 100 - sum(scaled)
             result["chart_data"] = scaled
     else:
-        result["chart_data"] = [70, 20, 10]
+        # Default to a neutral state if LLM fails to provide chart data
+        result["chart_data"] = [0, 0, 0]
 
     for n in result.get("nutrient_breakdown", []):
         m = re.search(r"[\d]+\.?[\d]*", str(n.get("value", "")).replace(",", "."))

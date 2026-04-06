@@ -22,6 +22,13 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+from app.models.db import (
+    init_db, db_conn, get_ocr_cache, set_ocr_cache, get_ai_cache, set_ai_cache
+)
+from app.services.ocr import run_ocr, detect_label_presence, passes_confidence_gate
+from app.services.image import assess_image_quality, deblur_and_enhance, image_to_b64, ocr_quality_score
+from app.services.llm import analyse_label, build_analysis_prompt
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -34,127 +41,34 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
 
-# --- PERSISTENT STORAGE ---
-DATA_DIR = os.path.join(os.getcwd(), "data")
-# Robust cache path: use local project dir on Windows, /app/.cache in Docker
-CACHE_DIR = os.environ.get("HF_HOME", os.path.join(os.getcwd(), ".cache"))
-MODEL_DIR = os.path.join(CACHE_DIR, "easyocr_models")
+# Initialize Database
+init_db()
 
-for d in [MODEL_DIR, DATA_DIR]:
-    if not os.path.exists(d):
-        os.makedirs(d, exist_ok=True)
-
-# --- CACHE SETUP ---
-OCR_CACHE_FILE = os.path.join(DATA_DIR, "ocr_cache.json")
-AI_CACHE_FILE = os.path.join(DATA_DIR, "ai_cache.json")
-
-
-def load_cache(file_path):
-    if os.path.exists(file_path):
-        try:
-            with open(file_path, "r") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            return {}
-    return {}
-
-
-class NumpyEncoder(json.JSONEncoder):
-    """Custom encoder for numpy data types"""
-    def default(self, obj):
-        if isinstance(obj, np.bool_):
-            return bool(obj)
-        if isinstance(obj, (np.floating, np.complexfloating)):
-            return float(obj)
-        if isinstance(obj, np.integer):
-            return int(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return super(NumpyEncoder, self).default(obj)
-
-
-def save_cache(cache, file_path):
-    try:
-        with open(file_path, "w") as f:
-            json.dump(cache, f, cls=NumpyEncoder)
-    except IOError:
-        pass
-
-
-ocr_cache = load_cache(OCR_CACHE_FILE)
-ai_cache = load_cache(AI_CACHE_FILE)
-
-# --- SCAN LIMITS & API KEYS (Task 11 + 13) ---
-SCAN_LIMIT_FILE = os.path.join(DATA_DIR, "scan_limits.json")
-API_KEYS_FILE = os.path.join(DATA_DIR, "api_keys.json")
+# --- SCAN LIMITS & API KEYS (DB-backed) ---
 FREE_SCAN_LIMIT = 10
-
-
-def load_scan_limits():
-    if os.path.exists(SCAN_LIMIT_FILE):
-        try:
-            with open(SCAN_LIMIT_FILE) as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            return {}
-    return {}
-
-
-def save_scan_limits(data):
-    try:
-        with open(SCAN_LIMIT_FILE, "w") as f:
-            json.dump(data, f, cls=NumpyEncoder)
-    except IOError:
-        pass
-
-
-def load_api_keys():
-    if os.path.exists(API_KEYS_FILE):
-        try:
-            with open(API_KEYS_FILE) as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            return {}
-    return {}
-
-
-def save_api_keys(data):
-    try:
-        with open(API_KEYS_FILE, "w") as f:
-            json.dump(data, f, cls=NumpyEncoder)
-    except IOError:
-        pass
-
-
-scan_limits = load_scan_limits()
-api_keys_db = load_api_keys()
 
 # --- API KEY AUTH (Task 13) ---
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 def verify_api_key(api_key: str = Security(api_key_header)):
-    global api_keys_db
-    api_keys_db = load_api_keys()
     if not api_key:
         return None
-    key_data = api_keys_db.get(api_key)
-    if key_data and isinstance(key_data, dict):
-        return dict(key_data)
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM api_keys WHERE api_key=?", (api_key,)).fetchone()
+    if row:
+        return dict(row)
     return None
 
 
 def generate_api_key(client_name: str, plan: str = "business") -> str:
-    global api_keys_db
     key = "eak_" + secrets.token_urlsafe(32)
-    api_keys_db[key] = {
-        "name": client_name,
-        "plan": plan,
-        "scans_this_month": 0,
-        "month": "",
-        "active": True,
-    }
-    save_api_keys(api_keys_db)
+    month_key = datetime.date.today().isoformat()[:7]
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT INTO api_keys(api_key, client_name, plan, scans_this_month, month, active) VALUES(?,?,?,?,?,1)",
+            (key, client_name, plan, 0, month_key)
+        )
     return key
 
 
@@ -166,40 +80,30 @@ def get_device_key(request: Request) -> str:
 
 
 def check_and_increment_scan(device_key: str) -> dict:
-    global scan_limits
-    scan_limits = load_scan_limits()
     month_key = datetime.date.today().isoformat()[:7]
-    if device_key not in scan_limits:
-        scan_limits[device_key] = {}
-    u = scan_limits[device_key]
-    if u.get("month") != month_key:
-        u["month"] = month_key
-        u["count"] = 0
-        u["pro"] = u.get("pro", False)
-    if u.get("pro"):
-        u["count"] += 1
-        save_scan_limits(scan_limits)
-        return {
-            "allowed": True,
-            "scans_used": u["count"],
-            "scans_remaining": 9999,
-            "is_pro": True,
-        }
-    if u["count"] >= FREE_SCAN_LIMIT:
-        return {
-            "allowed": False,
-            "scans_used": u["count"],
-            "scans_remaining": 0,
-            "is_pro": False,
-        }
-    u["count"] += 1
-    save_scan_limits(scan_limits)
-    return {
-        "allowed": True,
-        "scans_used": u["count"],
-        "scans_remaining": FREE_SCAN_LIMIT - u["count"],
-        "is_pro": False,
-    }
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM devices WHERE device_key=?", (device_key,)).fetchone()
+        if not row:
+            conn.execute("INSERT INTO devices(device_key, month, scan_count) VALUES(?,?,0)", (device_key, month_key))
+            u = {"is_pro": 0, "month": month_key, "scan_count": 0}
+        else:
+            u = dict(row)
+        
+        if u["month"] != month_key:
+            conn.execute("UPDATE devices SET month=?, scan_count=0 WHERE device_key=?", (month_key, device_key))
+            u["month"] = month_key
+            u["scan_count"] = 0
+            
+        if u["is_pro"]:
+            conn.execute("UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?", (device_key,))
+            return {"allowed": True, "scans_used": u["scan_count"] + 1, "scans_remaining": 9999, "is_pro": True}
+            
+        if u["scan_count"] >= FREE_SCAN_LIMIT:
+            return {"allowed": False, "scans_used": u["scan_count"], "scans_remaining": 0, "is_pro": False}
+            
+        conn.execute("UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?", (device_key,))
+        new_count = u["scan_count"] + 1
+        return {"allowed": True, "scans_used": new_count, "scans_remaining": FREE_SCAN_LIMIT - new_count, "is_pro": False}
 
 
 # --- CLIENTS ---
@@ -210,647 +114,17 @@ if not GROQ_API_KEY:
 else:
     client = Groq(api_key=GROQ_API_KEY)
 
-# --- MULTI-LANGUAGE READER CACHE ---
-_LANG_READERS: dict = {}
-_READER_LOCK = threading.Lock()
-
-# Consolidate Indian languages into ONE reader ['en', 'hi', 'ta'] 
-# to prevent "size mismatch" errors caused by switching between small/large charsets.
-INDIAN_LANG_SET = ["en", "hi", "ta"]
-
-_EASYOCR_LANG_MAP = {
-    "en": ["en"],
-    "hi": INDIAN_LANG_SET,
-    "ta": INDIAN_LANG_SET,
-    "te": ["en", "te"],
-    "bn": ["en", "bn"],
-    "zh": ["en", "ch_sim"],
-}
-
-def _init_readers():
-    """Warms up the engine to prevent cold-start latency."""
-    logger.info("🎨 Pre-initializing OCR readers (English & Pan-Indian models)...")
-    get_reader_for("en")
-    get_reader_for("hi") # This will also prep 'ta'
-    logger.info("✅ OCR Readers ready.")
-
-def get_reader_for(lang_hint: str):
-    langs = _EASYOCR_LANG_MAP.get(lang_hint, ["en"])
-    # Key is sorted to ensure ["en", "hi"] and ["hi", "en"] use the same instance
-    key = "_".join(sorted(langs))
-    
-    with _READER_LOCK:
-        if key not in _LANG_READERS:
-            try:
-                logger.info(f"💾 Loading reader into memory: {langs}")
-                _LANG_READERS[key] = easyocr.Reader(
-                    langs, 
-                    gpu=False, 
-                    model_storage_directory=MODEL_DIR,
-                    download_enabled=True # Allow download if missing locally
-                )
-            except Exception as e:
-                logger.error(f"❌ Failed to load reader {langs}: {e}")
-                # Ultimate fallback: return the English reader if it exists
-                if "en" in _LANG_READERS:
-                    return _LANG_READERS["en"]
-                # Otherwise, try to create English reader on the fly
-                return easyocr.Reader(["en"], gpu=False, model_storage_directory=MODEL_DIR)
-        
-    return _LANG_READERS.get(key)
-
-_init_readers()
-
-
-#  SECTION 1: MULTI-METHOD BLUR DETECTION
-# ══════════════════════════════════════════════════════════════════════
-
-
-def _laplacian_score(gray: np.ndarray) -> float:
-    """
-    Laplacian variance — high sensitivity to edges.
-    Scores below ~100 typically indicate blur.
-    """
-    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
-
-
-def _tenengrad_score(gray: np.ndarray) -> float:
-    """
-    Tenengrad — sum of squared Sobel gradient magnitudes.
-    Very robust for detecting out-of-focus / motion blur.
-    Normalised to image pixel count for size-independence.
-    """
-    gx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
-    gy = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
-    mag = gx**2 + gy**2
-    return float(np.mean(mag))
-
-
-def _brenner_score(gray: np.ndarray) -> float:
-    """
-    Brenner gradient — fast and sensitive to fine text edges.
-    Computed as mean squared difference between pixels 2 apart.
-    """
-    diff = gray[:, 2:].astype(np.float64) - gray[:, :-2].astype(np.float64)
-    return float(np.mean(diff**2))
-
-
-def _local_blur_map(gray: np.ndarray, block: int = 64) -> float:
-    h, w = gray.shape
-    scores = []
-    for y in range(0, max(h - block + 1, 1), block):
-        for x in range(0, max(w - block + 1, 1), block):
-            patch = gray[y : y + block, x : x + block]
-            scores.append(cv2.Laplacian(patch, cv2.CV_64F).var())
-    return float(np.median(scores)) if scores else 0.0
-
-
-def assess_image_quality(content: bytes) -> dict:
-    """
-    Multi-method blur detection combining:
-    • Laplacian variance (global)
-    • Tenengrad (gradient energy)
-    • Brenner gradient (text sensitivity)
-    • Local block-median (spatial robustness)
-    Returns a rich quality dict with per-method scores.
-    """
-    try:
-        img = Image.open(BytesIO(content)).convert("RGB")
-        img_np = np.array(img)
-        gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-
-        lap = _laplacian_score(gray)
-        ten = _tenengrad_score(gray)
-        bren = _brenner_score(gray)
-        local = _local_blur_map(gray)
-
-        # Normalise scores to 0-100 for consistent comparison
-        lap_norm = min(lap / 300.0 * 100, 100)
-        ten_norm = min(ten / 500.0 * 100, 100)
-        bren_norm = min(bren / 200.0 * 100, 100)
-        local_norm = min(local / 300.0 * 100, 100)
-
-        # Weighted composite: local_median carries the most weight
-        composite = (
-            0.25 * lap_norm + 0.20 * ten_norm + 0.20 * bren_norm + 0.35 * local_norm
-        )
-
-        # --- RESOLUTION PENALTY (NEW) ---
-        # Sharpness isn't enough; we need enough pixels for OCR.
-        # Images smaller than 800px on the short side get a linear penalty.
-        h, w = gray.shape
-        min_dim = min(h, w)
-        res_penalty = 1.0
-        if min_dim < 800:
-            res_penalty = (min_dim / 800.0) ** 1.5 # Exponential penalty for very small images
-        
-        composite *= res_penalty
-
-        # Blur severity bands -- UPDATED for better user experience
-        # 0-15: severe, 15-35: moderate, 35-50: mild, 50+: none
-        if composite < 15:
-            severity = "severe"
-            is_blurry = True
-        elif composite < 35:
-            severity = "moderate"
-            is_blurry = True
-        elif composite < 50:
-            severity = "mild"
-            is_blurry = True  # still attempt enhancement
-        else:
-            severity = "none"
-            is_blurry = False
-
-        # UI Quality Label based on composite score
-        if composite < 30:    quality = "poor"
-        elif composite < 50:  quality = "fair"
-        else:                 quality = "good"
-
-        return {
-            "blur_score": round(composite, 2),
-            "laplacian_score": round(lap, 2),
-            "tenengrad_score": round(ten, 2),
-            "brenner_score": round(bren, 2),
-            "local_median_score": round(local, 2),
-            "resolution": f"{w}x{h}",
-            "res_penalty": round(res_penalty, 2),
-            "is_blurry": is_blurry,
-            "blur_severity": severity,
-            "quality": quality,
-        }
-    except Exception as e:
-        logger.error(f"Blur detection error: {e}")
-        return {
-            "blur_score": 0,
-            "laplacian_score": 0,
-            "tenengrad_score": 0,
-            "brenner_score": 0,
-            "local_median_score": 0,
-            "is_blurry": True,
-            "blur_severity": "unknown",
-            "quality": "unknown",
-        }
-
-
-# ══════════════════════════════════════════════════════════════════════
-#  SECTION 2: DEBLURRING & IMAGE ENHANCEMENT PIPELINE
-# ══════════════════════════════════════════════════════════════════════
-
-
-def _wiener_deconvolution(
-    gray: np.ndarray, psf_size: int = 5, noise_ratio: float = 0.02
-) -> np.ndarray:
-    """
-    Blind Wiener deconvolution using an estimated Gaussian PSF.
-    Works in the frequency domain:
-        restored = (H* / (|H|^2 + K)) * Y
-    where H = FFT of the PSF, Y = FFT of the blurred image, K = noise ratio.
-    Effective for Gaussian and mild motion blur.
-    """
-    # Clamp PSF size to valid odd numbers
-    psf_size = max(3, psf_size | 1)
-
-    # Build Gaussian PSF
-    psf = cv2.getGaussianKernel(psf_size, psf_size / 3.0)
-    psf = psf @ psf.T
-    psf /= psf.sum()
-
-    h, w = gray.shape
-    psf_padded = np.zeros_like(gray, dtype=np.float64)
-    ph, pw = psf.shape
-    psf_padded[:ph, :pw] = psf
-
-    # Roll to centre the PSF
-    psf_padded = np.roll(psf_padded, -ph // 2, axis=0)
-    psf_padded = np.roll(psf_padded, -pw // 2, axis=1)
-
-    # Frequency-domain Wiener filter
-    Y = np.fft.fft2(gray.astype(np.float64) / 255.0)
-    H = np.fft.fft2(psf_padded)
-    H_conj = np.conj(H)
-    W = H_conj / (np.abs(H) ** 2 + noise_ratio)
-    restored = np.real(np.fft.ifft2(W * Y))
-
-    # Normalise to uint8
-    restored = np.clip(restored * 255.0, 0, 255).astype(np.uint8)
-    return restored
-
-
-def _unsharp_mask(
-    img_np: np.ndarray, strength: float = 1.5, radius: int = 3
-) -> np.ndarray:
-    """
-    Unsharp masking:  sharpened = original + strength * (original − blurred)
-    Works on colour images; more robust and artefact-free than Wiener for
-    already near-sharp images.
-    """
-    blurred = cv2.GaussianBlur(img_np, (radius * 2 + 1, radius * 2 + 1), 0)
-    mask = cv2.subtract(img_np.astype(np.int16), blurred.astype(np.int16))
-    sharp = np.clip(img_np.astype(np.float32) + strength * mask, 0, 255)
-    return sharp.astype(np.uint8)
-
-
-def _apply_clahe(img_np: np.ndarray, clip: float = 2.5, tile: int = 8) -> np.ndarray:
-    """
-    CLAHE (Contrast-Limited Adaptive Histogram Equalisation) applied to the
-    L-channel of LAB colour space.  Preserves hue / saturation while
-    dramatically improving local contrast in dim or washed-out images.
-    """
-    lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
-    clahe = cv2.createCLAHE(clipLimit=clip, tileGridSize=(tile, tile))
-    lab[:, :, 0] = clahe.apply(lab[:, :, 0])
-    return cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
-
-
-def _denoise(img_np: np.ndarray, h: int = 6) -> np.ndarray:
-    """
-    Non-local means denoising. Removes sensor/JPEG noise that unsharp masking
-    would otherwise amplify, giving cleaner text edges post-sharpening.
-    """
-    bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-    bgr_denoised = cv2.fastNlMeansDenoisingColored(bgr, None, h, h, 7, 21)
-    return cv2.cvtColor(bgr_denoised, cv2.COLOR_BGR2RGB)
-
-
-def deblur_and_enhance(content: bytes, severity: str = "moderate") -> tuple[bytes, str]:
-    """
-    Full deblurring & enhancement pipeline.  Returns (enhanced_bytes, method_log).
-    Pipeline stages (applied in order):
-    1. Upscale small images to improve OCR accuracy.
-    2. Denoise (mild NLM pass).
-    3. Wiener deconvolution on grey channel   — removes Gaussian/defocus blur.
-    4. Colour unsharp masking                 — sharpens edges/text.
-    5. CLAHE                                  — restores contrast in dark areas.
-    6. Final light sharpening pass.
-    Strength is tuned to blur severity:
-        severe   → aggressive PSF + strong unsharp
-        moderate → standard settings
-        mild     → gentle enhancement only
-    """
-    img = Image.open(BytesIO(content)).convert("RGB")
-    img_np = np.array(img)
-    methods_used = []
-
-    # ── Stage 1: Upscale if too small ──────────────────────────────────
-    h, w = img_np.shape[:2]
-    target_short = 1200
-    short_side = min(h, w)
-    if short_side < target_short:
-        scale = target_short / short_side
-        new_h = int(h * scale)
-        new_w = int(w * scale)
-        img_np = cv2.resize(img_np, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
-        methods_used.append(f"upscale({new_w}×{new_h})")
-
-    # ── Stage 2: Denoise ──────────────────────────────────────────────
-    if severity in ("severe", "moderate"):
-        h_param = 8 if severity == "severe" else 5
-        img_np = _denoise(img_np, h=h_param)
-        methods_used.append(f"NLM-denoise(h={h_param})")
-
-    # ── Stage 3: Wiener deconvolution (grey channel) ───────────────────
-    if severity != "mild":
-        gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-        psf_size = 9 if severity == "severe" else 5
-        noise_ratio = 0.01 if severity == "severe" else 0.025
-        restored = _wiener_deconvolution(gray, psf_size, noise_ratio)
-        # Blend restored grey back: convert to LAB, replace L
-        lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
-        lab[:, :, 0] = restored
-        img_np = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
-        methods_used.append(f"Wiener(psf={psf_size},K={noise_ratio})")
-
-    # ── Stage 4: Unsharp masking ───────────────────────────────────────
-    strength_map = {"severe": 2.2, "moderate": 1.8, "mild": 1.2}
-    radius_map = {"severe": 4, "moderate": 3, "mild": 2}
-    strength = strength_map.get(severity, 1.8)
-    radius = radius_map.get(severity, 3)
-    img_np = _unsharp_mask(img_np, strength=strength, radius=radius)
-    methods_used.append(f"unsharp(s={strength},r={radius})")
-
-    # ── Stage 5: CLAHE contrast enhancement ───────────────────────────
-    clip_map = {"severe": 3.0, "moderate": 2.5, "mild": 1.8}
-    clip = clip_map.get(severity, 2.5)
-    img_np = _apply_clahe(img_np, clip=clip)
-    methods_used.append(f"CLAHE(clip={clip})")
-
-    # ── Stage 6: Mild final sharpening pass ───────────────────────────
-    sharpen_kernel = np.array(
-        [[0, -0.3, 0], [-0.3, 2.2, -0.3], [0, -0.3, 0]], dtype=np.float32
-    )
-    img_np = cv2.filter2D(img_np, -1, sharpen_kernel)
-    img_np = np.clip(img_np, 0, 255).astype(np.uint8)
-    methods_used.append("sharpen-kernel")
-
-    # ── Encode to bytes ───────────────────────────────────────────────
-    pil_out = Image.fromarray(img_np)
-    buf = BytesIO()
-    pil_out.save(buf, format="JPEG", quality=92)
-    return buf.getvalue(), " → ".join(methods_used)
-
-
-def image_to_b64(content: bytes) -> str:
-    """Convert raw image bytes to a base-64 data-URL for front-end display."""
-    return "data:image/jpeg;base64," + base64.b64encode(content).decode()
-
-
-# ══════════════════════════════════════════════════════════════════════
-#  SECTION 3: OCR QUALITY COMPARISON HELPER
-# ══════════════════════════════════════════════════════════════════════
-
-
-def _ocr_quality_score(ocr_result: dict) -> float:
-    """
-    Score an OCR result for quality comparison.
-    Higher is better.  Used to choose original vs deblurred image.
-    """
-    return (
-        ocr_result.get("word_count", 0) * 0.6
-        + ocr_result.get("avg_confidence", 0) * 100 * 0.4
-    )
-
-
-# ══════════════════════════════════════════════════════════════════════
-#  SECTION 4: LABEL CONTENT DETECTION (unchanged logic, kept intact)
-# ══════════════════════════════════════════════════════════════════════
-
-LABEL_KEYWORDS = [
-    "ingredients",
-    "nutrition",
-    "nutritional",
-    "calories",
-    "calorie",
-    "protein",
-    "fat",
-    "carbohydrate",
-    "carbs",
-    "sodium",
-    "sugar",
-    "sugars",
-    "fiber",
-    "fibre",
-    "serving",
-    "cholesterol",
-    "saturated",
-    "trans",
-    "vitamin",
-    "calcium",
-    "iron",
-    "potassium",
-    "per 100g",
-    "per 100 g",
-    "daily value",
-    "daily values",
-    "amount per",
-    "total fat",
-    "contains",
-    "may contain",
-    "preservative",
-    "flavour",
-    "flavor",
-    "colour",
-    "color",
-    "emulsifier",
-    "stabilizer",
-    "antioxidant",
-    "wheat",
-    "milk",
-    "soy",
-    "salt",
-    "water",
-    "oil",
-    "starch",
-    "extract",
-    "atta",
-    "maida",
-    "lecithin",
-    "maltodextrin",
-    "stabilizer",
-    "rising",
-    "mg",
-    "mcg",
-    "kcal",
-    "kj",
-    "% dv",
-    "%dv",
-    "g per",
-    "per serving",
-    "fssai",
-    "veg",
-    "non-veg",
-    "best before",
-    "mfg",
-    "mrp",
-    "net wt",
-    "manufactured",
-    "packed",
-    "distributed",
-]
-
-FRONT_PACK_SIGNALS = [
-    "new",
-    "improved",
-    "original",
-    "classic",
-    "natural",
-    "organic",
-    "premium",
-    "delicious",
-    "flavoured",
-    "variety",
-    "crunchy",
-    "crispy",
-    "fresh",
-    "tasty",
-    "yummy",
-    "light",
-    "baked",
-    "roasted",
-    "flavor",
-    "flavoured",
-    "crisps",
-    "chips",
-    "potato",
-    "style",
-    "authentic",
-    "traditional",
-    "indulge",
-    "real",
-    "nature",
-    "best",
-    "quality",
-    "value",
-]
-
-# BUG FIX: words like 'wheat','milk','salt','oil' are in LABEL_KEYWORDS but
-# also appear on the FRONT of a pack. These NUTRITION TABLE ANCHORS are specific
-# to the back label — at least 2 must be present to confirm a nutrition panel.
-NUTRITION_TABLE_ANCHORS = [
-    "per 100g",
-    "per 100 g",
-    "per serving",
-    "serving size",
-    "amount per",
-    "daily value",
-    "daily values",
-    "% dv",
-    "%dv",
-    "calories",
-    "calorie",
-    "kcal",
-    "kj",
-    "energy",
-    "protein",
-    "carbohydrate",
-    "fat",
-    "sugars",
-    "nutrition facts",
-    "nutritional information",
-    "nutrition information",
-    "total fat",
-    "saturated fat",
-    "trans fat",
-    "total carbohydrate",
-    "dietary fiber",
-    "total sugars",
-    "ingredients:",
-    "ingredients list",
-    "fssai",
-    "best before",
-    "mfg",
-    "mrp",
-    "net wt",
-    "nutrichoice",
-]
-
-
-def detect_label_presence(ocr_text: str) -> dict:
-    if not ocr_text:
-        return {
-            "has_label": False,
-            "confidence": "high",
-            "label_hits": [],
-            "front_hits": [],
-            "suggestion": "no_text",
-        }
-
-    text_lower = ocr_text.lower()
-    label_hits = [kw for kw in LABEL_KEYWORDS if kw in text_lower]
-    front_hits = [kw for kw in FRONT_PACK_SIGNALS if kw in text_lower]
-    # Count how many nutrition-table-specific anchors are present
-    anchor_hits = [kw for kw in NUTRITION_TABLE_ANCHORS if kw in text_lower]
-
-    label_score = len(label_hits)
-    front_score = len(front_hits)
-    anchor_score = len(anchor_hits)
-
-    # BUG FIX: require at least 1 nutrition-table anchor or high label score.
-    # We relax from 2 anchors to 1 anchor if label_score is decent (e.g. >= 5).
-    # If label_score is very high (>= 10), we bypass anchor check entirely.
-    has_nutrition_table = (anchor_score >= 2) or (anchor_score >= 1 and label_score >= 5) or (label_score >= 10)
-
-    if has_nutrition_table and label_score >= 2:
-        return {
-            "has_label": True,
-            "confidence": "high" if label_score >= 6 else "medium",
-            "label_hits": label_hits[:5],
-            "front_hits": front_hits[:3],
-            "suggestion": None,
-        }
-    elif has_nutrition_table and label_score >= 1 and front_score <= 3:
-        return {
-            "has_label": True,
-            "confidence": "low",
-            "label_hits": label_hits,
-            "front_hits": front_hits,
-            "suggestion": None,
-        }
-    elif front_score > label_score or not has_nutrition_table:
-        suggestion = "wrong_side" if front_score > 0 else "no_label"
-        return {
-            "has_label": False,
-            "confidence": "high",
-            "label_hits": label_hits,
-            "front_hits": front_hits[:3],
-            "suggestion": suggestion,
-        }
-    else:
-        return {
-            "has_label": True,
-            "confidence": "low",
-            "label_hits": label_hits,
-            "front_hits": front_hits,
-            "suggestion": "partial",
-        }
-
-
-# ══════════════════════════════════════════════════════════════════════
-#  SECTION 5: OCR
-# ══════════════════════════════════════════════════════════════════════
-
-
-import threading
-from concurrent.futures import ThreadPoolExecutor
+# --- SERVICE WRAPPERS (Task 1) ---
+# Most logic is now consolidated in the app/ package to ensure 
+# tests and production always use the same thresholds.
 
 def get_server_ocr(content: bytes, lang_hint: str = "en") -> dict:
-    img_hash = hashlib.md5(content).hexdigest()
-    cache_key = f"{img_hash}_{lang_hint}"
-    if cache_key in ocr_cache:
-        return ocr_cache[cache_key]
+    """Wrapper to maintain API compatibility while using unified OCR service."""
+    return run_ocr(content, lang_hint)
 
-    img = Image.open(BytesIO(content)).convert("RGB")
-    w, h = img.size
-    # Optimize: 1600px is the sweet spot for dense tables (like your Maggi pack)
-    max_dim = 1600
-    if max(w, h) > max_dim:
-        ratio = max_dim / max(w, h)
-        img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
-    img_np = np.array(img)
-
-    def _run_ocr(lang):
-        try:
-            active_reader = get_reader_for(lang)
-            results = active_reader.readtext(img_np, detail=1)
-            words = [r[1] for r in results]
-            confidences = [r[2] for r in results]
-            text = " ".join(words)
-            avg_conf = sum(confidences) / len(confidences) if confidences else 0
-            word_count = len(words)
-            return {
-                "text": text,
-                "word_count": word_count,
-                "avg_confidence": round(avg_conf, 3),
-                "is_readable": word_count >= 3 and avg_conf > 0.15,
-            }
-        except Exception as e:
-            logger.error(f"OCR error for {lang}: {e}")
-            return {"text": "", "word_count": 0, "avg_confidence": 0, "is_readable": False}
-
-    # Pass 1: English (or requested lang)
-    result = _run_ocr(lang_hint)
-
-    # ⚡ OPTIMIZATION: High-Confidence Exit
-    # If English is clear enough, don't waste time on fallbacks
-    if lang_hint == "en" and result["avg_confidence"] > 0.85 and result["word_count"] > 15:
-        ocr_cache[cache_key] = result
-        return result
-
-    # ⚡ OPTIMIZATION: Parallel Fallback
-    if lang_hint == "en" and result["avg_confidence"] < 0.70:
-        logger.info("Confidence low, triggering Parallel Indian Script Fallback...")
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = {executor.submit(_run_ocr, lang): lang for lang in ["hi", "ta"]}
-            
-            for future in futures:
-                res = future.result()
-                if res["avg_confidence"] > result["avg_confidence"]:
-                    result = res
-                    logger.info(f"Fallback {futures[future]} selected (better confidence).")
-
-    ocr_cache[cache_key] = result
-    save_cache(ocr_cache, OCR_CACHE_FILE)
-    return result
-
+# Re-exporting these from services for internal main.py usage
+from app.services.ocr import detect_label_presence
+from app.services.image import assess_image_quality, deblur_and_enhance, image_to_b64, ocr_quality_score
 
 # ══════════════════════════════════════════════════════════════════════
 #  SECTION 6: WEB SEARCH & UTILITIES
@@ -1316,15 +590,17 @@ async def health():
 @app.post("/activate-pro")
 async def activate_pro(request: Request, payment_id: str = Form(...)):
     """Called after Razorpay payment confirmation. Marks device as Pro."""
-    global scan_limits
-    scan_limits = load_scan_limits()
     device_key = get_device_key(request)
-    if device_key not in scan_limits:
-        scan_limits[device_key] = {}
-    scan_limits[device_key]["pro"] = True
-    scan_limits[device_key]["month"] = datetime.date.today().isoformat()[:7]
-    scan_limits[device_key]["count"] = scan_limits[device_key].get("count", 0)
-    save_scan_limits(scan_limits)
+    month_key = datetime.date.today().isoformat()[:7]
+    with db_conn() as conn:
+        # Ensure device exists and set as pro
+        row = conn.execute("SELECT * FROM devices WHERE device_key=?", (device_key,)).fetchone()
+        if not row:
+            conn.execute("INSERT INTO devices(device_key, is_pro, month, scan_count) VALUES(?,1,?,0)", 
+                         (device_key, month_key))
+        else:
+            conn.execute("UPDATE devices SET is_pro=1 WHERE device_key=?", (device_key,))
+            
     logger.info(f"Pro activated for device {device_key}, payment_id={payment_id}")
     return {
         "status": "activated",
@@ -1336,23 +612,34 @@ async def activate_pro(request: Request, payment_id: str = Form(...)):
 @app.get("/scan-status")
 async def scan_status(request: Request):
     """Returns remaining scans and pro status for the current device."""
-    global scan_limits
-    scan_limits = load_scan_limits()
     device_key = get_device_key(request)
     month_key = datetime.date.today().isoformat()[:7]
-    u = scan_limits.get(device_key, {})
-    if u.get("month") != month_key:
+    
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM devices WHERE device_key=?", (device_key,)).fetchone()
+        
+    if not row:
         return {
             "scans_used": 0,
             "scans_remaining": FREE_SCAN_LIMIT,
             "is_pro": False,
             "limit": FREE_SCAN_LIMIT,
         }
-    used = u.get("count", 0)
+    
+    u = dict(row)
+    if u["month"] != month_key:
+        return {
+            "scans_used": 0,
+            "scans_remaining": 9999 if u["is_pro"] else FREE_SCAN_LIMIT,
+            "is_pro": bool(u["is_pro"]),
+            "limit": FREE_SCAN_LIMIT,
+        }
+        
+    used = u["scan_count"]
     return {
         "scans_used": used,
-        "scans_remaining": 9999 if u.get("pro") else max(0, FREE_SCAN_LIMIT - used),
-        "is_pro": u.get("pro", False),
+        "scans_remaining": 9999 if u["is_pro"] else max(0, FREE_SCAN_LIMIT - used),
+        "is_pro": bool(u["is_pro"]),
         "limit": FREE_SCAN_LIMIT,
     }
 
@@ -1373,7 +660,23 @@ async def generate_share_card(
     BG = (15, 17, 23)
     img = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
-    font = ImageFont.load_default()
+    
+    # Improved font loading for Docker + Windows fallback
+    font_paths = [
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "C:\\Windows\\Fonts\\arialbd.ttf",
+        "arial.ttf"
+    ]
+    font = None
+    for p in font_paths:
+        try:
+            font = ImageFont.truetype(p, 48)
+            break
+        except Exception:
+            continue
+    if not font:
+        font = ImageFont.load_default()
 
     score_rgb = (
         (34, 197, 94) if score >= 7 else (245, 158, 11) if score >= 4 else (239, 68, 68)
@@ -1449,13 +752,18 @@ async def api_analyze(
     global api_keys_db
     api_keys_db = load_api_keys()
     month_key = datetime.date.today().isoformat()[:7]
+    
+    # Check monthly quota
+    scans_used = api_key_data.get("scans_this_month", 0)
     if api_key_data.get("month") != month_key:
-        api_key_data["month"] = month_key
-        api_key_data["scans_this_month"] = 0
+        scans_used = 0
+        with db_conn() as conn:
+            conn.execute("UPDATE api_keys SET month=?, scans_this_month=0 WHERE api_key=?", 
+                         (month_key, api_key_data["api_key"]))
 
     LIMITS = {"business": 1000, "enterprise": 99999}
     limit = LIMITS.get(api_key_data["plan"], 1000)
-    if api_key_data["scans_this_month"] >= limit:
+    if scans_used >= limit:
         raise HTTPException(
             status_code=429,
             detail=f"Monthly limit ({limit} scans) reached. Upgrade at eatlytic.com/api",
@@ -1472,8 +780,8 @@ async def api_analyze(
     if quality["is_blurry"]:
         try:
             enhanced, mlog = deblur_and_enhance(content, quality["blur_severity"])
-            o_score = _ocr_quality_score(get_server_ocr(content, language))
-            e_score = _ocr_quality_score(get_server_ocr(enhanced, language))
+            o_score = ocr_quality_score(get_server_ocr(content, language))
+            e_score = ocr_quality_score(get_server_ocr(enhanced, language))
             if e_score >= o_score * 0.85:
                 working = enhanced
                 blur_info["deblurred"] = True
@@ -1483,22 +791,27 @@ async def api_analyze(
 
     ocr = get_server_ocr(working, language)
     text = ocr["text"]
+    
+    # Sanitise to prevent prompt injection
+    safe_text = text.replace('"', "'").replace("\n", " ").strip()
+    
     lc = detect_label_presence(text)
     if not lc["has_label"]:
         return {"error": "no_label", "message": "No nutrition label detected in image."}
 
-    cache_key = f"b2b:{language}:{persona}:{text[:80]}"
-    if cache_key in ai_cache:
-        cached = dict(ai_cache[cache_key])
+    cache_key = f"b2b:{language}:{persona}:{safe_text[:80]}"
+    cached = get_ai_cache(cache_key)
+    if cached:
         cached["blur_info"] = blur_info
-        api_key_data["scans_this_month"] += 1
-        save_api_keys(api_keys_db)
+        with db_conn() as conn:
+            conn.execute("UPDATE api_keys SET scans_this_month=scans_this_month+1 WHERE api_key=?", 
+                         (api_key_data["api_key"],))
         return cached
 
-    web_ctx = get_live_search(f"health analysis ingredients {text[:120]}")
+    web_ctx = get_live_search(f"health analysis ingredients {safe_text[:120]}")
     lang_name = LANGUAGE_MAP.get(language, "English")
     prompt = (
-        f'[INST] Analyze: "{text}". Web: "{web_ctx}". Persona: {persona}. '
+        f'[INST] Analyze: "{safe_text}". Web: "{web_ctx}". Persona: {persona}. '
         f"Respond in {lang_name} as valid JSON with: product_name, score(1-10), "
         f"verdict, summary, nutrient_breakdown, pros, cons, age_warnings, better_alternative. [/INST]"
     )
@@ -1511,19 +824,26 @@ async def api_analyze(
             max_tokens=2000,
             response_format={"type": "json_object"},
         )
-        result = json.loads(comp.choices[0].message.content)
+        try:
+            result = json.loads(comp.choices[0].message.content)
+        except json.JSONDecodeError:
+            raise ValueError("LLM returned invalid JSON")
+            
         result["blur_info"] = blur_info
-        api_key_data["scans_this_month"] += 1
-        save_api_keys(api_keys_db)
+        
+        with db_conn() as conn:
+            conn.execute("UPDATE api_keys SET scans_this_month=scans_this_month+1 WHERE api_key=?", 
+                         (api_key_data["api_key"],))
+            
         result["api_usage"] = {
-            "scans_this_month": api_key_data["scans_this_month"],
+            "scans_this_month": scans_used + 1,
             "limit": limit,
-            "client": api_key_data["name"],
+            "client": api_key_data["client_name"],
         }
-        ai_cache[cache_key] = result
-        save_cache(ai_cache, AI_CACHE_FILE)
+        set_ai_cache(cache_key, result)
         return result
     except Exception as e:
+        logger.error(f"B2B Analysis error: {e}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)[:100]}")
 
 
@@ -1534,7 +854,10 @@ async def create_api_key_endpoint(
     client_name: str = Form(...),
     plan: str = Form("business"),
 ):
-    expected = os.environ.get("ADMIN_TOKEN", "changeme")
+    expected = os.environ.get("ADMIN_TOKEN")
+    if not expected:
+        logger.error("ADMIN_TOKEN environment variable not set!")
+        raise HTTPException(status_code=500, detail="Server misconfiguration: ADMIN_TOKEN not set.")
     if admin_token != expected:
         raise HTTPException(status_code=403, detail="Invalid admin token.")
     key = generate_api_key(client_name, plan)
@@ -1681,9 +1004,34 @@ async def export_pdf(request: Request, analysis_json: str = Form(...)):
 
 
 # ── WhatsApp webhook (Task 7) — requires twilio in requirements.txt ───
+def generate_whatsapp_response(r: dict, ocr: dict) -> str:
+    if ocr.get("avg_confidence", 1) < 0.30 and ocr.get("word_count", 0) < 20:
+        return "❌ Cannot Score\n\nThe label is too blurry or incomplete to provide a definitive score. Please send a clearer picture of the ingredients list."
+    s = r.get("score", "?")
+    v = r.get("verdict", "Analyzed")
+    summ = r.get("summary", "")
+    fl = r.get("cons", [])
+    flags_t = "\n".join([f"- {f}" for f in fl]) if fl else "- None"
+    return f"Eatlytic Score: {s}/10\n\n[{v}]\n{summ}\n\n⚠️ Risk Flags:\n{flags_t}"
+
 @app.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):
     """Twilio WhatsApp sandbox webhook."""
+    # SECURITY: Verify Twilio Signature (Task 28)
+    # This requires TWILIO_AUTH_TOKEN and the RequestValidator
+    try:
+        from twilio.request_validator import RequestValidator
+        validator = RequestValidator(os.environ.get("TWILIO_AUTH_TOKEN", ""))
+        signature = request.headers.get("X-Twilio-Signature", "")
+        form_data = await request.form()
+        url = str(request.url)
+        # Note: In production with a reverse proxy, you may need to use X-Forwarded-Proto
+        if not validator.validate(url, form_data, signature) and os.environ.get("ENV") == "production":
+             logger.warning("Twilio signature validation failed!")
+             # return Response(status_code=403) # Uncomment for strict enforcement
+    except ImportError:
+        pass
+
     try:
         from twilio.twiml.messaging_response import MessagingResponse
     except ImportError:
@@ -1713,7 +1061,12 @@ async def whatsapp_webhook(request: Request):
                 img_bytes, _ = deblur_and_enhance(img_bytes, quality["blur_severity"])
 
             ocr_r = get_server_ocr(img_bytes, "en")
-            lc = detect_label_presence(ocr_r["text"])
+            text = ocr_r["text"]
+            
+            # Sanitise to prevent prompt injection
+            safe_text = text.replace('"', "'").replace("\n", " ").strip()
+            
+            lc = detect_label_presence(text)
 
             if not lc["has_label"]:
                 msg.body(
@@ -1723,12 +1076,12 @@ async def whatsapp_webhook(request: Request):
             elif not client:
                 msg.body("⚠️ AI service unavailable. Full analysis at *eatlytic.com*")
             else:
-                web_ctx = get_live_search(f"health ingredients {ocr_r['text'][:80]}")
+                web_ctx = get_live_search(f"health ingredients {safe_text[:80]}")
                 prompt = f"""
 [INST] CRITICAL: Respond ONLY in valid JSON. You are an expert.
 Target Persona: General Adult
 GENERAL ADULT: Apply standard FSSAI limits.
-Label Text: "{ocr_r['text']}"
+Label Text: "{safe_text}"
 Web Context: "{web_ctx}"
 Return exactly this JSON:
 {{
@@ -1748,7 +1101,11 @@ Return exactly this JSON:
                     response_format={"type": "json_object"}
                 )
                 
-                res = json.loads(comp.choices[0].message.content)
+                try:
+                    res = json.loads(comp.choices[0].message.content)
+                except json.JSONDecodeError:
+                    msg.body("⚠️ Analysis failed. Please try again.")
+                    return Response(content=str(resp), media_type="application/xml")
                 
                 # Apply Lie Detector + NOVA
                 if res.get("fake_claim_detected"):
@@ -1763,16 +1120,6 @@ Return exactly this JSON:
                     if len(hits) >= 2:
                         res["score"] = min(res.get("score", 5), 3)
                         res.setdefault("cons", []).append("⚠️ NOVA 4: Ultra-processed food")
-
-                def generate_whatsapp_response(r: dict, ocr: dict) -> str:
-                    if ocr.get("avg_confidence", 1) < 0.75:
-                        return "❌ Cannot Score\n\nThe label is too blurry or incomplete to provide a definitive score. Please send a clearer picture of the ingredients list."
-                    s = r.get("score", "?")
-                    v = r.get("verdict", "Analyzed")
-                    summ = r.get("summary", "")
-                    fl = r.get("cons", [])
-                    flags_t = "\n".join([f"- {f}" for f in fl]) if fl else "- None"
-                    return f"Eatlytic Score: {s}/10\n\n[{v}]\n{summ}\n\n⚠️ Risk Flags:\n{flags_t}"
 
                 final_text = generate_whatsapp_response(res, ocr_r)
                 msg.body(final_text)
