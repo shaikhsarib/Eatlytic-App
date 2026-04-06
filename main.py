@@ -318,7 +318,6 @@ def assess_image_quality(content: bytes) -> dict:
         local = _local_blur_map(gray)
 
         # Normalise scores to 0-100 for consistent comparison
-        # Thresholds tuned against a food-label test set
         lap_norm = min(lap / 300.0 * 100, 100)
         ten_norm = min(ten / 500.0 * 100, 100)
         bren_norm = min(bren / 200.0 * 100, 100)
@@ -329,15 +328,26 @@ def assess_image_quality(content: bytes) -> dict:
             0.25 * lap_norm + 0.20 * ten_norm + 0.20 * bren_norm + 0.35 * local_norm
         )
 
+        # --- RESOLUTION PENALTY (NEW) ---
+        # Sharpness isn't enough; we need enough pixels for OCR.
+        # Images smaller than 800px on the short side get a linear penalty.
+        h, w = gray.shape
+        min_dim = min(h, w)
+        res_penalty = 1.0
+        if min_dim < 800:
+            res_penalty = (min_dim / 800.0) ** 1.5 # Exponential penalty for very small images
+        
+        composite *= res_penalty
+
         # Blur severity bands -- UPDATED for better user experience
-        # LOWER thresholds = MORE images are considered "clear"
-        if composite < 10:
+        # 0-15: severe, 15-35: moderate, 35-50: mild, 50+: none
+        if composite < 15:
             severity = "severe"
             is_blurry = True
-        elif composite < 25:
+        elif composite < 35:
             severity = "moderate"
             is_blurry = True
-        elif composite < 40:
+        elif composite < 50:
             severity = "mild"
             is_blurry = True  # still attempt enhancement
         else:
@@ -345,8 +355,8 @@ def assess_image_quality(content: bytes) -> dict:
             is_blurry = False
 
         # UI Quality Label based on composite score
-        if composite < 25:    quality = "poor"
-        elif composite < 40:  quality = "fair"
+        if composite < 30:    quality = "poor"
+        elif composite < 50:  quality = "fair"
         else:                 quality = "good"
 
         return {
@@ -355,6 +365,8 @@ def assess_image_quality(content: bytes) -> dict:
             "tenengrad_score": round(ten, 2),
             "brenner_score": round(bren, 2),
             "local_median_score": round(local, 2),
+            "resolution": f"{w}x{h}",
+            "res_penalty": round(res_penalty, 2),
             "is_blurry": is_blurry,
             "blur_severity": severity,
             "quality": quality,
