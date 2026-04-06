@@ -1433,12 +1433,11 @@ async function parseVoiceMeal(transcript) {
    VINE LOADER
 ═══════════════════════════════════════ */
 const VINE_STEPS = [
-  {label:'Image clarity', pct:18},
-  {label:'Blur correction', pct:35},
-  {label:'OCR extraction', pct:55},
-  {label:'Web search', pct:72},
-  {label:'AI synthesis', pct:90},
-  {label:'Complete', pct:100},
+  {label:'Clarity Scan', pct:20},
+  {label:'OCR Extraction', pct:40},
+  {label:'Lie Detection', pct:60},
+  {label:'Scoring Engine', pct:85},
+  {label:'Final Verdict', pct:100},
 ];
 
 function startVine() {
@@ -1572,14 +1571,25 @@ function showError(type, message) {
               : type==='invalid_image'?'Invalid Image'
               : 'Analysis Failed';
   // For wrong-side errors, show a helpful flip instruction
-  const extra = (type==='no_label' || type==='wrong_side')
-    ? `<div style="margin:10px auto;max-width:220px;display:flex;align-items:center;justify-content:center;gap:12px;font-size:1.8rem">
-        <span title="Front">🟥</span>
-        <span style="font-size:1rem;color:var(--muted)">→ flip →</span>
-        <span title="Back label">🟩</span>
+  const extra = (type==='no_label' || type==='wrong_side' || type==='no_text')
+    ? `<div style="margin:20px auto;max-width:250px;display:flex;align-items:center;justify-content:center;gap:15px;background:rgba(255,45,120,0.05);padding:15px;border-radius:12px;border:1.5px dashed var(--pink)">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="width:40px;height:55px;background:var(--pink);border:2px solid var(--ink);border-radius:4px;display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:10px">FRONT</div>
+          <span style="font-size:12px">❌</span>
+        </div>
+        <div style="font-size:1.5rem;animation:portal-breath 2s infinite">🔄</div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div style="width:40px;height:55px;background:var(--mint);border:2px solid var(--ink);border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-items:center;padding:4px;gap:2px">
+            <div style="width:100%;height:3px;background:white"></div>
+            <div style="width:100%;height:3px;background:white"></div>
+            <div style="width:100%;height:3px;background:white"></div>
+            <div style="width:100%;height:8px;background:rgba(0,0,0,0.1)"></div>
+          </div>
+          <span style="font-size:12px">✅</span>
+        </div>
        </div>
-       <div style="font-size:11px;color:var(--muted);margin-bottom:4px">
-         Scan the <strong>back</strong> of the pack — look for the nutrition table &amp; ingredients list.
+       <div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:8px">
+         Flip the product! We need the <span style="color:var(--mint)">Back Label</span> (showing ingredients & nutrients) to analyze it.
        </div>`
     : '';
   document.getElementById('reveal-scroll').innerHTML=`

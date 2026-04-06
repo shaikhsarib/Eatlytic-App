@@ -616,6 +616,20 @@ FRONT_PACK_SIGNALS = [
     "light",
     "baked",
     "roasted",
+    "flavor",
+    "flavoured",
+    "crisps",
+    "chips",
+    "potato",
+    "style",
+    "authentic",
+    "traditional",
+    "indulge",
+    "real",
+    "nature",
+    "best",
+    "quality",
+    "value",
 ]
 
 # BUG FIX: words like 'wheat','milk','salt','oil' are in LABEL_KEYWORDS but
