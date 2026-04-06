@@ -193,7 +193,7 @@ async def perform_ocr(
 ):
     """Perform OCR and return text + readability assessment."""
     content = await image.read()
-    result = get_server_ocr(content, language)
+    result = run_ocr(content, language)
     return result
 
 
@@ -280,7 +280,7 @@ async def analyze_product(
 
         # ── Step 3: OCR ───────────────────────────────────────────────
         if not extracted_text:
-            ocr_result = get_server_ocr(working_content, language)
+            ocr_result = run_ocr(working_content, language)
             extracted_text = ocr_result["text"]
             ocr_word_count = ocr_result["word_count"]
 
@@ -917,7 +917,7 @@ async def whatsapp_webhook(request: Request):
             blur_info["method_log"] = log
 
         # 4. OCR & Label Detection
-        ocr_r = get_server_ocr(img_to_ocr, "en")
+        ocr_r = run_ocr(img_to_ocr, "en")
         text = ocr_r["text"]
         lc = detect_label_presence(text)
 
@@ -978,14 +978,14 @@ async def test_accuracy(
     quality = assess_image_quality(content)
 
     # Run without blur fix
-    ocr_orig = get_server_ocr(content, "en")
+    ocr_orig = run_ocr(content, "en")
 
     # Run with blur fix if blurry
     ocr_enhanced = None
     if quality["is_blurry"]:
         try:
             enhanced_bytes, mlog = deblur_and_enhance(content, quality["blur_severity"])
-            ocr_enhanced = get_server_ocr(enhanced_bytes, "en")
+            ocr_enhanced = run_ocr(enhanced_bytes, "en")
         except Exception:
             pass
 
