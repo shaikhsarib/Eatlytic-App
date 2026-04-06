@@ -208,10 +208,7 @@ if not GROQ_API_KEY:
 else:
     client = Groq(api_key=GROQ_API_KEY)
 
-reader = easyocr.Reader(["en", "ch_sim"], gpu=False, model_storage_directory=MODEL_DIR)
-
-# --- MULTI-LANGUAGE READER CACHE (Task 17) ---
-# Readers are expensive to load; cache by language group
+# --- MULTI-LANGUAGE READER CACHE ---
 _LANG_READERS: dict = {}
 _EASYOCR_LANG_MAP = {
     "en": ["en"],
@@ -222,12 +219,23 @@ _EASYOCR_LANG_MAP = {
     "bn": ["en", "bn"],
 }
 
+# Pre-populate readers for most common languages to prevent "size mismatch" errors during fallback
+def _init_readers():
+    logger.info("🎨 Pre-initializing OCR readers (EN, HI, TA)...")
+    for hint in ["en", "hi", "ta"]:
+        langs = _EASYOCR_LANG_MAP.get(hint, ["en"])
+        key = "_".join(sorted(langs))
+        if key not in _LANG_READERS:
+            _LANG_READERS[key] = easyocr.Reader(langs, gpu=False, model_storage_directory=MODEL_DIR)
+    logger.info("✅ OCR Readers ready.")
+
+_init_readers()
 
 def get_reader_for(lang_hint: str):
     langs = _EASYOCR_LANG_MAP.get(lang_hint, ["en"])
     key = "_".join(sorted(langs))
     if key not in _LANG_READERS:
-        logger.info(f"Loading EasyOCR reader for langs: {langs}")
+        logger.info(f"💾 Loading reader on-demand: {langs}")
         _LANG_READERS[key] = easyocr.Reader(
             langs, gpu=False, model_storage_directory=MODEL_DIR
         )

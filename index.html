@@ -1332,7 +1332,16 @@ function applyQuality(sev, pct) {
   const fill  = document.getElementById('qs-fill');
   const badge = document.getElementById('qs-badge');
   const label = document.getElementById('qs-label');
-  fill.style.width = pct+'%';
+  
+  // Visual fix: If "Clear", always show a high filled bar (92-100%)
+  // If "Fair", show at least 60%
+  let displayPct = pct;
+  if (sev === 'none')  displayPct = Math.max(92, pct);
+  else if (sev === 'mild') displayPct = Math.max(60, pct);
+  else displayPct = Math.max(15, pct);
+
+  fill.style.width = displayPct + '%';
+  
   if (sev === 'none') {
     fill.style.background='var(--mint)'; badge.style.color='var(--mint)';
     badge.textContent='✓ Clear'; label.textContent='Great quality';
