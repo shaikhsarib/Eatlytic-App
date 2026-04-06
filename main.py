@@ -4,6 +4,7 @@ import json
 import logging
 import hashlib
 import base64
+import threading
 import secrets
 import datetime
 import easyocr
@@ -210,6 +211,7 @@ else:
 
 # --- MULTI-LANGUAGE READER CACHE ---
 _LANG_READERS: dict = {}
+_READER_LOCK = threading.Lock()
 _EASYOCR_LANG_MAP = {
     "en": ["en"],
     "hi": ["en", "hi"],
@@ -221,36 +223,36 @@ _EASYOCR_LANG_MAP = {
 
 # Pre-populate readers for most common languages to prevent "size mismatch" errors during fallback
 def _init_readers():
-    # Concurrency guard: Only initialize if not already in memory
-    # If multiple workers start at once, they may still trigger this,
-    # but the pre-downloaded Docker models ensure no new files are written.
+    # Only initialize if not already in memory
+    # We use the lock even here to be 100% safe during the very first boot
     logger.info("🎨 Pre-initializing OCR readers (EN, HI, TA)...")
     for hint in ["en", "hi", "ta"]:
-        try:
-            langs = _EASYOCR_LANG_MAP.get(hint, ["en"])
-            key = "_".join(sorted(langs))
-            if key not in _LANG_READERS:
-                _LANG_READERS[key] = easyocr.Reader(
-                    langs, 
-                    gpu=False, 
-                    model_storage_directory=MODEL_DIR,
-                    download_enabled=False # CRITICAL: Don't allow writing to disk if files missing
-                )
-        except Exception as e:
-            logger.warning(f"⚠️ Reader {hint} init failed (might be file lock): {e}")
+        get_reader_for(hint)
     logger.info("✅ OCR Readers ready.")
-
-_init_readers()
 
 def get_reader_for(lang_hint: str):
     langs = _EASYOCR_LANG_MAP.get(lang_hint, ["en"])
     key = "_".join(sorted(langs))
-    if key not in _LANG_READERS:
-        logger.info(f"💾 Loading reader on-demand: {langs}")
-        _LANG_READERS[key] = easyocr.Reader(
-            langs, gpu=False, model_storage_directory=MODEL_DIR
-        )
-    return _LANG_READERS[key]
+    
+    with _READER_LOCK:
+        if key not in _LANG_READERS:
+            try:
+                logger.info(f"💾 Loading reader: {langs}")
+                _LANG_READERS[key] = easyocr.Reader(
+                    langs, 
+                    gpu=False, 
+                    model_storage_directory=MODEL_DIR,
+                    download_enabled=False # Rely on pre-downloaded Docker models
+                )
+            except Exception as e:
+                logger.error(f"❌ Failed to load reader {langs}: {e}")
+                # Fallback to pure English if a specific combo fails
+                if langs != ["en"] and "en" not in _LANG_READERS:
+                    return get_reader_for("en")
+        
+    return _LANG_READERS.get(key) or _LANG_READERS.get("en")
+
+_init_readers()
 
 
 #  SECTION 1: MULTI-METHOD BLUR DETECTION
