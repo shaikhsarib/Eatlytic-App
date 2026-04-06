@@ -782,8 +782,8 @@ def get_server_ocr(content: bytes, lang_hint: str = "en") -> dict:
 
     img = Image.open(BytesIO(content)).convert("RGB")
     w, h = img.size
-    # Optimize: 1280px is sufficient for OCR and much faster on CPU than 1600px
-    max_dim = 1200
+    # Optimize: 1600px is the sweet spot for dense tables (like your Maggi pack)
+    max_dim = 1600
     if max(w, h) > max_dim:
         ratio = max_dim / max(w, h)
         img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
@@ -1031,10 +1031,12 @@ async def analyze_product(
             ocr_word_count = ocr_result["word_count"]
 
             # ── Step 3a: Hard gate — reject if OCR confidence too low ─
-            if ocr_result["avg_confidence"] < 0.70:
+            # Tuning: 30% is much safer for noisy labels, especially with word-count bypass
+            if ocr_result["avg_confidence"] < 0.30 and ocr_word_count < 20:
+                logger.info(f"Gate rejected: conf={ocr_result['avg_confidence']}, words={ocr_word_count}")
                 return {
                     "error": "blurry_image",
-                    "message": f"⚠️ Image too blurry (confidence: {ocr_result['avg_confidence']:.0%}). Please retake the photo in better lighting.",
+                    "message": f"⚠️ Image quality too low (confidence: {ocr_result['avg_confidence']:.0%}). Please take a closer photo of the label.",
                 }
         else:
             ocr_word_count = len(extracted_text.split())
@@ -1167,12 +1169,12 @@ Return ONLY valid JSON — no markdown, no preamble — with this exact structur
     ],
     "better_alternative": "A specific healthier alternative product in {lang_name}."
 }}
-STRICT SCORING RUBRIC — score MUST reflect actual label nutrition, not examples:
-  9-10 : Whole food / minimal processing, no added sugar, low sodium, high fiber/protein
-  7-8  : Moderately processed, low sugar (<5g/100g), reasonable sodium, decent nutrients
-  5-6  : Processed, moderate sugar (5-15g/100g) OR moderate sodium (400-700mg/100g)
-  3-4  : High sugar (>15g/100g) OR high sodium (>700mg/100g) OR poor nutrient profile
-  1-2  : Ultra-processed, very high sugar/sodium/saturated fat, minimal nutritional value
+STRICT SCORING RUBRIC (1-10 scale):
+  9-10 : Whole food / minimal processing, no added sugar, low sodium
+  7-8  : Moderately processed, low sugar (<5g/100g), reasonable sodium
+  5-6  : Processed, moderate sugar (5-15g/100g) OR moderate sodium
+  3-4  : High sugar (>15g/100g) OR high sodium (>700mg/100g)
+  1-2  : Ultra-processed, very high sugar/sodium, fake marketing claims
 
 RULES:
 - score MUST match the actual nutrient values found — modified by persona rules

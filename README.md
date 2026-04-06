@@ -9,75 +9,41 @@ app_port: 7860
 
 # Eatlytic
 
-Eatlytic is an AI-powered FastAPI application designed to analyze food nutritional labels. It uses Computer Vision and Large Language Models to check ingredients, determine nutritional value, and detect blurred out labels to provide accurate food quality assessments.
+Eatlytic is a high-precision **AI-powered food analysis engine** designed to decode complex Indian nutrition labels and marketing claims instantly via WhatsApp.
 
-## Features
+### 🌟 Core Mission
+Traditional food labels are designed to confuse. Eatlytic uses advanced computer vision and a proprietary rule-based engine to strip away marketing "lies" and provide a clear, **1-10 health score** based on a product's actual ingredients.
 
-- **Food Label OCR**: Extracts text from food labels using EasyOCR with multi-language support (English, Hindi, Chinese, etc.).
-- **Smart Image Deblurring**: Multi-method blur detection (Laplacian, Tenengrad, Brenner) combined with an enhancement pipeline (Wiener deconvolution, Unsharp masking, CLAHE) using OpenCV to recover text from poorly captured images.
-- **AI Nutritional Analysis**: Leverages the Groq API (LLMs) to analyze ingredients, rate healthiness, and summarize nutritional facts.
-- **Label Detection Validation**: Determines whether an image is a front-of-pack marketing image or the actual nutritional information table.
-- **Rate Limiting & Authentication**: Enforced API tier limits with dynamic API keys and device fingerprinting using `slowapi`.
+### 🚀 Key Features
+1. **Product DNA Classification:**
+   * **NOVA 1-4 Engine:** Automatically flags "Ultra-Processed Foods" (UPF).
+   * **Marketing Lie Detector:** Catches fake claims (e.g., flags "Sugar-Free" if it contains hidden Maltodextrin).
+2. **Advanced Vision Pipeline:**
+   * **AI Enhancement:** Auto-deblurs and denoises poor-quality photos using Wiener Deconvolution and CLAHE.
+   * **Resolution Awareness:** Blocks tiny thumbnails to ensure 0% hallucinations.
+3. **Indian-Language OCR:** Supports English, Hindi, and Tamil with automatic script fallback.
+4. **Persona-Based Scoring:** Tailors advice for specific Indian health profiles (e.g., **Diabetic Care, Pregnancy Safe, Child Safety, Senior Citizens, Athletes**).
 
-## Setup Instructions
+### 💻 Technical Stack
+* **Engine:** Python (FastAPI)
+* **AI & Vision:** Llama 3 via Groq, EasyOCR, OpenCV
+* **Infrastructure:** Self-Hosted VPS (Optimized for zero-cold-boot, instant responses), Docker.
 
-### 1. Prerequisites
+### 🛠️ Setup Instructions
 
-- Python 3.9+
-- [Git](https://git-scm.com/)
-- API Keys for **Groq** (`GROQ_API_KEY`)
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/shaikhsarib/Eatlytic-App.git
+   cd Eatlytic-App
+   ```
 
-### 2. Installation
+2. **Configure Environment:**
+   Create a `.env` file with your `GROQ_API_KEY`.
 
-Clone the repository and move into the application directory:
-```bash
-git clone https://github.com/shaikhsarib/Eatlytic-App.git
-cd Eatlytic-App
-```
-
-Set up a virtual environment and install the required dependencies:
-```bash
-python -m venv .venv
-# On Windows
-.venv\Scripts\activate
-# On Mac/Linux
-source .venv/bin/activate
-
-pip install -r requirements.txt
-```
-
-### 3. Environment Variables
-
-Create a `.env` file in the root directory based on `.env.example`:
-```bash
-cp .env.example .env
-```
-Inside `.env`, populate the `GROQ_API_KEY` corresponding to your Groq account.
-
-### 4. Running Locally
-
-You can run the FastAPI server directly via Uvicorn:
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-The service will be accessible at:
-- Web Interface: `http://localhost:8000/`
-- API Documentation (Swagger): `http://localhost:8000/docs`
-
-### 5. Running with Docker
-
-You can easily run the entire application using Docker Compose:
-```bash
-docker-compose up --build -d
-```
-
-## Repository Structure
-
-- `main.py` - Core FastAPI application and logic (OCR, Image Enhancements, LLM integrations).
-- `app/` - Modular project routes and services abstractions.
-- `Dockerfile` / `docker-compose.yml` - Containerization parameters.
+3. **Run with Docker:**
+   ```bash
+   docker-compose up --build -d
+   ```
 
 ## License
-
-This is a proprietary, closed-source project. All rights reserved. No license is granted for unauthorized use, distribution, or reproduction.
+Proprietary. All rights reserved.
