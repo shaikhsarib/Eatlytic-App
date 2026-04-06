@@ -114,7 +114,8 @@ def check_and_increment_scan(device_key: str) -> dict:
             
         conn.execute("UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?", (device_key,))
         new_count = u["scan_count"] + 1
-        return {"allowed": True, "scans_used": new_count, "scans_remaining": FREE_SCAN_LIMIT - new_count, "is_pro": False}
+        remaining = max(0, FREE_SCAN_LIMIT - new_count)
+        return {"allowed": True, "scans_used": new_count, "scans_remaining": remaining, "is_pro": False}
 
 
 # --- CLIENTS ---
@@ -443,6 +444,16 @@ async def analyze_product(
         elif "gym" in p_lower or "athlete" in p_lower or "fitness" in p_lower:
             persona_rules = "ATHLETE RULES: High sugar allowed if pre/post workout. High protein gives score bonus."
 
+        # Sanitise extracted_text to prevent prompt injection BEFORE building prompt
+        safe_extracted = (
+            extracted_text
+            .replace('"', "'")
+            .replace("\n", " ")
+            .replace("[INST]", "")
+            .replace("[/INST]", "")
+            .strip()
+        )
+
         prompt = f"""
 [INST] You are an expert nutritional scientist and health auditor. Analyze the product label below.
 {output_lang_instr}
@@ -452,7 +463,7 @@ Product Category: {product_category}
 {persona_rules}
 {confidence_note}
 {blur_context}
-Label Text: "{extracted_text}"
+Label Text: "{safe_extracted}"
 Web Context: "{web_context}"
 
 Return ONLY valid JSON — no markdown, no preamble — with this exact structure:
@@ -504,26 +515,23 @@ RULES:
 [/INST]
         """
 
-        # ── Step 7: Groq LLM call ─────────────────────────────────────
-        try:
-            completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=2000,
-                response_format={"type": "json_object"},
-            )
-        except Exception as e:
-            logger.warning(f"Primary model failed, using fallback: {e}")
-            completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=2000,
-                response_format={"type": "json_object"},
-            )
-
-        result = json.loads(completion.choices[0].message.content)
+        # ── Step 7: Groq LLM call (with safe fallback) ──────────────────
+        result = None
+        for _model in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
+            try:
+                comp = client.chat.completions.create(
+                    model=_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    max_tokens=2000,
+                    response_format={"type": "json_object"},
+                )
+                result = json.loads(comp.choices[0].message.content)
+                break
+            except Exception as _e:
+                logger.warning("LLM model %s failed: %s", _model, _e)
+        if result is None:
+            raise RuntimeError("All LLM models failed — check GROQ_API_KEY and quota.")
 
         # ── Step 7.5: Eatlytic DNA Overrides ──────────────────────────
         dna_result = apply_dna_overrides(
@@ -820,8 +828,9 @@ async def api_analyze(
     lang_name = LANGUAGE_MAP.get(language, "English")
     prompt = (
         f'[INST] Analyze: "{safe_text}". Web: "{web_ctx}". Persona: {persona}. '
-        f"Respond in {lang_name} as valid JSON with: product_name, score(1-10), "
-        f"verdict, summary, nutrient_breakdown, pros, cons, age_warnings, better_alternative. [/INST]"
+        f"Respond in {lang_name} as valid JSON with: product_name, "
+        f"product_category (one of: biscuit|noodle|chip|beverage|juice|dairy|chocolate|protein_supplement|ready_to_eat|sweet), "
+        f"score(1-10), verdict, summary, ingredients_raw, nutrient_breakdown, pros, cons, age_warnings, better_alternative. [/INST]"
     )
 
     try:

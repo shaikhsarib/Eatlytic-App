@@ -19,8 +19,14 @@ _pending_otps: dict = {}
 
 def send_email_otp(email: str) -> str:
     """Generate and store a 6-digit OTP for email verification."""
+    # Cleanup expired OTPs every time a new one is issued (prevents memory leak)
+    now = datetime.datetime.now(UTC)
+    expired_keys = [k for k, (_, exp) in _pending_otps.items() if now > exp]
+    for k in expired_keys:
+        del _pending_otps[k]
+
     otp     = str(secrets.randbelow(900000) + 100000)
-    expires = datetime.datetime.now(UTC) + datetime.timedelta(minutes=10)
+    expires = now + datetime.timedelta(minutes=10)
     _pending_otps[email.lower()] = (otp, expires)
     logger.info("OTP for %s: %s (dev mode)", email, otp)
     return otp

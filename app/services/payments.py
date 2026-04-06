@@ -48,6 +48,8 @@ def create_order(user_id: str, device_key: str = "") -> dict:
 
 def verify_signature(order_id: str, payment_id: str, signature: str) -> bool:
     """Verify Razorpay HMAC signature."""
+    if not RAZORPAY_KEY_SECRET:
+        raise RuntimeError("RAZORPAY_KEY_SECRET not set — cannot verify payment signature.")
     expected = hmac.new(
         RAZORPAY_KEY_SECRET.encode(),
         f"{order_id}|{payment_id}".encode(),
