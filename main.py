@@ -28,6 +28,7 @@ from app.models.db import (
 from app.services.ocr import run_ocr, detect_label_presence, passes_confidence_gate
 from app.services.image import assess_image_quality, deblur_and_enhance, image_to_b64, ocr_quality_score
 from app.services.llm import analyse_label, build_analysis_prompt
+from app.services.fake_detector import apply_dna_overrides
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -141,6 +142,23 @@ def get_live_search(query: str) -> str:
     except Exception as e:
         logger.warning(f"Web search failed: {e}")
         return "No web data available."
+
+
+def _flatten_nutrients(nutrient_list: list) -> dict:
+    """Helper to convert LLM nutrient list to flat dict for DNA check."""
+    flat = {}
+    for n in nutrient_list:
+        name = n.get("name", "").lower()
+        val = n.get("value", 0)
+        if any(x in name for x in ["calorie", "energy", "kcal"]):
+            flat["calories"] = val
+        elif "protein" in name:
+            flat["protein"] = val
+        elif "carb" in name:
+            flat["carbs"] = val
+        elif "fat" in name:
+            flat["fat"] = val
+    return flat
 
 
 LANGUAGE_MAP = {
@@ -301,8 +319,8 @@ async def analyze_product(
                     ocr_orig = get_server_ocr(content, language)
                     ocr_enhanced = get_server_ocr(enhanced_bytes, language)
 
-                    orig_score = _ocr_quality_score(ocr_orig)
-                    enhanced_score = _ocr_quality_score(ocr_enhanced)
+                    orig_score = ocr_quality_score(ocr_orig)
+                    enhanced_score = ocr_quality_score(ocr_enhanced)
 
                     if enhanced_score >= orig_score * 0.85:
                         working_content = enhanced_bytes
@@ -499,24 +517,31 @@ RULES:
 
         result = json.loads(completion.choices[0].message.content)
 
-        # ── Step 7.5: Lie Detector & NOVA Classifier ──────────────────
-        if result.get("fake_claim_detected"):
-            result["verdict"] = "🚨 FAKE CLAIM: Brand claims 'No Sugar' but contains Sugar alternatives"
-            result["score"] = min(result.get("score", 5), 2)
-            if "Hidden Sugar" not in result.get("cons", []):
-                result.setdefault("cons", []).append("Hidden Sugar (Maltodextrin/Dextrose)")
-
-        raw_ing = str(result.get("ingredients_raw", "")).lower()
-        if raw_ing:
-            nova_triggers = [
-                "e471", "e442", "glycerol", "aspartame", "sucralose", 
-                "hydrogenated", "maltodextrin", "emulsifier", "artificial"
-            ]
-            hits = [t for t in nova_triggers if t in raw_ing]
-            if len(hits) >= 2:
-                result["nova_group"] = 4
-                result.setdefault("cons", []).append("⚠️ NOVA 4: Ultra-processed food")
-                result["score"] = min(result.get("score", 5), 3)
+        # ── Step 7.5: Eatlytic DNA Overrides ──────────────────────────
+        dna_result = apply_dna_overrides(
+            full_ocr_text=extracted_text,
+            nutrients=_flatten_nutrients(result.get("nutrient_breakdown", [])),
+            ingredients_raw=result.get("ingredients_raw", ""),
+            base_score=result.get("score", 5)
+        )
+        
+        if dna_result["action"] == "BLOCK":
+            return {
+                "error": "atwater_mismatch",
+                "message": dna_result["reason"],
+                "tip": "check_labels"
+            }
+        
+        if dna_result["action"] == "OVERRIDE":
+            result["score"] = dna_result["score"]
+            result["verdict"] = dna_result["reason"]
+            
+        if dna_result["extra_flags"]:
+            for flag in dna_result["extra_flags"]:
+                if flag not in result.get("cons", []):
+                    result.setdefault("cons", []).append(flag)
+            # Apply score cap for extra flags (like NOVA 4)
+            result["score"] = dna_result["score"]
 
         # ── Step 8: Validate chart_data ───────────────────────────────
         if "chart_data" in result:
@@ -528,32 +553,7 @@ RULES:
                     scaled[scaled.index(max(scaled))] += 100 - sum(scaled)
                     result["chart_data"] = scaled
 
-        # ── Step 8b: Atwater Math Check ───────────────────────────────
-        def _get_nutrient(key):
-            for n in result.get("nutrient_breakdown", []):
-                if key in n.get("name", "").lower():
-                    v = n.get("value", 0)
-                    return float(v) if isinstance(v, (int, float)) else 0
-            return 0
-
-        stated_cal = (
-            _get_nutrient("calorie") or _get_nutrient("energy") or _get_nutrient("kcal")
-        )
-        protein = _get_nutrient("protein")
-        carbs = _get_nutrient("carbohydrate") or _get_nutrient("carbs")
-        fat = _get_nutrient("fat")
-
-        if stated_cal > 0 and (protein > 0 or carbs > 0 or fat > 0):
-            calculated_cal = (protein * 4) + (carbs * 4) + (fat * 9)
-            margin = stated_cal * 0.15
-            if abs(calculated_cal - stated_cal) > margin:
-                result["atwater_warning"] = {
-                    "error": "atwater_mismatch",
-                    "message": f"Nutrient math mismatch: stated {stated_cal} kcal vs calculated {calculated_cal:.0f} kcal from macros.",
-                    "stated_calories": stated_cal,
-                    "calculated_calories": round(calculated_cal, 1),
-                }
-                result["is_low_confidence"] = True
+            result["chart_data"] = scaled
 
         # ── Step 9: Attach blur metadata ─────────────────────────────
         result["blur_info"] = blur_info
@@ -748,8 +748,6 @@ async def api_analyze(
     if not api_key_data.get("active"):
         raise HTTPException(status_code=403, detail="API key suspended.")
 
-    global api_keys_db
-    api_keys_db = load_api_keys()
     month_key = datetime.date.today().isoformat()[:7]
     
     # Check monthly quota
@@ -827,6 +825,25 @@ async def api_analyze(
             result = json.loads(comp.choices[0].message.content)
         except json.JSONDecodeError:
             raise ValueError("LLM returned invalid JSON")
+            
+        # ── Step 7.5: Eatlytic DNA Overrides ──────────────────────────
+        dna_result = apply_dna_overrides(
+            full_ocr_text=safe_text,
+            nutrients=_flatten_nutrients(result.get("nutrient_breakdown", [])),
+            ingredients_raw=result.get("ingredients_raw", ""),
+            base_score=result.get("score", 5)
+        )
+        
+        if dna_result["action"] == "BLOCK":
+            return {"error": "atwater_mismatch", "message": dna_result["reason"]}
+            
+        if dna_result["action"] == "OVERRIDE":
+            result["score"] = dna_result["score"]
+            result["verdict"] = dna_result["reason"]
+            
+        if dna_result["extra_flags"]:
+            result.setdefault("cons", []).extend(dna_result["extra_flags"])
+            result["score"] = dna_result["score"]
             
         result["blur_info"] = blur_info
         
@@ -1003,11 +1020,19 @@ async def export_pdf(request: Request, analysis_json: str = Form(...)):
 
 
 # ── WhatsApp webhook (Task 7) — requires twilio in requirements.txt ───
-def generate_whatsapp_response(r: dict, ocr: dict) -> str:
+def generate_whatsapp_response(r: dict, ocr: dict, dna_result: dict = None) -> str:
     if ocr.get("avg_confidence", 1) < 0.30 and ocr.get("word_count", 0) < 20:
         return "❌ Cannot Score\n\nThe label is too blurry or incomplete to provide a definitive score. Please send a clearer picture of the ingredients list."
+    
+    if dna_result and dna_result["action"] == "BLOCK":
+        return dna_result["reason"]
+        
     s = r.get("score", "?")
     v = r.get("verdict", "Analyzed")
+    
+    if dna_result and dna_result["action"] == "OVERRIDE":
+        v = dna_result["reason"]
+        
     summ = r.get("summary", "")
     fl = r.get("cons", [])
     flags_t = "\n".join([f"- {f}" for f in fl]) if fl else "- None"
@@ -1016,30 +1041,18 @@ def generate_whatsapp_response(r: dict, ocr: dict) -> str:
 @app.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):
     """Twilio WhatsApp sandbox webhook."""
+    form = await request.form()
+    
     # SECURITY: Verify Twilio Signature (Task 28)
-    # This requires TWILIO_AUTH_TOKEN and the RequestValidator
     try:
         from twilio.request_validator import RequestValidator
         validator = RequestValidator(os.environ.get("TWILIO_AUTH_TOKEN", ""))
         signature = request.headers.get("X-Twilio-Signature", "")
-        form_data = await request.form()
         url = str(request.url)
-        # Note: In production with a reverse proxy, you may need to use X-Forwarded-Proto
-        if not validator.validate(url, form_data, signature) and os.environ.get("ENV") == "production":
+        if not validator.validate(url, form, signature) and os.environ.get("ENV") == "production":
              logger.warning("Twilio signature validation failed!")
-             # return Response(status_code=403) # Uncomment for strict enforcement
     except ImportError:
         pass
-
-    try:
-        from twilio.twiml.messaging_response import MessagingResponse
-    except ImportError:
-        return Response(
-            content="<Response><Message>twilio not installed.</Message></Response>",
-            media_type="application/xml",
-        )
-
-    form = await request.form()
     media_url = form.get("MediaUrl0")
     resp = MessagingResponse()
     msg = resp.message()
@@ -1106,21 +1119,16 @@ Return exactly this JSON:
                     msg.body("⚠️ Analysis failed. Please try again.")
                     return Response(content=str(resp), media_type="application/xml")
                 
-                # Apply Lie Detector + NOVA
-                if res.get("fake_claim_detected"):
-                    res["verdict"] = "🚨 FAKE CLAIM"
-                    res["score"] = min(res.get("score", 5), 2)
-                    if "Hidden Sugar" not in res.get("cons", []):
-                        res.setdefault("cons", []).append("Hidden Sugar (Maltodextrin/Dextrose/Fructose)")
+                # ── Step 7.5: Eatlytic DNA Overrides ──────────────────
+                # WhatsApp uses simpler flattening since its prompt is smaller
+                dna_res = apply_dna_overrides(
+                    full_ocr_text=safe_text,
+                    nutrients={}, # WhatsApp 8b-instant prompt doesn't extract full macros for now
+                    ingredients_raw=res.get("ingredients_raw", ""),
+                    base_score=res.get("score", 5)
+                )
 
-                raw_ing = str(res.get("ingredients_raw", "")).lower()
-                if raw_ing:
-                    hits = [t for t in ["e471", "e442", "glycerol", "aspartame", "sucralose", "hydrogenated", "maltodextrin", "emulsifier", "artificial"] if t in raw_ing]
-                    if len(hits) >= 2:
-                        res["score"] = min(res.get("score", 5), 3)
-                        res.setdefault("cons", []).append("⚠️ NOVA 4: Ultra-processed food")
-
-                final_text = generate_whatsapp_response(res, ocr_r)
+                final_text = generate_whatsapp_response(res, ocr_r, dna_res)
                 msg.body(final_text)
         except Exception as e:
             logger.error(f"WhatsApp error: {e}")
