@@ -221,12 +221,23 @@ _EASYOCR_LANG_MAP = {
 
 # Pre-populate readers for most common languages to prevent "size mismatch" errors during fallback
 def _init_readers():
+    # Concurrency guard: Only initialize if not already in memory
+    # If multiple workers start at once, they may still trigger this,
+    # but the pre-downloaded Docker models ensure no new files are written.
     logger.info("🎨 Pre-initializing OCR readers (EN, HI, TA)...")
     for hint in ["en", "hi", "ta"]:
-        langs = _EASYOCR_LANG_MAP.get(hint, ["en"])
-        key = "_".join(sorted(langs))
-        if key not in _LANG_READERS:
-            _LANG_READERS[key] = easyocr.Reader(langs, gpu=False, model_storage_directory=MODEL_DIR)
+        try:
+            langs = _EASYOCR_LANG_MAP.get(hint, ["en"])
+            key = "_".join(sorted(langs))
+            if key not in _LANG_READERS:
+                _LANG_READERS[key] = easyocr.Reader(
+                    langs, 
+                    gpu=False, 
+                    model_storage_directory=MODEL_DIR,
+                    download_enabled=False # CRITICAL: Don't allow writing to disk if files missing
+                )
+        except Exception as e:
+            logger.warning(f"⚠️ Reader {hint} init failed (might be file lock): {e}")
     logger.info("✅ OCR Readers ready.")
 
 _init_readers()
@@ -316,21 +327,25 @@ def assess_image_quality(content: bytes) -> dict:
             0.25 * lap_norm + 0.20 * ten_norm + 0.20 * bren_norm + 0.35 * local_norm
         )
 
-        # Blur severity bands
-        if composite < 15:
+        # Blur severity bands -- UPDATED for better user experience
+        # LOWER thresholds = MORE images are considered "clear"
+        if composite < 10:
             severity = "severe"
             is_blurry = True
-        elif composite < 35:
+        elif composite < 25:
             severity = "moderate"
             is_blurry = True
-        elif composite < 55:
+        elif composite < 40:
             severity = "mild"
             is_blurry = True  # still attempt enhancement
         else:
             severity = "none"
             is_blurry = False
 
-        quality = "poor" if composite < 35 else ("fair" if composite < 55 else "good")
+        # UI Quality Label based on composite score
+        if composite < 25:    quality = "poor"
+        elif composite < 40:  quality = "fair"
+        else:                 quality = "good"
 
         return {
             "blur_score": round(composite, 2),

@@ -29,11 +29,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY --chown=user . .
 
 # Pre-download EasyOCR models so first request isn't slow
-# Pre-download models for English, Hindi, and Tamil separately to prevent architecture clashing
+# Pre-download models into the exact folder the app uses at runtime
+RUN mkdir -p /app/.cache/easyocr_models && chown -R user:user /app/.cache
 RUN python -c "import easyocr; \
-    easyocr.Reader(['en'], gpu=False); \
-    easyocr.Reader(['en', 'hi'], gpu=False); \
-    easyocr.Reader(['en', 'ta'], gpu=False)" 2>/dev/null || true
+    easyocr.Reader(['en'], gpu=False, model_storage_directory='/app/.cache/easyocr_models'); \
+    easyocr.Reader(['en', 'hi'], gpu=False, model_storage_directory='/app/.cache/easyocr_models'); \
+    easyocr.Reader(['en', 'ta'], gpu=False, model_storage_directory='/app/.cache/easyocr_models')" 2>/dev/null || true
 
 # Expose the default HF Spaces port
 EXPOSE 7860
