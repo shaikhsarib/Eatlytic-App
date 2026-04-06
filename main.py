@@ -771,6 +771,9 @@ def detect_label_presence(ocr_text: str) -> dict:
 # ══════════════════════════════════════════════════════════════════════
 
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 def get_server_ocr(content: bytes, lang_hint: str = "en") -> dict:
     img_hash = hashlib.md5(content).hexdigest()
     cache_key = f"{img_hash}_{lang_hint}"
@@ -779,39 +782,52 @@ def get_server_ocr(content: bytes, lang_hint: str = "en") -> dict:
 
     img = Image.open(BytesIO(content)).convert("RGB")
     w, h = img.size
-    max_dim = 1600
+    # Optimize: 1280px is sufficient for OCR and much faster on CPU than 1600px
+    max_dim = 1200
     if max(w, h) > max_dim:
         ratio = max_dim / max(w, h)
         img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
     img_np = np.array(img)
 
     def _run_ocr(lang):
-        active_reader = get_reader_for(lang)
-        results = active_reader.readtext(img_np, detail=1)
-        words = [r[1] for r in results]
-        confidences = [r[2] for r in results]
-        text = " ".join(words)
-        avg_conf = sum(confidences) / len(confidences) if confidences else 0
-        word_count = len(words)
-        return {
-            "text": text,
-            "word_count": word_count,
-            "avg_confidence": round(avg_conf, 3),
-            "is_readable": word_count >= 3 and avg_conf > 0.15,
-        }
+        try:
+            active_reader = get_reader_for(lang)
+            results = active_reader.readtext(img_np, detail=1)
+            words = [r[1] for r in results]
+            confidences = [r[2] for r in results]
+            text = " ".join(words)
+            avg_conf = sum(confidences) / len(confidences) if confidences else 0
+            word_count = len(words)
+            return {
+                "text": text,
+                "word_count": word_count,
+                "avg_confidence": round(avg_conf, 3),
+                "is_readable": word_count >= 3 and avg_conf > 0.15,
+            }
+        except Exception as e:
+            logger.error(f"OCR error for {lang}: {e}")
+            return {"text": "", "word_count": 0, "avg_confidence": 0, "is_readable": False}
 
+    # Pass 1: English (or requested lang)
     result = _run_ocr(lang_hint)
 
-    # INDIAN SCRIPT FALLBACK
-    if lang_hint == "en" and result["avg_confidence"] < 0.60:
-        logger.info("English confidence < 60%, triggering Indian Script Fallback (hi, ta)...")
-        res_hi = _run_ocr("hi")
-        res_ta = _run_ocr("ta")
-        
-        best_fallback = sorted([res_hi, res_ta], key=lambda x: x["avg_confidence"], reverse=True)[0]
-        if best_fallback["avg_confidence"] > result["avg_confidence"]:
-            result = best_fallback
-            logger.info("Indian script fallback selected over English.")
+    # ⚡ OPTIMIZATION: High-Confidence Exit
+    # If English is clear enough, don't waste time on fallbacks
+    if lang_hint == "en" and result["avg_confidence"] > 0.85 and result["word_count"] > 15:
+        ocr_cache[cache_key] = result
+        return result
+
+    # ⚡ OPTIMIZATION: Parallel Fallback
+    if lang_hint == "en" and result["avg_confidence"] < 0.70:
+        logger.info("Confidence low, triggering Parallel Indian Script Fallback...")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = {executor.submit(_run_ocr, lang): lang for lang in ["hi", "ta"]}
+            
+            for future in futures:
+                res = future.result()
+                if res["avg_confidence"] > result["avg_confidence"]:
+                    result = res
+                    logger.info(f"Fallback {futures[future]} selected (better confidence).")
 
     ocr_cache[cache_key] = result
     save_cache(ocr_cache, OCR_CACHE_FILE)
@@ -981,29 +997,29 @@ async def analyze_product(
                     content, quality["blur_severity"]
                 )
 
-                # Run OCR on both and compare quality
-                ocr_orig = get_server_ocr(content, language)
-                ocr_enhanced = get_server_ocr(enhanced_bytes, language)
-
-                orig_score = _ocr_quality_score(ocr_orig)
-                enhanced_score = _ocr_quality_score(ocr_enhanced)
-
-                logger.info(
-                    f"OCR quality — original: {orig_score:.1f}, "
-                    f"enhanced: {enhanced_score:.1f}"
-                )
-
-                if enhanced_score >= orig_score * 0.85:
-                    # Enhanced is at least 85% as good → prefer it
+                # ⚡ OPTIMIZATION: Faster path for mild blur
+                if quality["blur_severity"] == "mild":
                     working_content = enhanced_bytes
                     blur_info["deblurred"] = True
                     blur_info["method_log"] = method_log
-                    blur_info["image_b64"] = image_to_b64(enhanced_bytes)
-                    blur_info["ocr_source"] = "deblurred"
-                    extracted_text = None  # force re-OCR from enhanced image
-                    logger.info("Using deblurred image for analysis.")
+                    blur_info["ocr_source"] = "deblurred_fast"
+                    logger.info("Mild blur: using enhanced image directly to save time.")
                 else:
-                    logger.info("Original OCR was better; keeping original.")
+                    # Moderate/Severe: Run OCR on both and compare quality
+                    ocr_orig = get_server_ocr(content, language)
+                    ocr_enhanced = get_server_ocr(enhanced_bytes, language)
+
+                    orig_score = _ocr_quality_score(ocr_orig)
+                    enhanced_score = _ocr_quality_score(ocr_enhanced)
+
+                    if enhanced_score >= orig_score * 0.85:
+                        working_content = enhanced_bytes
+                        blur_info["deblurred"] = True
+                        blur_info["method_log"] = method_log
+                        blur_info["ocr_source"] = "deblurred_validated"
+                
+                if blur_info["deblurred"]:
+                    blur_info["image_b64"] = image_to_b64(enhanced_bytes)
 
             except Exception as e:
                 logger.warning(f"Deblurring failed, using original: {e}")
