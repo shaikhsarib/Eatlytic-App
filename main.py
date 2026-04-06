@@ -29,6 +29,7 @@ from app.services.ocr import run_ocr, detect_label_presence, passes_confidence_g
 from app.services.image import assess_image_quality, deblur_and_enhance, image_to_b64, ocr_quality_score
 from app.services.llm import analyse_label, build_analysis_prompt
 from app.services.fake_detector import apply_dna_overrides
+from app.services.alternatives import get_healthy_alternative
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -560,17 +561,22 @@ RULES:
                     scaled[scaled.index(max(scaled))] += 100 - sum(scaled)
                     result["chart_data"] = scaled
 
-        # ── Step 9: Attach blur metadata ─────────────────────────────
+        # ── Step 9: Alternative Engine (The Eatlytic Way) ──────────────
+        category = result.get("product_category", "general")
+        alt_advice = get_healthy_alternative(category, persona)
+        result["better_alternative"] = alt_advice
+
+        # ── Step 10: Attach blur metadata ─────────────────────────────
         result["blur_info"] = blur_info
 
-        # ── Step 9b: Attach scan metadata (Task 11) ──────────────────
+        # ── Step 11: Attach scan metadata (Task 11) ──────────────────
         result["scan_meta"] = {
             "scans_remaining": scan_check["scans_remaining"],
             "is_pro": scan_check["is_pro"],
             "scans_used": scan_check["scans_used"],
         }
 
-        # ── Step 10: Cache & return ───────────────────────────────────
+        # ── Step 12: Cache & return ───────────────────────────────────
         set_ai_cache(cache_key, result)
         return result
 
@@ -850,6 +856,11 @@ async def api_analyze(
             result.setdefault("cons", []).extend(dna_result["extra_flags"])
             result["score"] = dna_result["score"]
             
+        # ── Step 9: Alternative Engine ───────────────────────────────
+        category = result.get("product_category", "general")
+        alt_advice = get_healthy_alternative(category, persona)
+        result["better_alternative"] = alt_advice
+
         result["blur_info"] = blur_info
         
         with db_conn() as conn:
@@ -1025,7 +1036,7 @@ async def export_pdf(request: Request, analysis_json: str = Form(...)):
 
 
 # ── WhatsApp webhook (Task 7) — requires twilio in requirements.txt ───
-def generate_whatsapp_response(r: dict, ocr: dict, dna_result: dict = None) -> str:
+def generate_whatsapp_response(r: dict, ocr: dict, dna_result: dict = None, alt_advice: str = "") -> str:
     if ocr.get("avg_confidence", 1) < 0.30 and ocr.get("word_count", 0) < 20:
         return "❌ Cannot Score\n\nThe label is too blurry or incomplete to provide a definitive score. Please send a clearer picture of the ingredients list."
     
@@ -1041,7 +1052,11 @@ def generate_whatsapp_response(r: dict, ocr: dict, dna_result: dict = None) -> s
     summ = r.get("summary", "")
     fl = r.get("cons", [])
     flags_t = "\n".join([f"- {f}" for f in fl]) if fl else "- None"
-    return f"Eatlytic Score: {s}/10\n\n[{v}]\n{summ}\n\n⚠️ Risk Flags:\n{flags_t}"
+    
+    msg = f"Eatlytic Score: {s}/10\n\n[{v}]\n{summ}\n\n⚠️ Risk Flags:\n{flags_t}"
+    if alt_advice:
+        msg += f"\n\n{alt_advice}"
+    return msg
 
 @app.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):
@@ -1104,6 +1119,7 @@ Return exactly this JSON:
 {{
     "score": <1-10>,
     "verdict": "Two-word verdict",
+    "product_category": "Categorize strictly as one of: biscuit|noodle|chip|beverage|juice|dairy|chocolate|protein_supplement|ready_to_eat|sweet",
     "fake_claim_detected": <true if text claims 'No Added Sugar'/'Sugar-Free' BUT ingredients have Maltodextrin, Dextrose, Fructose, Corn Syrup, Date Syrup>,
     "ingredients_raw": "Comma, separated, list, of, ingredients, extracted",
     "summary": "Professional 2-sentence summary",
@@ -1125,7 +1141,6 @@ Return exactly this JSON:
                     return Response(content=str(resp), media_type="application/xml")
                 
                 # ── Step 7.5: Eatlytic DNA Overrides ──────────────────
-                # WhatsApp uses simpler flattening since its prompt is smaller
                 dna_res = apply_dna_overrides(
                     full_ocr_text=safe_text,
                     nutrients={}, # WhatsApp 8b-instant prompt doesn't extract full macros for now
@@ -1133,7 +1148,11 @@ Return exactly this JSON:
                     base_score=res.get("score", 5)
                 )
 
-                final_text = generate_whatsapp_response(res, ocr_r, dna_res)
+                # ── Step 9: Alternative Engine ────────────────────────
+                category = res.get("product_category", "general")
+                alt_advice = get_healthy_alternative(category, "general adult")
+                
+                final_text = generate_whatsapp_response(res, ocr_r, dna_res, alt_advice)
                 msg.body(final_text)
         except Exception as e:
             logger.error(f"WhatsApp error: {e}")

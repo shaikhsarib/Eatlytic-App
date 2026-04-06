@@ -109,7 +109,7 @@ Web Context: "{web_context}"
 Return ONLY valid JSON — no markdown, no preamble:
 {{
   "product_name"      : "Short name from label",
-  "product_category"  : "Snack|Dairy|Beverage|Cereal|Supplement|etc.",
+  "product_category"  : "Categorize strictly as one of: biscuit|noodle|chip|beverage|juice|dairy|chocolate|protein_supplement|ready_to_eat|sweet",
   "score"             : <INTEGER 1-10 per SCORING RUBRIC — modified by persona rules>,
   "verdict"           : "Two-word verdict in {lang_name}",
   "fake_claim_detected": <true if text claims 'No Added Sugar'/'Sugar-Free' BUT ingredients have Maltodextrin, Dextrose, Fructose, Corn Syrup, Date Syrup>,
@@ -217,6 +217,7 @@ def sanitise_result(result: dict) -> dict:
     result.setdefault("score", 5)
     result.setdefault("verdict", "Analyzed")
     result.setdefault("product_name", "Unknown Product")
+    result.setdefault("product_category", "general")
     result.setdefault("nutrient_breakdown", [])
     result.setdefault("pros", [])
     result.setdefault("cons", [])
