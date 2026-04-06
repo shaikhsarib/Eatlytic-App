@@ -1,5 +1,6 @@
 FROM python:3.11-slim
 
+# 1. Install system dependencies for OpenCV and OCR
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
@@ -9,20 +10,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# 2. Create the Hugging Face User (standard for Spaces)
+RUN useradd -m -u 1000 user
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# 3. Handle dependencies
+COPY --chown=user:user requirements.txt .
+RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
-COPY . .
+# 4. Copy project files
+COPY --chown=user:user . .
 
-RUN mkdir -p /app/.cache/easyocr_models
+# 5. Pre-setup OCR cache (speeds up startup)
+RUN mkdir -p /app/.cache/easyocr_models && chown -R user:user /app/.cache
+USER user
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH \
+    PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1
 
+# Pre-download models so the app starts INSTANTLY 
 RUN python -c "import easyocr; \
-    easyocr.Reader(['en'], gpu=False, model_storage_directory='/app/.cache/easyocr_models'); \
-    easyocr.Reader(['en', 'hi', 'ta'], gpu=False, model_storage_directory='/app/.cache/easyocr_models'); \
-    easyocr.Reader(['en', 'ch_sim'], gpu=False, model_storage_directory='/app/.cache/easyocr_models')" 2>/dev/null || true
+    easyocr.Reader(['en'], gpu=False, model_storage_directory='/app/.cache/easyocr_models')"
 
-EXPOSE 8000
+# 6. Use Hugging Face default port (7860)
+EXPOSE 7860
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# 7. Start the backend
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "4"]
