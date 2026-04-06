@@ -76,11 +76,15 @@ def assess_image_quality(content: bytes) -> dict:
             + 0.35 * min(loc / 300.0 * 100, 100)
         )
 
-        if comp < 15:
+        # Raise thresholds: camera-shot label surfaces are flat/uniform,
+        # so Laplacian/Tenengrad score LOW even on perfectly sharp images.
+        # We are conservative: only flag as blurry if BOTH composite AND
+        # local-median agree the image is degraded.
+        if comp < 12:
             severity, is_blurry = "severe", True
-        elif comp < 35:
+        elif comp < 25 and loc < 80:
             severity, is_blurry = "moderate", True
-        elif comp < 50:
+        elif comp < 38 and loc < 50:
             severity, is_blurry = "mild", True
         else:
             severity, is_blurry = "none", False
