@@ -36,12 +36,13 @@ app.add_middleware(
 
 # --- PERSISTENT STORAGE ---
 DATA_DIR = os.path.join(os.getcwd(), "data")
-CACHE_DIR = os.environ.get("HF_HOME", "/app/.cache")
+# Robust cache path: use local project dir on Windows, /app/.cache in Docker
+CACHE_DIR = os.environ.get("HF_HOME", os.path.join(os.getcwd(), ".cache"))
 MODEL_DIR = os.path.join(CACHE_DIR, "easyocr_models")
 
 for d in [MODEL_DIR, DATA_DIR]:
     if not os.path.exists(d):
-        os.makedirs(d)
+        os.makedirs(d, exist_ok=True)
 
 # --- CACHE SETUP ---
 OCR_CACHE_FILE = os.path.join(DATA_DIR, "ocr_cache.json")
@@ -212,45 +213,51 @@ else:
 # --- MULTI-LANGUAGE READER CACHE ---
 _LANG_READERS: dict = {}
 _READER_LOCK = threading.Lock()
+
+# Consolidate Indian languages into ONE reader ['en', 'hi', 'ta'] 
+# to prevent "size mismatch" errors caused by switching between small/large charsets.
+INDIAN_LANG_SET = ["en", "hi", "ta"]
+
 _EASYOCR_LANG_MAP = {
     "en": ["en"],
-    "hi": ["en", "hi"],
-    "zh": ["en", "ch_sim"],
-    "ta": ["en", "ta"],
+    "hi": INDIAN_LANG_SET,
+    "ta": INDIAN_LANG_SET,
     "te": ["en", "te"],
     "bn": ["en", "bn"],
+    "zh": ["en", "ch_sim"],
 }
 
-# Pre-populate readers for most common languages to prevent "size mismatch" errors during fallback
 def _init_readers():
-    # Only initialize if not already in memory
-    # We use the lock even here to be 100% safe during the very first boot
-    logger.info("🎨 Pre-initializing OCR readers (EN, HI, TA)...")
-    for hint in ["en", "hi", "ta"]:
-        get_reader_for(hint)
+    """Warms up the engine to prevent cold-start latency."""
+    logger.info("🎨 Pre-initializing OCR readers (English & Pan-Indian models)...")
+    get_reader_for("en")
+    get_reader_for("hi") # This will also prep 'ta'
     logger.info("✅ OCR Readers ready.")
 
 def get_reader_for(lang_hint: str):
     langs = _EASYOCR_LANG_MAP.get(lang_hint, ["en"])
+    # Key is sorted to ensure ["en", "hi"] and ["hi", "en"] use the same instance
     key = "_".join(sorted(langs))
     
     with _READER_LOCK:
         if key not in _LANG_READERS:
             try:
-                logger.info(f"💾 Loading reader: {langs}")
+                logger.info(f"💾 Loading reader into memory: {langs}")
                 _LANG_READERS[key] = easyocr.Reader(
                     langs, 
                     gpu=False, 
                     model_storage_directory=MODEL_DIR,
-                    download_enabled=False # Rely on pre-downloaded Docker models
+                    download_enabled=True # Allow download if missing locally
                 )
             except Exception as e:
                 logger.error(f"❌ Failed to load reader {langs}: {e}")
-                # Fallback to pure English if a specific combo fails
-                if langs != ["en"] and "en" not in _LANG_READERS:
-                    return get_reader_for("en")
+                # Ultimate fallback: return the English reader if it exists
+                if "en" in _LANG_READERS:
+                    return _LANG_READERS["en"]
+                # Otherwise, try to create English reader on the fly
+                return easyocr.Reader(["en"], gpu=False, model_storage_directory=MODEL_DIR)
         
-    return _LANG_READERS.get(key) or _LANG_READERS.get("en")
+    return _LANG_READERS.get(key)
 
 _init_readers()
 

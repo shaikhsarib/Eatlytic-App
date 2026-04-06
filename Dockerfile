@@ -33,8 +33,8 @@ COPY --chown=user . .
 RUN mkdir -p /app/.cache/easyocr_models && chown -R user:user /app/.cache
 RUN python -c "import easyocr; \
     easyocr.Reader(['en'], gpu=False, model_storage_directory='/app/.cache/easyocr_models'); \
-    easyocr.Reader(['en', 'hi'], gpu=False, model_storage_directory='/app/.cache/easyocr_models'); \
-    easyocr.Reader(['en', 'ta'], gpu=False, model_storage_directory='/app/.cache/easyocr_models')" 2>/dev/null || true
+    easyocr.Reader(['en', 'hi', 'ta'], gpu=False, model_storage_directory='/app/.cache/easyocr_models'); \
+    easyocr.Reader(['en', 'ch_sim'], gpu=False, model_storage_directory='/app/.cache/easyocr_models')" 2>/dev/null || true
 
 # Expose the default HF Spaces port
 EXPOSE 7860
