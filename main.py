@@ -18,18 +18,30 @@ from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Sec
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import APIKeyHeader
-from duckduckgo_search import DDGS
 from groq import Groq
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from app.models.db import (
-    init_db, db_conn, get_ocr_cache, set_ocr_cache, get_ai_cache, set_ai_cache, check_and_increment_scan
+    init_db,
+    db_conn,
+    get_ocr_cache,
+    set_ocr_cache,
+    get_ai_cache,
+    set_ai_cache,
+    check_and_increment_scan,
 )
 from app.services.ocr import run_ocr, detect_label_presence, passes_confidence_gate
-from app.services.image import assess_image_quality, deblur_and_enhance, image_to_b64, ocr_quality_score
-from app.services.llm import unified_analyze_flow, LANGUAGE_MAP
+from app.services.image import (
+    assess_image_quality,
+    deblur_and_enhance,
+    image_to_b64,
+    ocr_quality_score,
+)
+from app.services.llm import unified_analyze_flow, LANGUAGE_MAP, _flatten_nutrients
+from app.services.fake_detector import apply_dna_overrides
+from app.services.alternatives import get_healthy_alternative
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -66,7 +78,9 @@ def verify_api_key(api_key: str = Security(api_key_header)):
     if not api_key:
         return None
     with db_conn() as conn:
-        row = conn.execute("SELECT * FROM api_keys WHERE api_key=?", (api_key,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM api_keys WHERE api_key=?", (api_key,)
+        ).fetchone()
     if row:
         return dict(row)
     return None
@@ -78,7 +92,7 @@ def generate_api_key(client_name: str, plan: str = "business") -> str:
     with db_conn() as conn:
         conn.execute(
             "INSERT INTO api_keys(api_key, client_name, plan, scans_this_month, month, active) VALUES(?,?,?,?,?,1)",
-            (key, client_name, plan, 0, month_key)
+            (key, client_name, plan, 0, month_key),
         )
     return key
 
@@ -246,8 +260,10 @@ async def analyze_product(
             )
             try:
                 # ⚡ Apply enhancement directly
-                enhanced_bytes, method_log = deblur_and_enhance(content, quality["blur_severity"])
-                
+                enhanced_bytes, method_log = deblur_and_enhance(
+                    content, quality["blur_severity"]
+                )
+
                 # Use enhanced image directly for ALL blur levels
                 # Eliminates the 2x OCR comparison which was the biggest speed
                 # bottleneck. The enhanced image is always >= original quality.
@@ -255,7 +271,9 @@ async def analyze_product(
                 blur_info["deblurred"] = True
                 blur_info["method_log"] = method_log
                 blur_info["ocr_source"] = "deblurred"
-                logger.info(f"Image enhanced ({quality['blur_severity']}): {method_log}")
+                logger.info(
+                    f"Image enhanced ({quality['blur_severity']}): {method_log}"
+                )
 
             except Exception as e:
                 logger.warning(f"Deblurring failed, using original: {e}")
@@ -271,7 +289,9 @@ async def analyze_product(
             # (known library quirk). Gate on word_count ONLY — confidence is
             # unreliable when label fonts are decorative or very small.
             if ocr_word_count < 5 and ocr_result["avg_confidence"] < 0.20:
-                logger.info(f"Gate rejected: conf={ocr_result['avg_confidence']}, words={ocr_word_count}")
+                logger.info(
+                    f"Gate rejected: conf={ocr_result['avg_confidence']}, words={ocr_word_count}"
+                )
                 return {
                     "error": "blurry_image",
                     "message": f"⚠️ Not enough text detected ({ocr_word_count} words found). Please move closer and make sure the ingredients panel fills the frame.",
@@ -314,7 +334,7 @@ async def analyze_product(
             age_group=age_group,
             product_category_hint=product_category,
             language=language,
-            web_context="", # Web context will be fetched inside flow async
+            web_context="",  # Web context will be fetched inside flow async
             blur_info=blur_info,
             label_confidence=label_confidence,
         )
@@ -354,13 +374,19 @@ async def activate_pro(request: Request, payment_id: str = Form(...)):
     month_key = datetime.date.today().isoformat()[:7]
     with db_conn() as conn:
         # Ensure device exists and set as pro
-        row = conn.execute("SELECT * FROM devices WHERE device_key=?", (device_key,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM devices WHERE device_key=?", (device_key,)
+        ).fetchone()
         if not row:
-            conn.execute("INSERT INTO devices(device_key, is_pro, month, scan_count) VALUES(?,1,?,0)", 
-                         (device_key, month_key))
+            conn.execute(
+                "INSERT INTO devices(device_key, is_pro, month, scan_count) VALUES(?,1,?,0)",
+                (device_key, month_key),
+            )
         else:
-            conn.execute("UPDATE devices SET is_pro=1 WHERE device_key=?", (device_key,))
-            
+            conn.execute(
+                "UPDATE devices SET is_pro=1 WHERE device_key=?", (device_key,)
+            )
+
     logger.info(f"Pro activated for device {device_key}, payment_id={payment_id}")
     return {
         "status": "activated",
@@ -374,10 +400,12 @@ async def scan_status(request: Request):
     """Returns remaining scans and pro status for the current device."""
     device_key = get_device_key(request)
     month_key = datetime.date.today().isoformat()[:7]
-    
+
     with db_conn() as conn:
-        row = conn.execute("SELECT * FROM devices WHERE device_key=?", (device_key,)).fetchone()
-        
+        row = conn.execute(
+            "SELECT * FROM devices WHERE device_key=?", (device_key,)
+        ).fetchone()
+
     if not row:
         return {
             "scans_used": 0,
@@ -385,7 +413,7 @@ async def scan_status(request: Request):
             "is_pro": False,
             "limit": FREE_SCAN_LIMIT,
         }
-    
+
     u = dict(row)
     if u["month"] != month_key:
         return {
@@ -394,7 +422,7 @@ async def scan_status(request: Request):
             "is_pro": bool(u["is_pro"]),
             "limit": FREE_SCAN_LIMIT,
         }
-        
+
     used = u["scan_count"]
     return {
         "scans_used": used,
@@ -420,13 +448,13 @@ async def generate_share_card(
     BG = (15, 17, 23)
     img = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
-    
+
     # Improved font loading for Docker + Windows fallback
     font_paths = [
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "C:\\Windows\\Fonts\\arialbd.ttf",
-        "arial.ttf"
+        "arial.ttf",
     ]
     font = None
     for p in font_paths:
@@ -510,14 +538,16 @@ async def api_analyze(
         raise HTTPException(status_code=403, detail="API key suspended.")
 
     month_key = datetime.date.today().isoformat()[:7]
-    
+
     # Check monthly quota
     scans_used = api_key_data.get("scans_this_month", 0)
     if api_key_data.get("month") != month_key:
         scans_used = 0
         with db_conn() as conn:
-            conn.execute("UPDATE api_keys SET month=?, scans_this_month=0 WHERE api_key=?", 
-                         (month_key, api_key_data["api_key"]))
+            conn.execute(
+                "UPDATE api_keys SET month=?, scans_this_month=0 WHERE api_key=?",
+                (month_key, api_key_data["api_key"]),
+            )
 
     LIMITS = {"business": 1000, "enterprise": 99999}
     limit = LIMITS.get(api_key_data["plan"], 1000)
@@ -549,10 +579,10 @@ async def api_analyze(
 
     ocr = get_server_ocr(working, language)
     text = ocr["text"]
-    
+
     # Sanitise to prevent prompt injection
     safe_text = text.replace('"', "'").replace("\n", " ").strip()
-    
+
     lc = detect_label_presence(text)
     if not lc["has_label"]:
         return {"error": "no_label", "message": "No nutrition label detected in image."}
@@ -561,15 +591,11 @@ async def api_analyze(
     cached = get_ai_cache(cache_key)
     if cached:
         cached["blur_info"] = blur_info
-        with db_conn() as conn:
-            conn.execute("UPDATE api_keys SET scans_this_month=scans_this_month+1 WHERE api_key=?", 
-                         (api_key_data["api_key"],))
         return cached
 
-    web_ctx = get_live_search(f"health analysis ingredients {safe_text[:120]}")
     lang_name = LANGUAGE_MAP.get(language, "English")
     prompt = (
-        f'[INST] Analyze: "{safe_text}". Web: "{web_ctx}". Persona: {persona}. '
+        f'[INST] Analyze: "{safe_text}". Persona: {persona}. '
         f"Respond in {lang_name} as valid JSON with: product_name, "
         f"product_category (one of: biscuit|noodle|chip|beverage|juice|dairy|chocolate|protein_supplement|ready_to_eat|sweet), "
         f"score(1-10), verdict, summary, ingredients_raw, nutrient_breakdown, pros, cons, age_warnings, better_alternative. [/INST]"
@@ -587,37 +613,39 @@ async def api_analyze(
             result = json.loads(comp.choices[0].message.content)
         except json.JSONDecodeError:
             raise ValueError("LLM returned invalid JSON")
-            
+
         # ── Step 7.5: Eatlytic DNA Overrides ──────────────────────────
         dna_result = apply_dna_overrides(
             full_ocr_text=safe_text,
             nutrients=_flatten_nutrients(result.get("nutrient_breakdown", [])),
             ingredients_raw=result.get("ingredients_raw", ""),
-            base_score=result.get("score", 5)
+            base_score=result.get("score", 5),
         )
-        
+
         if dna_result["action"] == "BLOCK":
             return {"error": "atwater_mismatch", "message": dna_result["reason"]}
-            
+
         if dna_result["action"] == "OVERRIDE":
             result["score"] = dna_result["score"]
             result["verdict"] = dna_result["reason"]
-            
+
         if dna_result["extra_flags"]:
             result.setdefault("cons", []).extend(dna_result["extra_flags"])
             result["score"] = dna_result["score"]
-            
+
         # ── Step 9: Alternative Engine ───────────────────────────────
         category = result.get("product_category", "general")
         alt_advice = get_healthy_alternative(category, persona)
         result["better_alternative"] = alt_advice
 
         result["blur_info"] = blur_info
-        
+
         with db_conn() as conn:
-            conn.execute("UPDATE api_keys SET scans_this_month=scans_this_month+1 WHERE api_key=?", 
-                         (api_key_data["api_key"],))
-            
+            conn.execute(
+                "UPDATE api_keys SET scans_this_month=scans_this_month+1 WHERE api_key=?",
+                (api_key_data["api_key"],),
+            )
+
         result["api_usage"] = {
             "scans_this_month": scans_used + 1,
             "limit": limit,
@@ -640,7 +668,9 @@ async def create_api_key_endpoint(
     expected = os.environ.get("ADMIN_TOKEN")
     if not expected:
         logger.error("ADMIN_TOKEN environment variable not set!")
-        raise HTTPException(status_code=500, detail="Server misconfiguration: ADMIN_TOKEN not set.")
+        raise HTTPException(
+            status_code=500, detail="Server misconfiguration: ADMIN_TOKEN not set."
+        )
     if admin_token != expected:
         raise HTTPException(status_code=403, detail="Invalid admin token.")
     key = generate_api_key(client_name, plan)
@@ -787,51 +817,58 @@ async def export_pdf(request: Request, analysis_json: str = Form(...)):
 
 
 # ── WhatsApp webhook (Task 7) — requires twilio in requirements.txt ───
-def generate_whatsapp_response(r: dict, ocr: dict, dna_result: dict = None, alt_advice: str = "") -> str:
+def generate_whatsapp_response(
+    r: dict, ocr: dict, dna_result: dict = None, alt_advice: str = ""
+) -> str:
     if ocr.get("avg_confidence", 1) < 0.30 and ocr.get("word_count", 0) < 20:
         return "❌ Cannot Score\n\nThe label is too blurry or incomplete to provide a definitive score. Please send a clearer picture of the ingredients list."
-    
+
     if dna_result and dna_result["action"] == "BLOCK":
         return dna_result["reason"]
-        
+
     s = r.get("score", "?")
     v = r.get("verdict", "Analyzed")
-    
+
     if dna_result and dna_result["action"] == "OVERRIDE":
         v = dna_result["reason"]
-        
+
     summ = r.get("summary", "")
     fl = r.get("cons", [])
     flags_t = "\n".join([f"- {f}" for f in fl]) if fl else "- None"
-    
+
     msg = f"Eatlytic Score: {s}/10\n\n[{v}]\n{summ}\n\n⚠️ Risk Flags:\n{flags_t}"
     if alt_advice:
         msg += f"\n\n{alt_advice}"
     return msg
 
+
 @app.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):
     """Twilio WhatsApp sandbox webhook with DNA overrides and scan limits."""
     form = await request.form()
-    
+
     # 1. SECURITY: Verify Twilio Signature
     try:
         from twilio.request_validator import RequestValidator
+
         validator = RequestValidator(os.environ.get("TWILIO_AUTH_TOKEN", ""))
         signature = request.headers.get("X-Twilio-Signature", "")
         url = str(request.url)
-        if not validator.validate(url, form, signature) and os.environ.get("ENV") == "production":
-             logger.warning("Twilio signature validation failed!")
+        if (
+            not validator.validate(url, form, signature)
+            and os.environ.get("ENV") == "production"
+        ):
+            logger.warning("Twilio signature validation failed!")
     except ImportError:
         pass
 
     resp = MessagingResponse()
     msg = resp.message()
-    
+
     # 2. Identify user and check scan limits
     phone_number = form.get("From", "unknown_wa")
     scan_check = check_and_increment_scan(phone_number)
-    
+
     media_url = form.get("MediaUrl0")
     if not media_url:
         msg.body(
@@ -854,11 +891,14 @@ async def whatsapp_webhook(request: Request):
     # 3. Process the image
     try:
         import httpx
+
         TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
         TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
-        
+
         async with httpx.AsyncClient() as hc:
-            img_bytes = (await hc.get(media_url, auth=(TWILIO_SID, TWILIO_TOKEN))).content
+            img_bytes = (
+                await hc.get(media_url, auth=(TWILIO_SID, TWILIO_TOKEN))
+            ).content
 
         # Blur assessment & enhancement
         quality = assess_image_quality(img_bytes)
@@ -867,7 +907,7 @@ async def whatsapp_webhook(request: Request):
             "detected": quality["is_blurry"],
             "severity": quality["blur_severity"],
             "score": quality["blur_score"],
-            "deblurred": False
+            "deblurred": False,
         }
         if quality["is_blurry"]:
             enhanced, log = deblur_and_enhance(img_bytes, quality["blur_severity"])
@@ -893,20 +933,20 @@ async def whatsapp_webhook(request: Request):
                 age_group="adult",
                 product_category_hint="general",
                 language="en",
-                web_context="", # Will be fetched inside flow
+                web_context="",  # Will be fetched inside flow
                 blur_info=blur_info,
-                label_confidence=lc.get("confidence", "medium")
+                label_confidence=lc.get("confidence", "medium"),
             )
-            
+
             # 6. Format Response
             score = analysis.get("score", "?")
             verdict = analysis.get("verdict", "Analyzed")
             summary = analysis.get("summary", "")
             cons = analysis.get("cons", [])
             alt = analysis.get("better_alternative", "")
-            
+
             risk_text = "\n".join([f"• {c}" for c in cons]) if cons else "• None"
-            
+
             response_text = (
                 f"*Eatlytic Score: {score}/10*\n"
                 f"[{verdict}]\n\n"

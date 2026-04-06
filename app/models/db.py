@@ -1,9 +1,10 @@
 """
 app/models/db.py
 Database schema, connection management, and initialisation.
-Uses SQLite with WAL mode for single-server MVP.
-Migration path: swap sqlite3 for asyncpg/SQLAlchemy when ≥100 DAU.
+Uses Supabase for production (concurrent-safe cache + device tracking).
+SQLite retained as local dev fallback when Supabase env vars are absent.
 """
+
 import os
 import json
 import sqlite3
@@ -13,8 +14,21 @@ from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
+# ── Supabase client (production) ──────────────────────────────────────
+_SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+_SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+_supabase = None
+if _SUPABASE_URL and _SUPABASE_KEY:
+    from supabase import create_client, Client
+
+    _supabase: Client = create_client(_SUPABASE_URL, _SUPABASE_KEY)
+    logger.info("Supabase client initialised: %s", _SUPABASE_URL)
+else:
+    logger.warning("Supabase env vars missing — using SQLite fallback")
+
+# ── SQLite fallback (local dev only) ─────────────────────────────────
 DATA_DIR = os.path.join(os.getcwd(), "data")
-DB_FILE  = os.path.join(DATA_DIR, "eatlytic.db")
+DB_FILE = os.path.join(DATA_DIR, "eatlytic.db")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
@@ -231,30 +245,70 @@ def init_db() -> None:
     logger.info("Database ready: %s", DB_FILE)
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  SUPABASE CACHE LAYER (production) with SQLite fallback (dev)
+# ══════════════════════════════════════════════════════════════════════
+
+
 def get_ocr_cache(key: str):
+    if _supabase:
+        try:
+            response = (
+                _supabase.table("ocr_cache").select("*").eq("cache_key", key).execute()
+            )
+            if response.data:
+                return json.loads(response.data[0]["result_json"])
+        except Exception as e:
+            logger.warning("Supabase get_ocr_cache failed: %s", e)
     try:
         with db_conn() as c:
-            row = c.execute("SELECT result_json FROM ocr_cache WHERE cache_key=?", (key,)).fetchone()
+            row = c.execute(
+                "SELECT result_json FROM ocr_cache WHERE cache_key=?", (key,)
+            ).fetchone()
         return json.loads(row["result_json"]) if row else None
     except Exception:
         return None
 
 
 def set_ocr_cache(key: str, value: dict):
+    if _supabase:
+        try:
+            _supabase.table("ocr_cache").upsert(
+                {"cache_key": key, "result_json": json.dumps(value)}
+            ).execute()
+            return
+        except Exception as e:
+            logger.warning(
+                "Supabase set_ocr_cache failed, falling back to SQLite: %s", e
+            )
     try:
         with db_conn() as c:
-            c.execute("INSERT OR REPLACE INTO ocr_cache(cache_key,result_json) VALUES(?,?)",
-                      (key, json.dumps(value)))
+            c.execute(
+                "INSERT OR REPLACE INTO ocr_cache(cache_key,result_json) VALUES(?,?)",
+                (key, json.dumps(value)),
+            )
     except Exception as exc:
         logger.warning("set_ocr_cache: %s", exc)
 
 
 def get_ai_cache(key: str):
+    if _supabase:
+        try:
+            response = (
+                _supabase.table("cached_products")
+                .select("*")
+                .eq("label_hash", key)
+                .execute()
+            )
+            if response.data:
+                return response.data[0]
+        except Exception as e:
+            logger.warning("Supabase get_ai_cache failed: %s", e)
     try:
         with db_conn() as c:
             row = c.execute(
                 "SELECT result_json FROM ai_cache WHERE cache_key=? AND created_at > datetime('now', '-30 days')",
-                (key,)
+                (key,),
             ).fetchone()
         return json.loads(row["result_json"]) if row else None
     except Exception:
@@ -262,10 +316,22 @@ def get_ai_cache(key: str):
 
 
 def set_ai_cache(key: str, value: dict):
+    if _supabase:
+        try:
+            payload = {"label_hash": key}
+            payload.update({k: v for k, v in value.items() if k not in ("label_hash",)})
+            _supabase.table("cached_products").upsert(payload).execute()
+            return
+        except Exception as e:
+            logger.warning(
+                "Supabase set_ai_cache failed, falling back to SQLite: %s", e
+            )
     try:
         with db_conn() as c:
-            c.execute("INSERT OR REPLACE INTO ai_cache(cache_key,result_json) VALUES(?,?)",
-                      (key, json.dumps(value)))
+            c.execute(
+                "INSERT OR REPLACE INTO ai_cache(cache_key,result_json) VALUES(?,?)",
+                (key, json.dumps(value)),
+            )
     except Exception as exc:
         logger.warning("set_ai_cache: %s", exc)
 
@@ -274,25 +340,54 @@ def check_and_increment_scan(device_key: str, limit: int = 10) -> dict:
     """Consolidated scan limit logic: tracks usage by device_key/month."""
     month_key = datetime.date.today().isoformat()[:7]
     with db_conn() as conn:
-        row = conn.execute("SELECT * FROM devices WHERE device_key=?", (device_key,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM devices WHERE device_key=?", (device_key,)
+        ).fetchone()
         if not row:
-            conn.execute("INSERT INTO devices(device_key, month, scan_count) VALUES(?,?,0)", (device_key, month_key))
+            conn.execute(
+                "INSERT INTO devices(device_key, month, scan_count) VALUES(?,?,0)",
+                (device_key, month_key),
+            )
             u = {"is_pro": 0, "month": month_key, "scan_count": 0}
         else:
             u = dict(row)
-        
+
         if u["month"] != month_key:
-            conn.execute("UPDATE devices SET month=?, scan_count=0 WHERE device_key=?", (month_key, device_key))
+            conn.execute(
+                "UPDATE devices SET month=?, scan_count=0 WHERE device_key=?",
+                (month_key, device_key),
+            )
             u["month"] = month_key
             u["scan_count"] = 0
-            
+
         if u["is_pro"]:
-            conn.execute("UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?", (device_key,))
-            return {"allowed": True, "scans_used": u["scan_count"] + 1, "scans_remaining": 9999, "is_pro": True}
-            
+            conn.execute(
+                "UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?",
+                (device_key,),
+            )
+            return {
+                "allowed": True,
+                "scans_used": u["scan_count"] + 1,
+                "scans_remaining": 9999,
+                "is_pro": True,
+            }
+
         if u["scan_count"] >= limit:
-            return {"allowed": False, "scans_used": u["scan_count"], "scans_remaining": 0, "is_pro": False}
-            
-        conn.execute("UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?", (device_key,))
+            return {
+                "allowed": False,
+                "scans_used": u["scan_count"],
+                "scans_remaining": 0,
+                "is_pro": False,
+            }
+
+        conn.execute(
+            "UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?",
+            (device_key,),
+        )
         new_count = u["scan_count"] + 1
-        return {"allowed": True, "scans_used": new_count, "scans_remaining": max(0, limit - new_count), "is_pro": False}
+        return {
+            "allowed": True,
+            "scans_used": new_count,
+            "scans_remaining": max(0, limit - new_count),
+            "is_pro": False,
+        }

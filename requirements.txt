@@ -17,8 +17,8 @@ easyocr
 # AI / LLM
 groq
 
-# Search
-duckduckgo-search==6.3.7
+# Supabase (production database)
+supabase
 
 # Rate limiting
 slowapi
@@ -28,9 +28,6 @@ reportlab
 
 # WhatsApp
 twilio
-
-# Auth (optional)
-# supabase
 
 # Payments
 razorpay

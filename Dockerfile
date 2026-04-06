@@ -1,18 +1,5 @@
 FROM python:3.11-slim
 
-# Set up a new user 'user' with UID 1000
-RUN useradd -m -u 1000 user
-
-# Switch to the new user
-USER user
-
-# Set environment variables
-ENV HOME=/home/user \
-    PATH=/home/user/.local/bin:$PATH
-
-WORKDIR /app
-
-# System deps for EasyOCR + OpenCV (need root to install)
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
@@ -21,23 +8,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
-USER user
 
-COPY --chown=user requirements.txt .
+WORKDIR /app
+
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY --chown=user . .
+COPY . .
 
-# Pre-download EasyOCR models so first request isn't slow
-# Pre-download models into the exact folder the app uses at runtime
-RUN mkdir -p /app/.cache/easyocr_models && chown -R user:user /app/.cache
+RUN mkdir -p /app/.cache/easyocr_models
+
 RUN python -c "import easyocr; \
     easyocr.Reader(['en'], gpu=False, model_storage_directory='/app/.cache/easyocr_models'); \
     easyocr.Reader(['en', 'hi', 'ta'], gpu=False, model_storage_directory='/app/.cache/easyocr_models'); \
     easyocr.Reader(['en', 'ch_sim'], gpu=False, model_storage_directory='/app/.cache/easyocr_models')" 2>/dev/null || true
 
-# Expose the default HF Spaces port
-EXPOSE 7860
+EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "2"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

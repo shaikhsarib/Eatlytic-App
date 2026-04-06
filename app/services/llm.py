@@ -3,7 +3,8 @@ import re
 import json
 import logging
 import asyncio
-from app.models.db import get_ai_cache, set_ai_cache, db_conn
+import hashlib
+from app.models.db import get_ai_cache, set_ai_cache
 from app.services.fake_detector import apply_dna_overrides
 from app.services.alternatives import get_healthy_alternative
 
@@ -36,8 +37,14 @@ LANGUAGE_MAP = {
 def call_llm(prompt: str, max_tokens: int = 2500) -> str:
     """Provider-agnostic LLM call. Swap Groq → Anthropic → Ollama here."""
     if not _groq_client:
-        raise RuntimeError("GROQ_API_KEY not set")
-    for model in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
+        logger.error("GROQ_API_KEY is not set in llm.py environment")
+        raise RuntimeError("AI Configuration Error: Please check GROQ_API_KEY")
+
+    # Priority: 70b (expert), Fallback: 8b (fast)
+    models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+
+    last_err = None
+    for model in models:
         try:
             comp = _groq_client.chat.completions.create(
                 model=model,
@@ -48,8 +55,10 @@ def call_llm(prompt: str, max_tokens: int = 2500) -> str:
             )
             return comp.choices[0].message.content
         except Exception as exc:
-            logger.warning("LLM %s failed: %s", model, exc)
-    raise RuntimeError("All LLM models failed")
+            logger.warning("Groq model %s failed: %s", model, exc)
+            last_err = exc
+
+    raise RuntimeError(f"All LLM models failed. Last error: {str(last_err)[:100]}")
 
 
 def build_analysis_prompt(
@@ -58,7 +67,6 @@ def build_analysis_prompt(
     age_group: str,
     product_category: str,
     language: str,
-    web_context: str,
     label_confidence: str,
     blur_info: dict,
 ) -> str:
@@ -82,17 +90,21 @@ def build_analysis_prompt(
     if "diabetic" in p_lower:
         persona_rules = "DIABETIC RULES: Multiply sugar penalty by 3x. Flag any Maltodextrin or Dextrose exactly like sugar."
     elif "child" in p_lower or "baby" in p_lower or "parent" in p_lower:
-        persona_rules = "CHILD RULES: Multiply sodium penalty by 2x. Flag all artificial colors."
+        persona_rules = (
+            "CHILD RULES: Multiply sodium penalty by 2x. Flag all artificial colors."
+        )
     elif "pregnant" in p_lower:
         persona_rules = "PREGNANCY RULES: Give bonus for folic acid and protein. Flag any raw/unpasteurized ingredients."
     elif "senior" in p_lower:
-        persona_rules = "SENIOR RULES: Flag low fiber content strongly. Flag high sodium."
+        persona_rules = (
+            "SENIOR RULES: Flag low fiber content strongly. Flag high sodium."
+        )
     elif "gym" in p_lower or "athlete" in p_lower or "fitness" in p_lower:
         persona_rules = "ATHLETE RULES: High sugar allowed if pre/post workout. High protein gives score bonus."
 
     # Sanitise extracted_text to prevent prompt injection
     safe_text = extracted_text.replace('"', "'").replace("\n", " ").strip()
-    
+
     return f"""[INST]
 You are an expert nutritional scientist and food safety auditor.
 CRITICAL: Respond ENTIRELY in {lang_name}. Every text field MUST be in {lang_name}.
@@ -101,7 +113,8 @@ Persona: {persona} | Age: {age_group} | Category: {product_category}
 {conf_note}
 {blur_ctx}
 Label Text: "{safe_text}"
-Web Context: "{web_context}"
+
+Analyze ONLY the label text above. Do NOT search the web or use external knowledge about brands. Extract nutrients and ingredients directly from the provided text.
 
 Return ONLY valid JSON — no markdown, no preamble:
 {{
@@ -191,7 +204,7 @@ def _flatten_nutrients(nutrient_list: list) -> dict:
             val = float(val) if val is not None else 0
         except (ValueError, TypeError):
             val = 0
-            
+
         if any(x in name for x in ["calorie", "energy", "kcal"]):
             flat["calories"] = val
         elif "protein" in name:
@@ -209,7 +222,7 @@ def _flatten_nutrients(nutrient_list: list) -> dict:
 
 def sanitise_result(result: dict) -> dict:
     """Fix all known LLM output issues: chart rounding, unit strings, defaults, Atwater math."""
-    
+
     # 1. Ensure all expected fields exist with defaults
     result.setdefault("score", 5)
     result.setdefault("verdict", "Analyzed")
@@ -222,7 +235,7 @@ def sanitise_result(result: dict) -> dict:
     result.setdefault("ingredients_raw", "")
     result.setdefault("summary", "")
     result.setdefault("better_alternative", "")
-    
+
     # 2. Fix chart_data proportions
     cd = result.get("chart_data")
     if (
@@ -236,7 +249,7 @@ def sanitise_result(result: dict) -> dict:
             scaled[scaled.index(max(scaled))] += 100 - sum(scaled)
             result["chart_data"] = scaled
     else:
-        result["chart_data"] = [33, 33, 34] # Neutral default
+        result["chart_data"] = [33, 33, 34]  # Neutral default
 
     # 3. Clean up nutrient values (numeric extraction)
     for n in result.get("nutrient_breakdown", []):
@@ -255,7 +268,7 @@ def sanitise_result(result: dict) -> dict:
 
     if "is_low_confidence" not in result:
         result["is_low_confidence"] = False
-        
+
     return result
 
 
@@ -273,30 +286,35 @@ async def unified_analyze_flow(
     Unified high-quality analysis pipeline used by Web, WhatsApp, and B2B.
     Ensures DNA overrides and Alternative Engine are applied consistently.
     """
-    # 1. Check cache first
-    cache_key = f"v5:{language}:{persona}:{age_group}:{extracted_text[:80]}"
+    cache_key = hashlib.md5(
+        f"{extracted_text[:100]}:{persona}:{language}".encode()
+    ).hexdigest()
     cached = get_ai_cache(cache_key)
     if cached:
+        cached["scan_meta"] = {
+            "cached": True,
+            "scans_remaining": 0,
+            "is_pro": False,
+            "scans_used": 0,
+        }
         return cached
 
-    # 2. Build prompt and call LLM (with fallback logic)
     prompt = build_analysis_prompt(
         extracted_text,
         persona,
         age_group,
         product_category_hint,
         language,
-        web_context,
         label_confidence,
         blur_info,
     )
-    
+
     raw_json_str = await asyncio.to_thread(call_llm, prompt, 1500)
     try:
         result = json.loads(raw_json_str)
     except json.JSONDecodeError:
         # Emergency recovery: try to find JSON block in text
-        match = re.search(r'\{.*\}', raw_json_str, re.DOTALL)
+        match = re.search(r"\{.*\}", raw_json_str, re.DOTALL)
         if match:
             result = json.loads(match.group())
         else:
@@ -310,9 +328,9 @@ async def unified_analyze_flow(
         full_ocr_text=extracted_text,
         nutrients=_flatten_nutrients(result.get("nutrient_breakdown", [])),
         ingredients_raw=result.get("ingredients_raw", ""),
-        base_score=result.get("score", 5)
+        base_score=result.get("score", 5),
     )
-    
+
     if dna_res["action"] == "BLOCK":
         # We don't raise error, we return the block as a final assessment
         result["score"] = 1
@@ -322,7 +340,7 @@ async def unified_analyze_flow(
     elif dna_res["action"] == "OVERRIDE":
         result["score"] = dna_res["score"]
         result["verdict"] = dna_res["reason"]
-        
+
     # Append DNA flags to cons
     if dna_res.get("extra_flags"):
         for flag in dna_res["extra_flags"]:
@@ -339,92 +357,5 @@ async def unified_analyze_flow(
     # 7. Cache success (exclude session-specific blur_info)
     cacheable = {k: v for k, v in result.items() if k not in ("blur_info", "scan_meta")}
     set_ai_cache(cache_key, cacheable)
-    
+
     return result
-
-
-def upsert_food_product(
-    name: str,
-    nutrients: list,
-    score: int,
-    ingredients_raw: str = "",
-    barcode: str | None = None,
-    brand: str = "",
-    category: str = "",
-    source: str = "llm_scan",
-) -> int:
-    def _get(key):
-        for n in nutrients:
-            if key in n.get("name", "").lower():
-                v = n.get("value", 0)
-                return float(v) if isinstance(v, (int, float)) else 0
-        return 0
-
-    cal = _get("calorie") or _get("energy") or _get("kcal")
-    prot = _get("protein")
-    carb = _get("carbohydrate") or _get("carbs")
-    fat = _get("fat")
-    sod = _get("sodium")
-    fib = _get("fiber") or _get("fibre")
-    sug = _get("sugar")
-    sat = _get("saturated")
-
-    with db_conn() as conn:
-        if barcode:
-            existing = conn.execute(
-                "SELECT id, scan_count FROM food_products WHERE barcode=?", (barcode,)
-            ).fetchone()
-        else:
-            existing = conn.execute(
-                "SELECT id, scan_count FROM food_products WHERE name=? AND brand=?",
-                (name.strip(), brand.strip()),
-            ).fetchone()
-
-        if existing:
-            conn.execute(
-                "UPDATE food_products SET scan_count=scan_count+1, updated_at=datetime('now') WHERE id=?",
-                (existing["id"],),
-            )
-            return existing["id"]
-        else:
-            cursor = conn.execute(
-                """INSERT INTO food_products
-                   (name,brand,category,barcode,calories_100g,protein_100g,carbs_100g,
-                    fat_100g,sodium_100g,fiber_100g,sugar_100g,sat_fat_100g,
-                    eatlytic_score,ingredients_raw,source,scan_count)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
-                (
-                    name.strip(),
-                    brand.strip(),
-                    category.strip(),
-                    barcode.strip() if barcode else None,
-                    cal,
-                    prot,
-                    carb,
-                    fat,
-                    sod,
-                    fib,
-                    sug,
-                    sat,
-                    score,
-                    ingredients_raw,
-                    source,
-                ),
-            )
-            return cursor.lastrowid
-
-
-def get_food_from_db(name: str = "", barcode: str = "") -> dict | None:
-    with db_conn() as conn:
-        if barcode:
-            row = conn.execute(
-                "SELECT * FROM food_products WHERE barcode=? AND verified=1", (barcode,)
-            ).fetchone()
-        elif name:
-            row = conn.execute(
-                "SELECT * FROM food_products WHERE name LIKE ? AND verified=1 ORDER BY scan_count DESC LIMIT 1",
-                (f"%{name}%",),
-            ).fetchone()
-        else:
-            return None
-    return dict(row) if row else None
