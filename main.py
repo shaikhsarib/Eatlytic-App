@@ -553,8 +553,6 @@ RULES:
                     scaled[scaled.index(max(scaled))] += 100 - sum(scaled)
                     result["chart_data"] = scaled
 
-            result["chart_data"] = scaled
-
         # ── Step 9: Attach blur metadata ─────────────────────────────
         result["blur_info"] = blur_info
 
