@@ -396,6 +396,7 @@ async def activate_pro(request: Request, payment_id: str = Form(...)):
 
 # ── Scan status check (for frontend banner) ───────────────────────────
 @app.get("/scan-status")
+@app.get("/scan-quota")
 async def scan_status(request: Request):
     """Returns remaining scans and pro status for the current device."""
     device_key = get_device_key(request)
@@ -568,8 +569,8 @@ async def api_analyze(
     if quality["is_blurry"]:
         try:
             enhanced, mlog = deblur_and_enhance(content, quality["blur_severity"])
-            o_score = ocr_quality_score(get_server_ocr(content, language))
-            e_score = ocr_quality_score(get_server_ocr(enhanced, language))
+            o_score = ocr_quality_score(run_ocr(content, language))
+            e_score = ocr_quality_score(run_ocr(enhanced, language))
             if e_score >= o_score * 0.85:
                 working = enhanced
                 blur_info["deblurred"] = True
@@ -577,7 +578,7 @@ async def api_analyze(
         except Exception as e:
             logger.warning(f"B2B deblur failed: {e}")
 
-    ocr = get_server_ocr(working, language)
+    ocr = run_ocr(working, language)
     text = ocr["text"]
 
     # Sanitise to prevent prompt injection
