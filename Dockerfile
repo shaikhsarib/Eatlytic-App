@@ -29,7 +29,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY --chown=user . .
 
 # Pre-download EasyOCR models so first request isn't slow
-RUN python -c "import easyocr; r = easyocr.Reader(['en'], gpu=False, download_enabled=True)" 2>/dev/null || true
+RUN python -c "import easyocr; r = easyocr.Reader(['en', 'hi', 'ch_sim', 'ta', 'te', 'bn'], gpu=False, download_enabled=True)" 2>/dev/null || true
 
 # Expose the default HF Spaces port
 EXPOSE 7860

@@ -57,10 +57,24 @@ def load_cache(file_path):
     return {}
 
 
+class NumpyEncoder(json.JSONEncoder):
+    """Custom encoder for numpy data types"""
+    def default(self, obj):
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, (np.floating, np.complexfloating)):
+            return float(obj)
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NumpyEncoder, self).default(obj)
+
+
 def save_cache(cache, file_path):
     try:
         with open(file_path, "w") as f:
-            json.dump(cache, f)
+            json.dump(cache, f, cls=NumpyEncoder)
     except IOError:
         pass
 
@@ -87,7 +101,7 @@ def load_scan_limits():
 def save_scan_limits(data):
     try:
         with open(SCAN_LIMIT_FILE, "w") as f:
-            json.dump(data, f)
+            json.dump(data, f, cls=NumpyEncoder)
     except IOError:
         pass
 
@@ -105,7 +119,7 @@ def load_api_keys():
 def save_api_keys(data):
     try:
         with open(API_KEYS_FILE, "w") as f:
-            json.dump(data, f)
+            json.dump(data, f, cls=NumpyEncoder)
     except IOError:
         pass
 
