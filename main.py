@@ -364,8 +364,8 @@ async def analyze_product(
         # Cache key — v2 prefix invalidates any old cached results that had
         # the score=7-anchor bug (they would forever return score≈6).
         cache_key = f"v2:{language}:{persona}:{age_group}:{extracted_text[:80]}"
-        if cache_key in ai_cache:
-            cached = dict(ai_cache[cache_key])
+        cached = get_ai_cache(cache_key)
+        if cached:
             cached["blur_info"] = blur_info  # always inject fresh blur_info
             return cached
 
@@ -566,8 +566,7 @@ RULES:
         }
 
         # ── Step 10: Cache & return ───────────────────────────────────
-        ai_cache[cache_key] = result
-        save_cache(ai_cache, AI_CACHE_FILE)
+        set_ai_cache(cache_key, result)
         return result
 
     except Exception as e:
