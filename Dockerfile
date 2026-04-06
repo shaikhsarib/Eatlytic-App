@@ -21,8 +21,11 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 # 4. Copy project files
 COPY --chown=user:user . .
 
-# 5. Pre-setup OCR cache (speeds up startup)
-RUN mkdir -p /app/.cache/easyocr_models && chown -R user:user /app/.cache
+# 5. Pre-setup directories and permissions
+# This fixes the "Permission denied: /app/data" error
+RUN mkdir -p /app/data /app/.cache/easyocr_models \
+    && chown -R user:user /app
+
 USER user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH \
