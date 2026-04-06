@@ -1573,10 +1573,12 @@ function showError(type, message) {
   const icon  = type==='no_label'  ? '🔄'
               : type==='wrong_side'? '🔄'
               : type==='no_text'   ? '🔍'
+              : type==='blurry_image' ? '📐'
               : type==='invalid_image'?'🖼': '❌';
   const title = type==='no_label'   ? 'No Nutrition Label Found'
               : type==='wrong_side' ? "That's the Front — Flip It Over!"
               : type==='no_text'    ? 'No Text Detected'
+              : type==='blurry_image'? 'Move Closer to the Label'
               : type==='invalid_image'?'Invalid Image'
               : 'Analysis Failed';
   // For wrong-side errors, show a helpful flip instruction

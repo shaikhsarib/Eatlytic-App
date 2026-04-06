@@ -349,14 +349,17 @@ async def analyze_product(
             extracted_text = ocr_result["text"]
             ocr_word_count = ocr_result["word_count"]
 
-            # ── Step 3a: Hard gate — reject if OCR confidence too low ─
-            # Tuning: 30% is much safer for noisy labels, especially with word-count bypass
-            if ocr_result["avg_confidence"] < 0.30 and ocr_word_count < 20:
+            # ── Step 3a: Hard gate — block only if truly no text found ─────
+            # EasyOCR returns 0% avg_confidence on clear stylised-font labels
+            # (known library quirk). Gate on word_count ONLY — confidence is
+            # unreliable when label fonts are decorative or very small.
+            if ocr_word_count < 5 and ocr_result["avg_confidence"] < 0.20:
                 logger.info(f"Gate rejected: conf={ocr_result['avg_confidence']}, words={ocr_word_count}")
                 return {
                     "error": "blurry_image",
-                    "message": f"⚠️ Image quality too low (confidence: {ocr_result['avg_confidence']:.0%}). Please take a closer photo of the label.",
+                    "message": f"⚠️ Not enough text detected ({ocr_word_count} words found). Please move closer and make sure the ingredients panel fills the frame.",
                 }
+
         else:
             ocr_word_count = len(extracted_text.split())
 
