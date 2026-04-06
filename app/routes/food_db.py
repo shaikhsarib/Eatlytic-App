@@ -90,7 +90,10 @@ async def verify_product(
     admin_token: str = Form(...),
 ):
     import os
-    if admin_token != os.environ.get("ADMIN_TOKEN", "changeme"):
+    _expected = os.environ.get("ADMIN_TOKEN")
+    if not _expected:
+        raise HTTPException(status_code=500, detail="Server misconfiguration: ADMIN_TOKEN not set.")
+    if admin_token != _expected:
         raise HTTPException(status_code=403, detail="Invalid admin token")
 
     with db_conn() as conn:

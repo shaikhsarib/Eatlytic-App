@@ -39,7 +39,16 @@ app = FastAPI(title="Eatlytic: Startup Scale")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+    CORSMiddleware,
+    allow_origins=[
+        "https://eatlytic.com",
+        "https://www.eatlytic.com",
+        "http://localhost:3000",  # local dev
+        "http://localhost:7860",  # local docker dev
+    ],
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["*"],
+    allow_credentials=True,
 )
 
 # Initialize Database
@@ -123,9 +132,7 @@ def get_server_ocr(content: bytes, lang_hint: str = "en") -> dict:
     """Wrapper to maintain API compatibility while using unified OCR service."""
     return run_ocr(content, lang_hint)
 
-# Re-exporting these from services for internal main.py usage
-from app.services.ocr import detect_label_presence
-from app.services.image import assess_image_quality, deblur_and_enhance, image_to_b64, ocr_quality_score
+# NOTE: imports above (lines 28-30) cover all needed services.
 
 # ══════════════════════════════════════════════════════════════════════
 #  SECTION 6: WEB SEARCH & UTILITIES

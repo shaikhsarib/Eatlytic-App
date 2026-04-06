@@ -210,25 +210,9 @@ def sanitise_result(result: dict) -> dict:
         result["atwater_warning"] = atwater_error
         result["is_low_confidence"] = True
 
-    # LIE DETECTOR CHECK
-    if result.get("fake_claim_detected"):
-        result["verdict"] = "🚨 FAKE CLAIM: Brand claims 'No Sugar' but contains Sugar alternatives"
-        result["score"] = min(result.get("score", 5), 2)
-        if "Hidden Sugar" not in result.get("cons", []):
-            result.setdefault("cons", []).append("Hidden Sugar (Maltodextrin/Dextrose)")
-
-    # NOVA CLASSIFIER CHECK
-    raw_ing = str(result.get("ingredients_raw", "")).lower()
-    if raw_ing:
-        nova_triggers = [
-            "e471", "e442", "glycerol", "aspartame", "sucralose", 
-            "hydrogenated", "maltodextrin", "emulsifier", "artificial"
-        ]
-        hits = [t for t in nova_triggers if t in raw_ing]
-        if len(hits) >= 2:
-            result["nova_group"] = 4
-            result.setdefault("cons", []).append("⚠️ NOVA 4: Ultra-processed food")
-            result["score"] = min(result.get("score", 5), 3)
+    # NOTE: Lie Detector and NOVA 4 checks are now handled exclusively
+    # by app/services/fake_detector.py apply_dna_overrides().
+    # They are intentionally NOT duplicated here.
 
     result.setdefault("score", 5)
     result.setdefault("verdict", "Analyzed")

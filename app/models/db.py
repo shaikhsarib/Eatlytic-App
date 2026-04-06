@@ -251,7 +251,10 @@ def set_ocr_cache(key: str, value: dict):
 def get_ai_cache(key: str):
     try:
         with db_conn() as c:
-            row = c.execute("SELECT result_json FROM ai_cache WHERE cache_key=?", (key,)).fetchone()
+            row = c.execute(
+                "SELECT result_json FROM ai_cache WHERE cache_key=? AND created_at > datetime('now', '-30 days')",
+                (key,)
+            ).fetchone()
         return json.loads(row["result_json"]) if row else None
     except Exception:
         return None

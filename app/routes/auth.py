@@ -21,7 +21,7 @@ async def request_otp(email: str = Form(...)):
     return JSONResponse({
         "sent"   : True,
         "message": "OTP sent. Check your email.",
-        "_dev_otp": otp,
+        # Note: _dev_otp removed. OTP is only logged server-side.
     })
 
 

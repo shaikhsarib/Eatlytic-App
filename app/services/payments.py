@@ -51,7 +51,7 @@ def verify_signature(order_id: str, payment_id: str, signature: str) -> bool:
     expected = hmac.new(
         RAZORPAY_KEY_SECRET.encode(),
         f"{order_id}|{payment_id}".encode(),
-        hashlib.sha256,
+        hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(expected, signature)
 

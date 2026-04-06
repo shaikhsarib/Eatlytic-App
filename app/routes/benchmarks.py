@@ -111,7 +111,10 @@ async def submit_ground_truth(
     barcode     : str  = Form(""),
 ):
     import os
-    if admin_token != os.environ.get("ADMIN_TOKEN", "changeme"):
+    _expected = os.environ.get("ADMIN_TOKEN")
+    if not _expected:
+        raise HTTPException(status_code=500, detail="Server misconfiguration: ADMIN_TOKEN not set.")
+    if admin_token != _expected:
         raise HTTPException(status_code=403, detail="Invalid admin token")
 
     try:
@@ -139,7 +142,10 @@ async def run_benchmark(
     admin_token  : str = Form(...),
 ):
     import os
-    if admin_token != os.environ.get("ADMIN_TOKEN", "changeme"):
+    _expected = os.environ.get("ADMIN_TOKEN")
+    if not _expected:
+        raise HTTPException(status_code=500, detail="Server misconfiguration: ADMIN_TOKEN not set.")
+    if admin_token != _expected:
         raise HTTPException(status_code=403, detail="Invalid admin token")
 
     with db_conn() as conn:
@@ -155,17 +161,15 @@ async def run_benchmark(
     content         = validate_img(content)
     quality         = assess_quality(content)
 
-    working = content
+    run_ocr = _get_ocr_service()
     if quality["is_blurry"]:
         try:
             enhanced, _ = deblur(content, quality["blur_severity"])
-            run_ocr = _get_ocr_service()
             if ocr_score_fn(run_ocr(enhanced, "en")) >= ocr_score_fn(run_ocr(content, "en")) * 0.85:
                 working = enhanced
         except Exception:
             pass
 
-    run_ocr        = _get_ocr_service()
     ocr_result     = run_ocr(working, "en")
     extracted_text = ocr_result["text"]
     ocr_f1         = _compute_ocr_f1(extracted_text, ground_truth.get("ingredients", ""))
