@@ -1,8 +1,19 @@
 FROM python:3.11-slim
 
+# Set up a new user 'user' with UID 1000
+RUN useradd -m -u 1000 user
+
+# Switch to the new user
+USER user
+
+# Set environment variables
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH
+
 WORKDIR /app
 
-# System deps for EasyOCR + OpenCV
+# System deps for EasyOCR + OpenCV (need root to install)
+USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1-mesa-glx \
     libglib2.0-0 \
@@ -10,15 +21,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
+USER user
 
-COPY requirements.txt .
+COPY --chown=user requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY --chown=user . .
 
 # Pre-download EasyOCR models so first request isn't slow
-RUN python -c "import easyocr; r = easyocr.Reader(['en'], gpu=False, download_enabled=False)" 2>/dev/null || true
+RUN python -c "import easyocr; r = easyocr.Reader(['en'], gpu=False, download_enabled=True)" 2>/dev/null || true
 
-EXPOSE 80
+# Expose the default HF Spaces port
+EXPOSE 7860
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80", "--workers", "2"]
+# Run the application
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "2"]

@@ -1,3 +1,12 @@
+---
+title: Eatlytic
+emoji: 🥗
+colorFrom: green
+colorTo: yellow
+sdk: docker
+app_port: 7860
+---
+
 # Eatlytic
 
 Eatlytic is an AI-powered FastAPI application designed to analyze food nutritional labels. It uses Computer Vision and Large Language Models to check ingredients, determine nutritional value, and detect blurred out labels to provide accurate food quality assessments.
