@@ -8,6 +8,7 @@ import os
 import json
 import sqlite3
 import logging
+import datetime
 from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
@@ -267,3 +268,31 @@ def set_ai_cache(key: str, value: dict):
                       (key, json.dumps(value)))
     except Exception as exc:
         logger.warning("set_ai_cache: %s", exc)
+
+
+def check_and_increment_scan(device_key: str, limit: int = 10) -> dict:
+    """Consolidated scan limit logic: tracks usage by device_key/month."""
+    month_key = datetime.date.today().isoformat()[:7]
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM devices WHERE device_key=?", (device_key,)).fetchone()
+        if not row:
+            conn.execute("INSERT INTO devices(device_key, month, scan_count) VALUES(?,?,0)", (device_key, month_key))
+            u = {"is_pro": 0, "month": month_key, "scan_count": 0}
+        else:
+            u = dict(row)
+        
+        if u["month"] != month_key:
+            conn.execute("UPDATE devices SET month=?, scan_count=0 WHERE device_key=?", (month_key, device_key))
+            u["month"] = month_key
+            u["scan_count"] = 0
+            
+        if u["is_pro"]:
+            conn.execute("UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?", (device_key,))
+            return {"allowed": True, "scans_used": u["scan_count"] + 1, "scans_remaining": 9999, "is_pro": True}
+            
+        if u["scan_count"] >= limit:
+            return {"allowed": False, "scans_used": u["scan_count"], "scans_remaining": 0, "is_pro": False}
+            
+        conn.execute("UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?", (device_key,))
+        new_count = u["scan_count"] + 1
+        return {"allowed": True, "scans_used": new_count, "scans_remaining": max(0, limit - new_count), "is_pro": False}

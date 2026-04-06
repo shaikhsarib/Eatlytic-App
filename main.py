@@ -90,34 +90,6 @@ def get_device_key(request: Request) -> str:
     return hashlib.md5(f"{ip}:{ua}".encode()).hexdigest()[:16]
 
 
-def check_and_increment_scan(device_key: str) -> dict:
-    month_key = datetime.date.today().isoformat()[:7]
-    with db_conn() as conn:
-        row = conn.execute("SELECT * FROM devices WHERE device_key=?", (device_key,)).fetchone()
-        if not row:
-            conn.execute("INSERT INTO devices(device_key, month, scan_count) VALUES(?,?,0)", (device_key, month_key))
-            u = {"is_pro": 0, "month": month_key, "scan_count": 0}
-        else:
-            u = dict(row)
-        
-        if u["month"] != month_key:
-            conn.execute("UPDATE devices SET month=?, scan_count=0 WHERE device_key=?", (month_key, device_key))
-            u["month"] = month_key
-            u["scan_count"] = 0
-            
-        if u["is_pro"]:
-            conn.execute("UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?", (device_key,))
-            return {"allowed": True, "scans_used": u["scan_count"] + 1, "scans_remaining": 9999, "is_pro": True}
-            
-        if u["scan_count"] >= FREE_SCAN_LIMIT:
-            return {"allowed": False, "scans_used": u["scan_count"], "scans_remaining": 0, "is_pro": False}
-            
-        conn.execute("UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?", (device_key,))
-        new_count = u["scan_count"] + 1
-        remaining = max(0, FREE_SCAN_LIMIT - new_count)
-        return {"allowed": True, "scans_used": new_count, "scans_remaining": remaining, "is_pro": False}
-
-
 # --- CLIENTS ---
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 if not GROQ_API_KEY:
@@ -126,23 +98,9 @@ if not GROQ_API_KEY:
 else:
     client = Groq(api_key=GROQ_API_KEY)
 
-# --- SERVICE WRAPPERS (Task 1) ---
-# Most logic is now consolidated in the app/ package to ensure 
-# tests and production always use the same thresholds.
-
-def get_server_ocr(content: bytes, lang_hint: str = "en") -> dict:
-    """Wrapper to maintain API compatibility while using unified OCR service."""
-    return run_ocr(content, lang_hint)
-
-# NOTE: imports above (lines 28-30) cover all needed services.
-
 # ══════════════════════════════════════════════════════════════════════
 #  SECTION 6: WEB SEARCH & UTILITIES
 # ══════════════════════════════════════════════════════════════════════
-
-
-def get_server_ocr(content: bytes, lang: str) -> dict:
-    return run_ocr(content, lang)
 
 
 LANGUAGE_MAP = {
@@ -251,7 +209,7 @@ async def analyze_product(
 
     # ── Scan gate (Task 11) ───────────────────────────────────────────
     device_key = get_device_key(request)
-    scan_check = check_and_increment_scan(device_key)
+    scan_check = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT)
     if not scan_check["allowed"]:
         return JSONResponse(
             status_code=402,
@@ -287,7 +245,10 @@ async def analyze_product(
                 f"composite_score={quality['blur_score']}"
             )
             try:
-                # ⚡ Use enhanced image directly for ALL blur levels
+                # ⚡ Apply enhancement directly
+                enhanced_bytes, method_log = deblur_and_enhance(content, quality["blur_severity"])
+                
+                # Use enhanced image directly for ALL blur levels
                 # Eliminates the 2x OCR comparison which was the biggest speed
                 # bottleneck. The enhanced image is always >= original quality.
                 working_content = enhanced_bytes
