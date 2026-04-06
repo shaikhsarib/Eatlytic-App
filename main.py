@@ -621,6 +621,12 @@ LABEL_KEYWORDS = [
     "oil",
     "starch",
     "extract",
+    "atta",
+    "maida",
+    "lecithin",
+    "maltodextrin",
+    "stabilizer",
+    "rising",
     "mg",
     "mcg",
     "kcal",
@@ -694,6 +700,10 @@ NUTRITION_TABLE_ANCHORS = [
     "kcal",
     "kj",
     "energy",
+    "protein",
+    "carbohydrate",
+    "fat",
+    "sugars",
     "nutrition facts",
     "nutritional information",
     "nutrition information",
@@ -710,6 +720,7 @@ NUTRITION_TABLE_ANCHORS = [
     "mfg",
     "mrp",
     "net wt",
+    "nutrichoice",
 ]
 
 
@@ -733,12 +744,12 @@ def detect_label_presence(ocr_text: str) -> dict:
     front_score = len(front_hits)
     anchor_score = len(anchor_hits)
 
-    # BUG FIX: require at least 2 nutrition-table anchors to confirm a back label.
-    # Without this, front-of-pack images that mention "wheat / milk / salt / oil"
-    # reached label_score >= 3 and were incorrectly analysed.
-    has_nutrition_table = anchor_score >= 2
+    # BUG FIX: require at least 1 nutrition-table anchor or high label score.
+    # We relax from 2 anchors to 1 anchor if label_score is decent (e.g. >= 5).
+    # If label_score is very high (>= 10), we bypass anchor check entirely.
+    has_nutrition_table = (anchor_score >= 2) or (anchor_score >= 1 and label_score >= 5) or (label_score >= 10)
 
-    if has_nutrition_table and label_score >= 3:
+    if has_nutrition_table and label_score >= 2:
         return {
             "has_label": True,
             "confidence": "high" if label_score >= 6 else "medium",
@@ -746,7 +757,7 @@ def detect_label_presence(ocr_text: str) -> dict:
             "front_hits": front_hits[:3],
             "suggestion": None,
         }
-    elif has_nutrition_table and label_score >= 1 and front_score <= 2:
+    elif has_nutrition_table and label_score >= 1 and front_score <= 3:
         return {
             "has_label": True,
             "confidence": "low",
