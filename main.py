@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 from io import BytesIO
+from twilio.twiml.messaging_response import MessagingResponse
 from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -24,13 +25,11 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from app.models.db import (
-    init_db, db_conn, get_ocr_cache, set_ocr_cache, get_ai_cache, set_ai_cache
+    init_db, db_conn, get_ocr_cache, set_ocr_cache, get_ai_cache, set_ai_cache, check_and_increment_scan
 )
 from app.services.ocr import run_ocr, detect_label_presence, passes_confidence_gate
 from app.services.image import assess_image_quality, deblur_and_enhance, image_to_b64, ocr_quality_score
-from app.services.llm import analyse_label, build_analysis_prompt
-from app.services.fake_detector import apply_dna_overrides
-from app.services.alternatives import get_healthy_alternative
+from app.services.llm import unified_analyze_flow, LANGUAGE_MAP
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -142,33 +141,8 @@ def get_server_ocr(content: bytes, lang_hint: str = "en") -> dict:
 # ══════════════════════════════════════════════════════════════════════
 
 
-def get_live_search(query: str) -> str:
-    try:
-        with DDGS() as ddgs:
-            results = [
-                f"{r['title']}: {r['body']}" for r in ddgs.text(query, max_results=3)
-            ]
-        return "\n".join(results)
-    except Exception as e:
-        logger.warning(f"Web search failed: {e}")
-        return "No web data available."
-
-
-def _flatten_nutrients(nutrient_list: list) -> dict:
-    """Helper to convert LLM nutrient list to flat dict for DNA check."""
-    flat = {}
-    for n in nutrient_list:
-        name = n.get("name", "").lower()
-        val = n.get("value", 0)
-        if any(x in name for x in ["calorie", "energy", "kcal"]):
-            flat["calories"] = val
-        elif "protein" in name:
-            flat["protein"] = val
-        elif "carb" in name:
-            flat["carbs"] = val
-        elif "fat" in name:
-            flat["fat"] = val
-    return flat
+def get_server_ocr(content: bytes, lang: str) -> dict:
+    return run_ocr(content, lang)
 
 
 LANGUAGE_MAP = {
@@ -372,208 +346,27 @@ async def analyze_product(
 
         label_confidence = label_check.get("confidence", "medium")
 
-        # ── Step 4: Cache lookup ──────────────────────────────────────
-        # Cache key — v2 prefix invalidates any old cached results that had
-        # the score=7-anchor bug (they would forever return score≈6).
-        cache_key = f"v2:{language}:{persona}:{age_group}:{extracted_text[:80]}"
-        cached = get_ai_cache(cache_key)
-        if cached:
-            cached["blur_info"] = blur_info  # always inject fresh blur_info
-            return cached
-
-        # ── Step 5: Web search (non-blocking async) ────────────────────
-        # asyncio.to_thread() runs the blocking DDGS call in a thread pool.
-        # Prevents blocking the event loop for 2-5 seconds on every request.
-        web_context = await asyncio.to_thread(
-            get_live_search,
-            f"health analysis ingredients {extracted_text[:120]}"
+        # ── Step 4-12: Unified High-Quality Analysis ───────────────
+        result = await unified_analyze_flow(
+            extracted_text=extracted_text,
+            persona=persona,
+            age_group=age_group,
+            product_category_hint=product_category,
+            language=language,
+            web_context="", # Web context will be fetched inside flow async
+            blur_info=blur_info,
+            label_confidence=label_confidence,
         )
 
-        # ── Step 6: Prompt construction ────────────────────────────────
-        lang_name = LANGUAGE_MAP.get(language, "English")
-        output_lang_instr = (
-            f"CRITICAL: Respond ENTIRELY in {lang_name}. "
-            f"Every single field value must be in {lang_name}."
-        )
-        confidence_note = (
-            "Note: label text may be partially visible. Do your best with available information and set confidence=low in response."
-            if label_confidence == "low"
-            else ""
-        )
+        if "error" in result:
+            return result
 
-        # Blur context for the AI — helps it interpret partially illegible text
-        blur_context = ""
-        if blur_info["detected"]:
-            if blur_info["deblurred"]:
-                blur_context = (
-                    f"Note: The image was detected as {blur_info['severity']}ly blurry and "
-                    f"has been enhanced using advanced deblurring. "
-                    f"The OCR text was extracted from the enhanced image. "
-                    f"Some characters might still be uncertain — prioritise nutrients "
-                    f"and ingredients you can identify with high confidence."
-                )
-            else:
-                blur_context = (
-                    f"Note: The image has some blur (severity: {blur_info['severity']}). "
-                    f"OCR was run on the original image. Where text is ambiguous, "
-                    f"use your domain knowledge to infer likely values."
-                )
-
-        persona_rules = "GENERAL ADULT: Apply standard FSSAI limits."
-        p_lower = persona.lower()
-        if "diabetic" in p_lower:
-            persona_rules = "DIABETIC RULES: Multiply sugar penalty by 3x. Flag any Maltodextrin or Dextrose exactly like sugar."
-        elif "child" in p_lower or "baby" in p_lower or "parent" in p_lower:
-            persona_rules = "CHILD RULES: Multiply sodium penalty by 2x. Flag all artificial colors."
-        elif "pregnant" in p_lower:
-            persona_rules = "PREGNANCY RULES: Give bonus for folic acid and protein. Flag any raw/unpasteurized ingredients."
-        elif "senior" in p_lower:
-            persona_rules = "SENIOR RULES: Flag low fiber content strongly. Flag high sodium."
-        elif "gym" in p_lower or "athlete" in p_lower or "fitness" in p_lower:
-            persona_rules = "ATHLETE RULES: High sugar allowed if pre/post workout. High protein gives score bonus."
-
-        # Sanitise extracted_text to prevent prompt injection BEFORE building prompt
-        safe_extracted = (
-            extracted_text
-            .replace('"', "'")
-            .replace("\n", " ")
-            .replace("[INST]", "")
-            .replace("[/INST]", "")
-            .strip()
-        )
-
-        prompt = f"""
-[INST] You are an expert nutritional scientist and health auditor. Analyze the product label below.
-{output_lang_instr}
-Target Persona: {persona}
-Age Group: {age_group}
-Product Category: {product_category}
-{persona_rules}
-{confidence_note}
-{blur_context}
-Label Text: "{safe_extracted}"
-Web Context: "{web_context}"
-
-Return ONLY valid JSON — no markdown, no preamble — with this exact structure:
-{{
-    "product_name": "Short product name from the label",
-    "product_category": "Detected category (e.g. Snack, Dairy, Beverage)",
-    "score": <INTEGER 1-10 based on SCORING RUBRIC below — modified by persona rules>,
-    "verdict": "Two-word verdict",
-    "fake_claim_detected": <true if text claims 'No Added Sugar'/'Sugar-Free' BUT ingredients have Maltodextrin, Dextrose, Fructose, Corn Syrup, Date Syrup>,
-    "ingredients_raw": "Comma, separated, list, of, ingredients, extracted",
-    "chart_data": [<Safe%>, <Moderate%>, <Risky%>],
-    "summary": "Professional 2-sentence summary in {lang_name}.",
-    "eli5_explanation": "Explain using simple words and emojis for a child in {lang_name}.",
-    "molecular_insight": "Explain the biochemical/chemical impact on the body in {lang_name}.",
-    "paragraph_benefits": "One full paragraph about the product's main benefits in {lang_name}.",
-    "paragraph_uniqueness": "If this product has unique characteristics, describe them. Otherwise suggest 2 better alternatives. Write in {lang_name}.",
-    "is_unique": <BOOLEAN true if it has unique characteristics, false otherwise>,
-    "nutrient_breakdown": [
-        {{"name": "Protein", "value": <ACTUAL g from label>, "unit": "g", "rating": "good", "impact": "Brief impact note in {lang_name}"}},
-        {{"name": "Sugar", "value": <ACTUAL g from label>, "unit": "g", "rating": "moderate", "impact": "Brief impact note in {lang_name}"}},
-        {{"name": "Fat", "value": <ACTUAL g from label>, "unit": "g", "rating": "good", "impact": "Brief impact note in {lang_name}"}},
-        {{"name": "Sodium", "value": <ACTUAL mg from label>, "unit": "mg", "rating": "caution", "impact": "Brief impact note in {lang_name}"}},
-        {{"name": "Fiber", "value": <ACTUAL g from label>, "unit": "g", "rating": "good", "impact": "Brief impact note in {lang_name}"}}
-    ],
-    "pros": ["Benefit 1 in {lang_name}", "Benefit 2", "Benefit 3"],
-    "cons": ["Risk 1 in {lang_name}", "Risk 2"],
-    "age_warnings": [
-        {{"group": "Children", "emoji": "👶", "status": "warning", "message": "Warning or approval in {lang_name}"}},
-        {{"group": "Adults", "emoji": "🧑", "status": "good", "message": "Info in {lang_name}"}},
-        {{"group": "Seniors", "emoji": "👴", "status": "caution", "message": "Advice in {lang_name}"}},
-        {{"group": "Pregnant", "emoji": "🤰", "status": "caution", "message": "Safety info in {lang_name}"}}
-    ],
-    "better_alternative": "A specific healthier alternative product in {lang_name}."
-}}
-STRICT SCORING RUBRIC (1-10 scale):
-  9-10 : Whole food / minimal processing, no added sugar, low sodium
-  7-8  : Moderately processed, low sugar (<5g/100g), reasonable sodium
-  5-6  : Processed, moderate sugar (5-15g/100g) OR moderate sodium
-  3-4  : High sugar (>15g/100g) OR high sodium (>700mg/100g)
-  1-2  : Ultra-processed, very high sugar/sodium, fake marketing claims
-
-RULES:
-- score MUST match the actual nutrient values found — modified by persona rules
-- chart_data must be [Safe%, Moderate%, Risky%] summing to exactly 100
-- nutrient "rating" must be one of: "good", "moderate", "caution", "bad"
-- age_warnings "status" must be one of: "good", "caution", "warning"
-- All text values MUST be in {lang_name}
-- Extract ACTUAL values from the label text, do NOT use placeholder numbers
-[/INST]
-        """
-
-        # ── Step 7: Groq LLM call (with safe fallback) ──────────────────
-        result = None
-        for _model in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
-            try:
-                comp = client.chat.completions.create(
-                    model=_model,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.1,
-                    max_tokens=1400,  # was 2000 — cut 30% latency, still enough
-                    response_format={"type": "json_object"},
-                )
-                result = json.loads(comp.choices[0].message.content)
-                break
-            except Exception as _e:
-                logger.warning("LLM model %s failed: %s", _model, _e)
-        if result is None:
-            raise RuntimeError("All LLM models failed — check GROQ_API_KEY and quota.")
-
-        # ── Step 7.5: Eatlytic DNA Overrides ──────────────────────────
-        dna_result = apply_dna_overrides(
-            full_ocr_text=extracted_text,
-            nutrients=_flatten_nutrients(result.get("nutrient_breakdown", [])),
-            ingredients_raw=result.get("ingredients_raw", ""),
-            base_score=result.get("score", 5)
-        )
-        
-        if dna_result["action"] == "BLOCK":
-            return {
-                "error": "atwater_mismatch",
-                "message": dna_result["reason"],
-                "tip": "check_labels"
-            }
-        
-        if dna_result["action"] == "OVERRIDE":
-            result["score"] = dna_result["score"]
-            result["verdict"] = dna_result["reason"]
-            
-        if dna_result["extra_flags"]:
-            for flag in dna_result["extra_flags"]:
-                if flag not in result.get("cons", []):
-                    result.setdefault("cons", []).append(flag)
-            # Apply score cap for extra flags (like NOVA 4)
-            result["score"] = dna_result["score"]
-
-        # ── Step 8: Validate chart_data ───────────────────────────────
-        if "chart_data" in result:
-            cd = result["chart_data"]
-            if len(cd) == 3:
-                total = sum(cd)
-                if total != 100 and total > 0:
-                    scaled = [round(v * 100 / total) for v in cd]
-                    scaled[scaled.index(max(scaled))] += 100 - sum(scaled)
-                    result["chart_data"] = scaled
-
-        # ── Step 9: Alternative Engine (The Eatlytic Way) ──────────────
-        category = result.get("product_category", "general")
-        alt_advice = get_healthy_alternative(category, persona)
-        result["better_alternative"] = alt_advice
-
-        # ── Step 10: Attach blur metadata ─────────────────────────────
-        result["blur_info"] = blur_info
-
-        # ── Step 11: Attach scan metadata (Task 11) ──────────────────
+        # ── Step 11: Attach scan metadata ──────────────────────────
         result["scan_meta"] = {
             "scans_remaining": scan_check["scans_remaining"],
             "is_pro": scan_check["is_pro"],
             "scans_used": scan_check["scans_used"],
         }
-
-        # ── Step 12: Cache & return ───────────────────────────────────
-        set_ai_cache(cache_key, result)
         return result
 
     except Exception as e:
@@ -1057,10 +850,10 @@ def generate_whatsapp_response(r: dict, ocr: dict, dna_result: dict = None, alt_
 
 @app.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):
-    """Twilio WhatsApp sandbox webhook."""
+    """Twilio WhatsApp sandbox webhook with DNA overrides and scan limits."""
     form = await request.form()
     
-    # SECURITY: Verify Twilio Signature (Task 28)
+    # 1. SECURITY: Verify Twilio Signature
     try:
         from twilio.request_validator import RequestValidator
         validator = RequestValidator(os.environ.get("TWILIO_AUTH_TOKEN", ""))
@@ -1070,97 +863,102 @@ async def whatsapp_webhook(request: Request):
              logger.warning("Twilio signature validation failed!")
     except ImportError:
         pass
-    media_url = form.get("MediaUrl0")
+
     resp = MessagingResponse()
     msg = resp.message()
-
-    if media_url:
-        try:
-            import httpx
-
-            TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
-            TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
-            async with httpx.AsyncClient() as hc:
-                img_bytes = (
-                    await hc.get(media_url, auth=(TWILIO_SID, TWILIO_TOKEN))
-                ).content
-
-            quality = assess_image_quality(img_bytes)
-            if quality["is_blurry"]:
-                img_bytes, _ = deblur_and_enhance(img_bytes, quality["blur_severity"])
-
-            ocr_r = get_server_ocr(img_bytes, "en")
-            text = ocr_r["text"]
-            
-            # Sanitise to prevent prompt injection
-            safe_text = text.replace('"', "'").replace("\n", " ").strip()
-            
-            lc = detect_label_presence(text)
-
-            if not lc["has_label"]:
-                msg.body(
-                    "❌ Couldn't find a nutrition label. "
-                    "Please send the *back* of the packaging."
-                )
-            elif not client:
-                msg.body("⚠️ AI service unavailable. Full analysis at *eatlytic.com*")
-            else:
-                web_ctx = get_live_search(f"health ingredients {safe_text[:80]}")
-                prompt = f"""
-[INST] CRITICAL: Respond ONLY in valid JSON. You are an expert.
-Target Persona: General Adult
-GENERAL ADULT: Apply standard FSSAI limits.
-Label Text: "{safe_text}"
-Web Context: "{web_ctx}"
-Return exactly this JSON:
-{{
-    "score": <1-10>,
-    "verdict": "Two-word verdict",
-    "product_category": "Categorize strictly as one of: biscuit|noodle|chip|beverage|juice|dairy|chocolate|protein_supplement|ready_to_eat|sweet",
-    "fake_claim_detected": <true if text claims 'No Added Sugar'/'Sugar-Free' BUT ingredients have Maltodextrin, Dextrose, Fructose, Corn Syrup, Date Syrup>,
-    "ingredients_raw": "Comma, separated, list, of, ingredients, extracted",
-    "summary": "Professional 2-sentence summary",
-    "cons": ["Risk 1", "Risk 2"]
-}}
-[/INST]"""
-                comp = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.1,
-                    max_tokens=600,
-                    response_format={"type": "json_object"}
-                )
-                
-                try:
-                    res = json.loads(comp.choices[0].message.content)
-                except json.JSONDecodeError:
-                    msg.body("⚠️ Analysis failed. Please try again.")
-                    return Response(content=str(resp), media_type="application/xml")
-                
-                # ── Step 7.5: Eatlytic DNA Overrides ──────────────────
-                dna_res = apply_dna_overrides(
-                    full_ocr_text=safe_text,
-                    nutrients={}, # WhatsApp 8b-instant prompt doesn't extract full macros for now
-                    ingredients_raw=res.get("ingredients_raw", ""),
-                    base_score=res.get("score", 5)
-                )
-
-                # ── Step 9: Alternative Engine ────────────────────────
-                category = res.get("product_category", "general")
-                alt_advice = get_healthy_alternative(category, "general adult")
-                
-                final_text = generate_whatsapp_response(res, ocr_r, dna_res, alt_advice)
-                msg.body(final_text)
-        except Exception as e:
-            logger.error(f"WhatsApp error: {e}")
-            msg.body("⚠️ Something went wrong. Try again or visit *eatlytic.com*")
-    else:
+    
+    # 2. Identify user and check scan limits
+    phone_number = form.get("From", "unknown_wa")
+    scan_check = check_and_increment_scan(phone_number)
+    
+    media_url = form.get("MediaUrl0")
+    if not media_url:
         msg.body(
             "👋 Welcome to *Eatlytic*!\n\n"
             "Send me a photo of any food label (back of pack) "
             "and I'll analyse it instantly.\n\n"
             "Works even on blurry photos 📸\nFree — no barcode needed."
         )
+        return Response(content=str(resp), media_type="application/xml")
+
+    # Check if allowed to scan
+    if not scan_check["allowed"]:
+        msg.body(
+            "❌ Free Scan Limit Reached\n\n"
+            f"You've used all {FREE_SCAN_LIMIT} free scans this month. "
+            "Upgrade to Pro at eatlytic.com/pro for unlimited scans! 🚀"
+        )
+        return Response(content=str(resp), media_type="application/xml")
+
+    # 3. Process the image
+    try:
+        import httpx
+        TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+        TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+        
+        async with httpx.AsyncClient() as hc:
+            img_bytes = (await hc.get(media_url, auth=(TWILIO_SID, TWILIO_TOKEN))).content
+
+        # Blur assessment & enhancement
+        quality = assess_image_quality(img_bytes)
+        img_to_ocr = img_bytes
+        blur_info = {
+            "detected": quality["is_blurry"],
+            "severity": quality["blur_severity"],
+            "score": quality["blur_score"],
+            "deblurred": False
+        }
+        if quality["is_blurry"]:
+            enhanced, log = deblur_and_enhance(img_bytes, quality["blur_severity"])
+            img_to_ocr = enhanced
+            blur_info["deblurred"] = True
+            blur_info["method_log"] = log
+
+        # 4. OCR & Label Detection
+        ocr_r = get_server_ocr(img_to_ocr, "en")
+        text = ocr_r["text"]
+        lc = detect_label_presence(text)
+
+        if not lc["has_label"]:
+            msg.body(
+                "❌ Couldn't find a nutrition label. "
+                "Please send a clear photo of the *back* of the packaging."
+            )
+        else:
+            # 5. Unified Analysis Flow (Consolidated logic)
+            analysis = await unified_analyze_flow(
+                extracted_text=text,
+                persona="general",
+                age_group="adult",
+                product_category_hint="general",
+                language="en",
+                web_context="", # Will be fetched inside flow
+                blur_info=blur_info,
+                label_confidence=lc.get("confidence", "medium")
+            )
+            
+            # 6. Format Response
+            score = analysis.get("score", "?")
+            verdict = analysis.get("verdict", "Analyzed")
+            summary = analysis.get("summary", "")
+            cons = analysis.get("cons", [])
+            alt = analysis.get("better_alternative", "")
+            
+            risk_text = "\n".join([f"• {c}" for c in cons]) if cons else "• None"
+            
+            response_text = (
+                f"*Eatlytic Score: {score}/10*\n"
+                f"[{verdict}]\n\n"
+                f"{summary}\n\n"
+                f"⚠️ *Risk Flags:*\n{risk_text}\n\n"
+                f"{alt}\n\n"
+                f"_Scans left: {scan_check['scans_remaining']}_"
+            )
+            msg.body(response_text)
+
+    except Exception as e:
+        logger.error(f"WhatsApp error: {e}")
+        msg.body("⚠️ Analysis failed. Try again or visit *eatlytic.com*")
 
     return Response(content=str(resp), media_type="application/xml")
 

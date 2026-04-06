@@ -1,14 +1,11 @@
-"""
-app/services/llm.py
-LLM abstraction layer + proprietary food database population.
-"""
-
 import os
 import re
 import json
 import logging
 import asyncio
 from app.models.db import get_ai_cache, set_ai_cache, db_conn
+from app.services.fake_detector import apply_dna_overrides
+from app.services.alternatives import get_healthy_alternative
 
 logger = logging.getLogger(__name__)
 
@@ -183,8 +180,50 @@ def _validate_atwater_math(
     return None
 
 
+def _flatten_nutrients(nutrient_list: list) -> dict:
+    """Helper to convert LLM nutrient list to flat dict for DNA check."""
+    flat = {}
+    for n in nutrient_list:
+        name = n.get("name", "").lower()
+        val = n.get("value", 0)
+        # Handle cases where value might be a string or None
+        try:
+            val = float(val) if val is not None else 0
+        except (ValueError, TypeError):
+            val = 0
+            
+        if any(x in name for x in ["calorie", "energy", "kcal"]):
+            flat["calories"] = val
+        elif "protein" in name:
+            flat["protein"] = val
+        elif "carb" in name:
+            flat["carbs"] = val
+        elif "fat" in name:
+            flat["fat"] = val
+        elif "sugar" in name:
+            flat["sugar"] = val
+        elif "sodium" in name:
+            flat["sodium"] = val
+    return flat
+
+
 def sanitise_result(result: dict) -> dict:
     """Fix all known LLM output issues: chart rounding, unit strings, defaults, Atwater math."""
+    
+    # 1. Ensure all expected fields exist with defaults
+    result.setdefault("score", 5)
+    result.setdefault("verdict", "Analyzed")
+    result.setdefault("product_name", "Unknown Product")
+    result.setdefault("product_category", "general")
+    result.setdefault("nutrient_breakdown", [])
+    result.setdefault("pros", [])
+    result.setdefault("cons", [])
+    result.setdefault("age_warnings", [])
+    result.setdefault("ingredients_raw", "")
+    result.setdefault("summary", "")
+    result.setdefault("better_alternative", "")
+    
+    # 2. Fix chart_data proportions
     cd = result.get("chart_data")
     if (
         isinstance(cd, list)
@@ -197,71 +236,110 @@ def sanitise_result(result: dict) -> dict:
             scaled[scaled.index(max(scaled))] += 100 - sum(scaled)
             result["chart_data"] = scaled
     else:
-        # Default to a neutral state if LLM fails to provide chart data
-        result["chart_data"] = [0, 0, 0]
+        result["chart_data"] = [33, 33, 34] # Neutral default
 
+    # 3. Clean up nutrient values (numeric extraction)
     for n in result.get("nutrient_breakdown", []):
-        m = re.search(r"[\d]+\.?[\d]*", str(n.get("value", "")).replace(",", "."))
+        raw_val = str(n.get("value", "")).replace(",", ".")
+        m = re.search(r"[\d]+\.?[\d]*", raw_val)
         if m:
             n["value"] = float(m.group())
+        else:
+            n["value"] = 0
 
+    # 4. Atwater check (internal warning only)
     atwater_error = _validate_atwater_math(result.get("nutrient_breakdown", []))
     if atwater_error:
         result["atwater_warning"] = atwater_error
         result["is_low_confidence"] = True
 
-    # NOTE: Lie Detector and NOVA 4 checks are now handled exclusively
-    # by app/services/fake_detector.py apply_dna_overrides().
-    # They are intentionally NOT duplicated here.
-
-    result.setdefault("score", 5)
-    result.setdefault("verdict", "Analyzed")
-    result.setdefault("product_name", "Unknown Product")
-    result.setdefault("product_category", "general")
-    result.setdefault("nutrient_breakdown", [])
-    result.setdefault("pros", [])
-    result.setdefault("cons", [])
-    result.setdefault("age_warnings", [])
     if "is_low_confidence" not in result:
         result["is_low_confidence"] = False
+        
     return result
 
 
-async def analyse_label(
+async def unified_analyze_flow(
     extracted_text: str,
     persona: str,
     age_group: str,
-    product_category: str,
+    product_category_hint: str,
     language: str,
     web_context: str,
     blur_info: dict,
     label_confidence: str,
 ) -> dict:
-    cache_key = f"v4:{language}:{persona}:{age_group}:{extracted_text[:80]}"
+    """
+    Unified high-quality analysis pipeline used by Web, WhatsApp, and B2B.
+    Ensures DNA overrides and Alternative Engine are applied consistently.
+    """
+    # 1. Check cache first
+    cache_key = f"v5:{language}:{persona}:{age_group}:{extracted_text[:80]}"
     cached = get_ai_cache(cache_key)
     if cached:
         return cached
 
+    # 2. Build prompt and call LLM (with fallback logic)
     prompt = build_analysis_prompt(
         extracted_text,
         persona,
         age_group,
-        product_category,
+        product_category_hint,
         language,
         web_context,
         label_confidence,
         blur_info,
     )
-    raw = await asyncio.to_thread(call_llm, prompt, 2500)
-    result = sanitise_result(json.loads(raw))
+    
+    raw_json_str = await asyncio.to_thread(call_llm, prompt, 1500)
+    try:
+        result = json.loads(raw_json_str)
+    except json.JSONDecodeError:
+        # Emergency recovery: try to find JSON block in text
+        match = re.search(r'\{.*\}', raw_json_str, re.DOTALL)
+        if match:
+            result = json.loads(match.group())
+        else:
+            raise RuntimeError("LLM returned malformed JSON")
+
+    # 3. Basic sanitisation
+    result = sanitise_result(result)
+
+    # 4. Eatlytic DNA Overrides (Lie Detector, NOVA 4, Atwater Physics)
+    dna_res = apply_dna_overrides(
+        full_ocr_text=extracted_text,
+        nutrients=_flatten_nutrients(result.get("nutrient_breakdown", [])),
+        ingredients_raw=result.get("ingredients_raw", ""),
+        base_score=result.get("score", 5)
+    )
+    
+    if dna_res["action"] == "BLOCK":
+        # We don't raise error, we return the block as a final assessment
+        result["score"] = 1
+        result["verdict"] = "❌ CANNOT VERIFY"
+        result["summary"] = dna_res["reason"]
+        result["is_low_confidence"] = True
+    elif dna_res["action"] == "OVERRIDE":
+        result["score"] = dna_res["score"]
+        result["verdict"] = dna_res["reason"]
+        
+    # Append DNA flags to cons
+    if dna_res.get("extra_flags"):
+        for flag in dna_res["extra_flags"]:
+            if flag not in result["cons"]:
+                result["cons"].append(flag)
+
+    # 5. Healthy Alternative Engine
+    final_cat = result.get("product_category", product_category_hint)
+    result["better_alternative"] = get_healthy_alternative(final_cat, persona)
+
+    # 6. Global disclaimer
     result["disclaimer"] = MEDICAL_DISCLAIMER
 
-    cacheable = {
-        k: v
-        for k, v in result.items()
-        if k not in ("blur_info", "scan_meta", "allergen_warning")
-    }
+    # 7. Cache success (exclude session-specific blur_info)
+    cacheable = {k: v for k, v in result.items() if k not in ("blur_info", "scan_meta")}
     set_ai_cache(cache_key, cacheable)
+    
     return result
 
 
