@@ -86,37 +86,51 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
 
 # Legacy Image Classifier lists DELETED as per CEO's P0 requirements.
 
+import re
+
+def universal_label_filter(raw_ocr_text: str) -> dict:
+    """
+    STEP 2: The Trash Compactor.
+    Strips out Indian legal text (FSSAI, MRP) and keeps only nutrition data.
+    Threshold is set to 1 number so single-ingredient items (Tata Salt) don't fail.
+    """
+    lines = raw_ocr_text.split('\n')
+    clean_lines = []
+    number_count = 0
+    
+    nutrition_words = r'(energy|protein|fat|carb|sugar|sodium|fibre|fiber|salt|per 100g|per serve)'
+    garbage_words = r'(fssai|lic\.?|net wt|net qty|mrp|customer care|batch|best before|mfd|ingredient you know)'
+
+    for line in lines:
+        line_l = line.lower().strip()
+        if not line_l: continue
+
+        if re.search(garbage_words, line_l): 
+            continue
+
+        if re.search(nutrition_words, line_l):
+            clean_lines.append(line)
+            
+        if re.search(r'\b\d+(\.\d+)?\s*(g|mg|kcal|kj)\b', line_l):
+            number_count += 1
+
+    clean_text = "\n".join(clean_lines)
+    
+    # If we find AT LEAST 1 metric number (e.g., "39,100mg"), it's a valid label.
+    is_valid = number_count >= 1
+
+    return {"is_valid": is_valid, "clean_text": clean_text}
+
+
 def strip_marketing_fluff(raw_ocr_text: str) -> str:
     """
     Maggi puts 500 words of marketing on the back. 
     This function deletes lines that don't contain nutritional data or ingredients,
     so the LLM doesn't get confused.
+    Deprecated: Use universal_label_filter instead which returns dict with is_valid flag.
     """
-    lines = raw_ocr_text.split('\n')
-    useful_lines = []
-    
-    # Keywords that prove a line is important nutrition/ingredient data
-    nutrition_keywords = [
-        r'\d+(\.\d+)?\s*(g|mg|kcal|kj)',  # Matches "14.4g", "50 kcal"
-        r'energy', r'protein', r'fat', r'carb', r'sugar', r'sodium', r'fiber',
-        r'ingredient', r'contains', r'per 100g', r'serving'
-    ]
-    
-    for line in lines:
-        line_lower = line.lower().strip()
-        if not line_lower:
-            continue # Skip empty lines
-            
-        # Keep the line if it matches ANY of our nutrition keywords
-        for keyword in nutrition_keywords:
-            if re.search(keyword, line_lower):
-                useful_lines.append(line)
-                break # Found a match, stop checking this line and move to next
-                
-    # Join the useful lines back together
-    clean_text = "\n".join(useful_lines)
-    
-    return clean_text
+    result = universal_label_filter(raw_ocr_text)
+    return result["clean_text"]
 
 
 def validate_ocr_has_nutrition(extracted_text: str) -> bool:

@@ -62,14 +62,15 @@ def call_llm(prompt: str, max_tokens: int = 2500) -> str:
 
 
 STRICT_EXTRACTION_PROMPT = """
-You are a strict data extraction bot. You will be given messy OCR text from a food label.
-Extract the nutritional data into EXACTLY this JSON format. 
+You are a strict data extraction bot for Indian food labels. 
+Extract the data into EXACTLY this JSON format.
 
-RULES:
-1. If a value is not explicitly in the text, output 0 for it. 
-2. DO NOT GUESS. DO NOT HALLUCINATE. If you cannot read a number, output 0.
-3. For 'product_category', ONLY use one of these exact words: ['biscuit', 'noodle', 'chip', 'beverage', 'chocolate', 'snack', 'dairy', 'unknown']. Do not invent categories.
-4. Output ONLY valid JSON. No markdown formatting, no chatting, no explanations.
+CRITICAL RULES:
+1. SINGLE INGREDIENTS: For pure products (Salt, Sugar, Oil), it is NORMAL to have 0g for everything except the main ingredient. Do NOT flag this as an error.
+2. ZERO CREATIVITY: Output EXACTLY the numbers printed. If it says "Sodium 39,100mg", output 39100. 
+3. MISSING DATA: If a macro is not mentioned, output 0.
+4. CATEGORIES: ONLY use: ['biscuit', 'noodle', 'chip', 'beverage', 'chocolate', 'snack', 'dairy', 'salt', 'sugar', 'oil', 'spice', 'spread', 'unknown'].
+5. Output ONLY valid JSON. No markdown, no chatting.
 
 {
   "product_name": "string",
@@ -79,7 +80,7 @@ RULES:
   "carbs": float,
   "fat": float,
   "sugar": float,
-  "sodium": float,
+  "sodium_mg": float,
   "fiber": float,
   "ingredients_raw": "string"
 }
@@ -265,12 +266,17 @@ async def unified_analyze_flow(
         }
         return cached
 
-    # NEW: Strip marketing fluff before sending to LLM (Maggi fix)
-    from app.services.ocr import strip_marketing_fluff
-    clean_text = strip_marketing_fluff(extracted_text)
+    # NEW: Use universal_label_filter for better validation (Maggi fix)
+    from app.services.ocr import universal_label_filter
+    filter_result = universal_label_filter(extracted_text)
+    
+    if not filter_result["is_valid"]:
+        return {"error": "no_label", "message": "No nutrition table found. Ensure the numbers (e.g., 10g, 50kcal) are visible."}
+    
+    clean_text = filter_result["clean_text"]
     logger.info(f"Original OCR text length: {len(extracted_text)}, Cleaned text length: {len(clean_text)}")
     
-    # 2. Strict Extraction Call (Step 2 Implementation)
+    # Strict Extraction Call with cleaned text
     prompt = f"{STRICT_EXTRACTION_PROMPT}\n\n[LABEL TEXT]:\n{clean_text}"
     raw_json_str = await asyncio.to_thread(call_llm, prompt, 1000)
     
@@ -287,13 +293,14 @@ async def unified_analyze_flow(
         return sanity
 
     # Convert strict output to internal flattened format for Score legacy logic
+    # Note: LLM now returns sodium_mg, map it to sodium for backward compatibility
     flattened_nutrients = {
         "calories": float(result.get("calories", 0) or 0),
         "protein": float(result.get("protein", 0) or 0),
         "carbs": float(result.get("carbs", 0) or 0),
         "fat": float(result.get("fat", 0) or 0),
         "sugar": float(result.get("sugar", 0) or 0),
-        "sodium": float(result.get("sodium", 0) or 0),
+        "sodium": float(result.get("sodium_mg", 0) or 0),  # Map sodium_mg to sodium
         "fiber": float(result.get("fiber", 0) or 0),
     }
 
