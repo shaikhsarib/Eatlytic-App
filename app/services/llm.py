@@ -265,8 +265,13 @@ async def unified_analyze_flow(
         }
         return cached
 
+    # NEW: Strip marketing fluff before sending to LLM (Maggi fix)
+    from app.services.ocr import strip_marketing_fluff
+    clean_text = strip_marketing_fluff(extracted_text)
+    logger.info(f"Original OCR text length: {len(extracted_text)}, Cleaned text length: {len(clean_text)}")
+    
     # 2. Strict Extraction Call (Step 2 Implementation)
-    prompt = f"{STRICT_EXTRACTION_PROMPT}\n\n[LABEL TEXT]:\n{extracted_text}"
+    prompt = f"{STRICT_EXTRACTION_PROMPT}\n\n[LABEL TEXT]:\n{clean_text}"
     raw_json_str = await asyncio.to_thread(call_llm, prompt, 1000)
     
     try:

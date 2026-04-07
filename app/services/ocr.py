@@ -86,6 +86,39 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
 
 # Legacy Image Classifier lists DELETED as per CEO's P0 requirements.
 
+def strip_marketing_fluff(raw_ocr_text: str) -> str:
+    """
+    Maggi puts 500 words of marketing on the back. 
+    This function deletes lines that don't contain nutritional data or ingredients,
+    so the LLM doesn't get confused.
+    """
+    lines = raw_ocr_text.split('\n')
+    useful_lines = []
+    
+    # Keywords that prove a line is important nutrition/ingredient data
+    nutrition_keywords = [
+        r'\d+(\.\d+)?\s*(g|mg|kcal|kj)',  # Matches "14.4g", "50 kcal"
+        r'energy', r'protein', r'fat', r'carb', r'sugar', r'sodium', r'fiber',
+        r'ingredient', r'contains', r'per 100g', r'serving'
+    ]
+    
+    for line in lines:
+        line_lower = line.lower().strip()
+        if not line_lower:
+            continue # Skip empty lines
+            
+        # Keep the line if it matches ANY of our nutrition keywords
+        for keyword in nutrition_keywords:
+            if re.search(keyword, line_lower):
+                useful_lines.append(line)
+                break # Found a match, stop checking this line and move to next
+                
+    # Join the useful lines back together
+    clean_text = "\n".join(useful_lines)
+    
+    return clean_text
+
+
 def validate_ocr_has_nutrition(extracted_text: str) -> bool:
     """
     Replaces AI Image Classifier. (CEO'S P0 FIX)
