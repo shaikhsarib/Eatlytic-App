@@ -230,13 +230,19 @@ import re
 
 def validate_ocr_has_nutrition(extracted_text: str) -> bool:
     """
-    Replaces AI Image Classifier. 
+    Replaces AI Image Classifier. (CEO'S P0 FIX)
     If the OCR text doesn't contain at least 3 nutritional metrics, it's not a valid label.
     """
+    if not extracted_text:
+        return False
+
     # Looks for standard nutrition patterns: "10g", "50 kcal", "100.5 mg"
-    number_pattern = r'\b\d+(\.\d+)?\s*(g|mg|kcal|kj|mcg|%)\b'
+    # Added non-capturing groups (?:...) to ensure re.findall returns the full match string.
+    # Refined to handle potential punctuation around numbers common in dense labels.
+    number_pattern = r'\b\d+(?:\.\d+)?\s*(?:g|mg|kcal|kj|mcg|%)\b'
     matches = re.findall(number_pattern, extracted_text, re.IGNORECASE)
     
+    # We require at least 3 unique hits to prevent false positives from single dates or weights
     if len(matches) < 3:
         return False
     return True

@@ -883,28 +883,26 @@ async def whatsapp_webhook(request: Request):
             blur_info["deblurred"] = True
             blur_info["method_log"] = log
 
-        # 4. OCR & Label Detection
+        # 4. OCR & Label Detection (CEO'S P0 FIX)
         ocr_r = run_ocr(img_to_ocr, "en")
         text = ocr_r["text"]
-        lc = detect_label_presence(text)
-
-        if not lc["has_label"]:
+        
+        if not validate_ocr_has_nutrition(text):
             msg.body(
-                "❌ Couldn't find a nutrition label. "
-                "Please send a clear photo of the *back* of the packaging."
+                "❌ No nutrition table found. Please ensure the nutritional facts are visible in the image."
             )
         else:
-            # 5. Unified Analysis Flow (Consolidated logic)
+            # 5. Unified Analysis Flow
             analysis = await unified_analyze_flow(
                 extracted_text=text,
                 persona="general",
                 age_group="adult",
                 product_category_hint="general",
                 language="en",
-                web_context="",  # Will be fetched inside flow
+                web_context="", 
                 blur_info=blur_info,
-                label_confidence=lc.get("confidence", "medium"),
-                front_text="",  # WhatsApp: no front-of-pack text available
+                label_confidence="high",
+                front_text="", 
             )
 
             # 6. Format Response
