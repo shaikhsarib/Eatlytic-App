@@ -14,6 +14,7 @@ tests/test_critical.py
 
 Run: pytest tests/ -v
 """
+
 import os
 import json
 import hmac
@@ -21,12 +22,14 @@ import hashlib
 import pytest
 import datetime
 
+
 # ── Test fixtures ──────────────────────────────────────────────────────
 @pytest.fixture(autouse=True)
 def use_test_db(tmp_path, monkeypatch):
     """Redirect DB to a temp file for each test."""
     db_path = str(tmp_path / "test.db")
     import app.models.db as db_mod
+
     monkeypatch.setattr(db_mod, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(db_mod, "DB_FILE", db_path)
     db_mod.init_db()
@@ -35,41 +38,43 @@ def use_test_db(tmp_path, monkeypatch):
 
 # ══ 1. NUTRIENT VALUE SANITISATION ════════════════════════════════════
 class TestNutrientSanitisation:
-
     def test_string_with_unit_stripped(self):
         """'34g' must become 34.0, not NaN."""
         import re
+
         raw = "34g"
-        m   = re.search(r"[\d]+\.?[\d]*", raw.replace(",", "."))
+        m = re.search(r"[\d]+\.?[\d]*", raw.replace(",", "."))
         assert m is not None
         assert float(m.group()) == 34.0
 
     def test_comma_decimal_stripped(self):
         """European '3,5' must become 3.5."""
         import re
+
         raw = "3,5g"
-        m   = re.search(r"[\d]+\.?[\d]*", raw.replace(",", "."))
+        m = re.search(r"[\d]+\.?[\d]*", raw.replace(",", "."))
         assert float(m.group()) == 3.5
 
     def test_integer_value_unchanged(self):
         import re
+
         raw = "250"
-        m   = re.search(r"[\d]+\.?[\d]*", raw.replace(",", "."))
+        m = re.search(r"[\d]+\.?[\d]*", raw.replace(",", "."))
         assert float(m.group()) == 250.0
 
     def test_complex_string_extracts_first_number(self):
         import re
+
         raw = "≤2g per serving"
-        m   = re.search(r"[\d]+\.?[\d]*", raw.replace(",", "."))
+        m = re.search(r"[\d]+\.?[\d]*", raw.replace(",", "."))
         assert m is not None
         assert float(m.group()) == 2.0
 
 
 # ══ 2. CHART_DATA ROUNDING ════════════════════════════════════════════
 class TestChartDataRounding:
-
     def _fix(self, cd):
-        total  = sum(cd)
+        total = sum(cd)
         scaled = [round(v * 100 / total) for v in cd]
         scaled[scaled.index(max(scaled))] += 100 - sum(scaled)
         return scaled
@@ -89,40 +94,40 @@ class TestChartDataRounding:
         assert all(v >= 0 for v in result)
 
 
-# ══ 3. LABEL PRESENCE DETECTION ═══════════════════════════════════════
+# ══ 3. NUTRITION VALIDATION (REGEX-BASED) ═════════════════════════════
 class TestLabelDetection:
-
     def test_back_label_detected(self):
-        from app.services.ocr import detect_label_presence
+        from app.services.ocr import validate_ocr_has_nutrition
+
         text = "Nutrition Facts per 100g · Calories 250kcal · Protein 8g · Fat 5g · Ingredients: wheat flour, sugar, salt"
-        result = detect_label_presence(text)
-        assert result["has_label"] is True
-        assert result["confidence"] in ("high", "medium")
+        assert validate_ocr_has_nutrition(text) is True
+
+    def test_maggi_style_label_detected(self):
+        from app.services.ocr import validate_ocr_has_nutrition
+
+        text = "What makes Truly GOOD? Nestle Maggi Noodles Per 100g Energy 500kcal Protein 10g Carbohydrate 60g Total Fat 20g Saturated Fat 8g Sodium 500mg"
+        assert validate_ocr_has_nutrition(text) is True
 
     def test_front_label_rejected(self):
-        from app.services.ocr import detect_label_presence
+        from app.services.ocr import validate_ocr_has_nutrition
+
         text = "NEW! Improved flavour — Organic Crunchy Wheat Bites — Natural Goodness — Premium Quality"
-        result = detect_label_presence(text)
-        assert result["has_label"] is False
-        assert result["suggestion"] == "wrong_side"
+        assert validate_ocr_has_nutrition(text) is False
 
     def test_empty_text_rejected(self):
-        from app.services.ocr import detect_label_presence
-        result = detect_label_presence("")
-        assert result["has_label"] is False
-        assert result["suggestion"] == "no_text"
+        from app.services.ocr import validate_ocr_has_nutrition
 
-    def test_partial_label_low_confidence(self):
-        from app.services.ocr import detect_label_presence
+        assert validate_ocr_has_nutrition("") is False
+
+    def test_partial_label_rejected(self):
+        from app.services.ocr import validate_ocr_has_nutrition
+
         text = "Ingredients: water, salt. Best before: Jan 2027"
-        result = detect_label_presence(text)
-        # Should have label (has anchor 'ingredients:' + 'best before') but low confidence
-        assert result["has_label"] in (True, False)  # edge case — acceptable either way
+        assert validate_ocr_has_nutrition(text) is False
 
 
 # ══ 4. AUTH TOKEN LIFECYCLE ═══════════════════════════════════════════
 class TestAuthTokenLifecycle:
-
     def test_create_and_validate_session(self):
         from app.services.auth import create_session, get_user_from_token
         from app.models.db import db_conn
@@ -130,8 +135,10 @@ class TestAuthTokenLifecycle:
         # Create a user first
         user_id = "test-user-001"
         with db_conn() as conn:
-            conn.execute("INSERT INTO users(id,email) VALUES(?,?)",
-                         (user_id, "test@eatlytic.com"))
+            conn.execute(
+                "INSERT INTO users(id,email) VALUES(?,?)",
+                (user_id, "test@eatlytic.com"),
+            )
 
         token = create_session(user_id)
         assert token.startswith("eat_")
@@ -143,16 +150,23 @@ class TestAuthTokenLifecycle:
 
     def test_invalid_token_returns_none(self):
         from app.services.auth import get_user_from_token
+
         assert get_user_from_token("totally_fake_token") is None
 
     def test_revoked_token_returns_none(self):
-        from app.services.auth import create_session, revoke_session, get_user_from_token
+        from app.services.auth import (
+            create_session,
+            revoke_session,
+            get_user_from_token,
+        )
         from app.models.db import db_conn
 
         user_id = "test-user-002"
         with db_conn() as conn:
-            conn.execute("INSERT INTO users(id,email) VALUES(?,?)",
-                         (user_id, "test2@eatlytic.com"))
+            conn.execute(
+                "INSERT INTO users(id,email) VALUES(?,?)",
+                (user_id, "test2@eatlytic.com"),
+            )
 
         token = create_session(user_id)
         revoke_session(token)
@@ -160,13 +174,15 @@ class TestAuthTokenLifecycle:
 
     def test_otp_verify_creates_user(self):
         from app.services.auth import send_email_otp, verify_email_otp
-        otp  = send_email_otp("newuser@test.com")
+
+        otp = send_email_otp("newuser@test.com")
         user = verify_email_otp("newuser@test.com", otp)
         assert user is not None
         assert user["email"] == "newuser@test.com"
 
     def test_wrong_otp_returns_none(self):
         from app.services.auth import send_email_otp, verify_email_otp
+
         send_email_otp("wrong@test.com")
         result = verify_email_otp("wrong@test.com", "000000")
         assert result is None
@@ -174,14 +190,15 @@ class TestAuthTokenLifecycle:
 
 # ══ 5. SCAN QUOTA (USER-BASED) ════════════════════════════════════════
 class TestScanQuota:
-
     def _make_user(self, user_id, email):
         from app.models.db import db_conn
+
         with db_conn() as conn:
             conn.execute("INSERT INTO users(id,email) VALUES(?,?)", (user_id, email))
 
     def test_free_user_gets_10_scans(self):
         from app.services.auth import check_and_increment_scan_user
+
         self._make_user("u1", "a@t.com")
         for i in range(10):
             result = check_and_increment_scan_user("u1")
@@ -193,6 +210,7 @@ class TestScanQuota:
     def test_pro_user_unlimited(self):
         from app.services.auth import check_and_increment_scan_user
         from app.models.db import db_conn
+
         self._make_user("u2", "b@t.com")
         with db_conn() as conn:
             conn.execute("UPDATE users SET is_pro=1 WHERE id='u2'")
@@ -204,13 +222,12 @@ class TestScanQuota:
 
 # ══ 6. PAYMENT SIGNATURE VERIFICATION ════════════════════════════════
 class TestPaymentSignature:
-
     def test_valid_signature_accepted(self):
         """HMAC-SHA256 must match Razorpay's scheme."""
-        secret     = "test_secret_key"
-        order_id   = "order_ABC123"
+        secret = "test_secret_key"
+        order_id = "order_ABC123"
         payment_id = "pay_XYZ789"
-        expected   = hmac.new(
+        expected = hmac.new(
             secret.encode(),
             f"{order_id}|{payment_id}".encode(),
             hashlib.sha256,
@@ -225,35 +242,37 @@ class TestPaymentSignature:
         assert hmac.compare_digest(expected, computed) is True
 
     def test_tampered_signature_rejected(self):
-        secret     = "test_secret_key"
-        order_id   = "order_ABC123"
+        secret = "test_secret_key"
+        order_id = "order_ABC123"
         payment_id = "pay_XYZ789"
-        real_sig   = hmac.new(secret.encode(),
-                              f"{order_id}|{payment_id}".encode(),
-                              hashlib.sha256).hexdigest()
-        fake_sig   = "0" * len(real_sig)
+        real_sig = hmac.new(
+            secret.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256
+        ).hexdigest()
+        fake_sig = "0" * len(real_sig)
         assert hmac.compare_digest(real_sig, fake_sig) is False
 
 
 # ══ 7. FOOD DATABASE ═════════════════════════════════════════════════
 class TestFoodDatabase:
-
     def test_upsert_creates_product(self):
         from app.services.llm import upsert_food_product
         from app.models.db import db_conn
 
         nutrients = [
             {"name": "Calories", "value": 250, "unit": "kcal"},
-            {"name": "Protein",  "value": 8,   "unit": "g"},
-            {"name": "Fat",      "value": 5,   "unit": "g"},
+            {"name": "Protein", "value": 8, "unit": "g"},
+            {"name": "Fat", "value": 5, "unit": "g"},
         ]
-        pid = upsert_food_product("Test Biscuits", nutrients, 6,
-                                  barcode="1234567890123", brand="TestBrand")
+        pid = upsert_food_product(
+            "Test Biscuits", nutrients, 6, barcode="1234567890123", brand="TestBrand"
+        )
         assert isinstance(pid, int)
         assert pid > 0
 
         with db_conn() as conn:
-            row = conn.execute("SELECT * FROM food_products WHERE id=?", (pid,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM food_products WHERE id=?", (pid,)
+            ).fetchone()
         assert row is not None
         assert row["name"] == "Test Biscuits"
         assert row["scan_count"] == 1
@@ -263,38 +282,47 @@ class TestFoodDatabase:
         from app.models.db import db_conn
 
         nutrients = [{"name": "Protein", "value": 5, "unit": "g"}]
-        pid1 = upsert_food_product("Dupe Product", nutrients, 5, barcode="9999999999999")
-        pid2 = upsert_food_product("Dupe Product", nutrients, 5, barcode="9999999999999")
+        pid1 = upsert_food_product(
+            "Dupe Product", nutrients, 5, barcode="9999999999999"
+        )
+        pid2 = upsert_food_product(
+            "Dupe Product", nutrients, 5, barcode="9999999999999"
+        )
         assert pid1 == pid2  # same product
 
         with db_conn() as conn:
-            row = conn.execute("SELECT scan_count FROM food_products WHERE id=?", (pid1,)).fetchone()
+            row = conn.execute(
+                "SELECT scan_count FROM food_products WHERE id=?", (pid1,)
+            ).fetchone()
         assert row["scan_count"] == 2
 
 
 # ══ 8. IMAGE VALIDATION ═══════════════════════════════════════════════
 class TestImageValidation:
-
     def test_oversized_image_rejected(self):
         from app.services.image import validate_image
+
         huge = b"x" * (11 * 1024 * 1024)  # 11MB
         with pytest.raises(ValueError, match="too large"):
             validate_image(huge)
 
     def test_invalid_bytes_rejected(self):
         from app.services.image import validate_image
+
         with pytest.raises(ValueError, match="Invalid image"):
             validate_image(b"this is not an image")
 
 
 # ══ 9. STREAK TRACKING ════════════════════════════════════════════════
 class TestStreakTracking:
-
     def _make_user(self, user_id):
         from app.models.db import db_conn
+
         with db_conn() as conn:
-            conn.execute("INSERT INTO users(id,email) VALUES(?,?)",
-                         (user_id, f"{user_id}@test.com"))
+            conn.execute(
+                "INSERT INTO users(id,email) VALUES(?,?)",
+                (user_id, f"{user_id}@test.com"),
+            )
 
     def test_consecutive_days_increments_streak(self):
         from app.services.auth import update_streak_user
@@ -304,13 +332,17 @@ class TestStreakTracking:
         yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
 
         with db_conn() as conn:
-            conn.execute("UPDATE users SET last_scan_date=? WHERE id=?",
-                         (yesterday, "streak_user_1"))
+            conn.execute(
+                "UPDATE users SET last_scan_date=? WHERE id=?",
+                (yesterday, "streak_user_1"),
+            )
 
         update_streak_user("streak_user_1")
 
         with db_conn() as conn:
-            row = conn.execute("SELECT streak_days FROM users WHERE id='streak_user_1'").fetchone()
+            row = conn.execute(
+                "SELECT streak_days FROM users WHERE id='streak_user_1'"
+            ).fetchone()
         assert row["streak_days"] == 1
 
     def test_missed_day_resets_streak(self):
@@ -321,50 +353,63 @@ class TestStreakTracking:
         old_date = (datetime.date.today() - datetime.timedelta(days=5)).isoformat()
 
         with db_conn() as conn:
-            conn.execute("UPDATE users SET last_scan_date=?, streak_days=10 WHERE id=?",
-                         (old_date, "streak_user_2"))
+            conn.execute(
+                "UPDATE users SET last_scan_date=?, streak_days=10 WHERE id=?",
+                (old_date, "streak_user_2"),
+            )
 
         update_streak_user("streak_user_2")
 
         with db_conn() as conn:
-            row = conn.execute("SELECT streak_days FROM users WHERE id='streak_user_2'").fetchone()
+            row = conn.execute(
+                "SELECT streak_days FROM users WHERE id='streak_user_2'"
+            ).fetchone()
         assert row["streak_days"] == 1  # reset
 
 
 # ══ 10. ACCURACY BENCHMARKING ═════════════════════════════════════════
 class TestAccuracyBenchmarking:
-
     def test_field_accuracy_correct_detection(self):
         """Within 15% tolerance → marked correct."""
         from app.routes.benchmarks import _compute_field_accuracy
 
         llm_output = {
-            "score"            : 6,
+            "score": 6,
             "nutrient_breakdown": [
                 {"name": "Calories", "value": 248, "unit": "kcal"},  # truth=250
-                {"name": "Protein",  "value": 7.8, "unit": "g"},     # truth=8
-                {"name": "Fat",      "value": 5.1, "unit": "g"},     # truth=5
-            ]
+                {"name": "Protein", "value": 7.8, "unit": "g"},  # truth=8
+                {"name": "Fat", "value": 5.1, "unit": "g"},  # truth=5
+            ],
         }
         ground_truth = {
-            "score"    : 6,
-            "nutrients": {"calories": 250, "protein": 8, "fat": 5,
-                          "carbs": 30, "sodium": 200, "fiber": 2, "sugar": 10}
+            "score": 6,
+            "nutrients": {
+                "calories": 250,
+                "protein": 8,
+                "fat": 5,
+                "carbs": 30,
+                "sodium": 200,
+                "fiber": 2,
+                "sugar": 10,
+            },
         }
         result = _compute_field_accuracy(llm_output, ground_truth)
         assert result["fields"]["calories"]["status"] == "correct"
-        assert result["fields"]["protein"]["status"]  == "correct"
-        assert result["fields"]["fat"]["status"]      == "correct"
+        assert result["fields"]["protein"]["status"] == "correct"
+        assert result["fields"]["fat"]["status"] == "correct"
 
     def test_word_f1_perfect_match(self):
         from app.routes.benchmarks import _word_f1
+
         assert _word_f1("wheat flour sugar salt", "wheat flour sugar salt") == 1.0
 
     def test_word_f1_zero_overlap(self):
         from app.routes.benchmarks import _word_f1
+
         assert _word_f1("apples oranges", "wheat flour") == 0.0
 
     def test_word_f1_partial(self):
         from app.routes.benchmarks import _word_f1
+
         score = _word_f1("wheat flour sugar", "wheat flour")
         assert 0 < score < 1.0

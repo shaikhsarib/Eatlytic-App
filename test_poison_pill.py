@@ -154,40 +154,32 @@ class TestBlurryImageRejection:
 # ══ 4. POISON PILL: TOXIC/UNHEALTHY PRODUCTS ═════════════════════════
 class TestToxicProductFlagging:
     def test_pure_sugar_label_detected(self):
-        """Pure sugar should get a very low score from label detection."""
-        from app.services.ocr import detect_label_presence
+        """Pure sugar should pass nutrition validation."""
+        from app.services.ocr import validate_ocr_has_nutrition
 
         text = "Nutrition Facts per 100g · Calories 387kcal · Sugar 100g · Carbohydrate 100g · Ingredients: Sugar"
-        result = detect_label_presence(text)
-        assert result["has_label"] is True
-        assert result["confidence"] in ("high", "medium")
+        assert validate_ocr_has_nutrition(text) is True
 
     def test_msg_ingredients_parsed(self):
-        """MSG product label should be parseable."""
-        from app.services.ocr import detect_label_presence
+        """MSG product label should pass nutrition validation."""
+        from app.services.ocr import validate_ocr_has_nutrition
 
         text = "Nutrition Facts per 100g · Calories 0kcal · Sodium 12000mg · Ingredients: Monosodium Glutamate (MSG)"
-        result = detect_label_presence(text)
-        assert result["has_label"] is True
-        assert "sodium" in " ".join(result["label_hits"]).lower()
+        assert validate_ocr_has_nutrition(text) is True
 
     def test_front_pack_marketing_rejected(self):
-        from app.services.ocr import detect_label_presence
+        from app.services.ocr import validate_ocr_has_nutrition
 
         text = "NEW! Natural Energy Boost — Premium Organic Formula — Delicious & Tasty"
-        result = detect_label_presence(text)
-        assert result["has_label"] is False
+        assert validate_ocr_has_nutrition(text) is False
 
     def test_empty_image_rejected(self):
-        from app.services.ocr import detect_label_presence
+        from app.services.ocr import validate_ocr_has_nutrition
 
-        result = detect_label_presence("")
-        assert result["has_label"] is False
-        assert result["suggestion"] == "no_text"
+        assert validate_ocr_has_nutrition("") is False
 
-    def test_partial_garbled_text_low_confidence(self):
-        from app.services.ocr import detect_label_presence
+    def test_partial_garbled_text_rejected(self):
+        from app.services.ocr import validate_ocr_has_nutrition
 
         text = "N tr t on F cts C lor es 2 0"
-        result = detect_label_presence(text)
-        assert result["has_label"] in (True, False)
+        assert validate_ocr_has_nutrition(text) is False

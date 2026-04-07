@@ -317,7 +317,9 @@ async def analyze_product(
                 "tip": "flip_product",
             }
 
-        label_confidence = "high"  # Regex check ensures high confidence in label existence
+        label_confidence = (
+            "high"  # Regex check ensures high confidence in label existence
+        )
 
         # ── Step 4-12: Unified High-Quality Analysis ───────────────
         result = await unified_analyze_flow(
@@ -577,8 +579,7 @@ async def api_analyze(
     # Sanitise to prevent prompt injection
     safe_text = text.replace('"', "'").replace("\n", " ").strip()
 
-    lc = detect_label_presence(text)
-    if not lc["has_label"]:
+    if not validate_ocr_has_nutrition(text):
         return {"error": "no_label", "message": "No nutrition label detected in image."}
 
     cache_key = f"b2b:{language}:{persona}:{safe_text[:80]}"
@@ -886,7 +887,7 @@ async def whatsapp_webhook(request: Request):
         # 4. OCR & Label Detection (CEO'S P0 FIX)
         ocr_r = run_ocr(img_to_ocr, "en")
         text = ocr_r["text"]
-        
+
         if not validate_ocr_has_nutrition(text):
             msg.body(
                 "❌ No nutrition table found. Please ensure the nutritional facts are visible in the image."
@@ -899,10 +900,10 @@ async def whatsapp_webhook(request: Request):
                 age_group="adult",
                 product_category_hint="general",
                 language="en",
-                web_context="", 
+                web_context="",
                 blur_info=blur_info,
                 label_confidence="high",
-                front_text="", 
+                front_text="",
             )
 
             # 6. Format Response
