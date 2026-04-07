@@ -86,8 +86,6 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
 
 # Legacy Image Classifier lists DELETED as per CEO's P0 requirements.
 
-import re
-
 def validate_ocr_has_nutrition(extracted_text: str) -> bool:
     """
     Replaces AI Image Classifier. (CEO'S P0 FIX)
