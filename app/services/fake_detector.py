@@ -14,11 +14,10 @@ logger = logging.getLogger(__name__)
 # ==========================================
 def atwater_math_check(nutrients: dict) -> dict:
     """
-    Prevents hallucinations and catches physically impossible labels.
-    Returns a dict with 'is_valid' (bool) and 'reason' (str).
+    Checks if label macro math follows physics (Atwater 4-4-9).
+    Now returns a warning instead of a block to follow 'Blind Photocopier' rule.
     """
     try:
-        # Expected keys: protein, carbs, fat, calories
         protein = float(nutrients.get("protein", 0) or 0)
         carbs = float(nutrients.get("carbs", 0) or 0)
         fat = float(nutrients.get("fat", 0) or 0)
@@ -27,24 +26,53 @@ def atwater_math_check(nutrients: dict) -> dict:
         return {"is_valid": False, "reason": "Could not read macro numbers."}
 
     if stated_calories <= 0:
-        return {"is_valid": True, "reason": None}  # Skip if calories aren't listed
+        return {"is_valid": True, "reason": None}
 
-    # The Atwater General Factor System: 4-4-9
     calculated_calories = (protein * 4) + (carbs * 4) + (fat * 9)
-
-    # Allow 25% margin for fiber, sugar alcohols, and rounding errors
-    # (FSSAI allows up to 20% in some cases, 25% is a safe 'DNA' threshold)
     margin = stated_calories * 0.25
     lower_bound = stated_calories - margin
     upper_bound = stated_calories + margin
 
     if not (lower_bound <= calculated_calories <= upper_bound):
         return {
-            "is_valid": False,
-            "reason": f"Math Mismatch: Label says {stated_calories} kcal, but macros calculate to {calculated_calories:.0f} kcal.",
+            "is_valid": False, 
+            "reason": f"Atwater Mismatch: Label says {stated_calories} kcal, but macros calculate to {calculated_calories:.0f} kcal."
         }
 
     return {"is_valid": True, "reason": None}
+
+
+def check_for_impossible_labels(nutrients: dict, product_name: str) -> list:
+    """
+    Identifies physically impossible data (e.g., fried food with 0g fat).
+    Returns a list of warning strings. (CEO'S P0 'Blind Photocopier' Rule)
+    """
+    warnings = []
+    
+    try:
+        fat = float(nutrients.get('fat', 0) or 0)
+        calories = float(nutrients.get('calories', 0) or 0)
+        sodium = float(nutrients.get('sodium', 0) or 0)
+        protein = float(nutrients.get('protein', 0) or 0)
+    except (ValueError, TypeError):
+        return []
+
+    # Example 1: Fried food with 0 fat
+    # Indian context: 'noodle', 'chip', 'namkeen', 'bhujia'
+    p_lower = product_name.lower()
+    if any(k in p_lower for k in ["noodle", "chip", "namkeen", "bhujia", "fried"]):
+        if calories > 200 and fat == 0:
+            warnings.append("⚠️ Label Anomaly: High calories but 0g fat detected. This is physically impossible for fried snacks. Verify label manually.")
+            
+    # Example 2: Savory snack with 0 sodium
+    if sodium == 0 and calories > 50 and any(k in p_lower for k in ["noodle", "chip", "namkeen", "salted", "savory"]):
+        warnings.append("⚠️ Label Anomaly: 0mg sodium detected. This is extremeley rare for savory snacks. Verify label manually.")
+
+    # Example 3: Essential logic for 'Photocopier' safety (Meat/Protein)
+    if any(k in p_lower for k in ["chicken", "meat", "fish", "egg"]) and protein == 0 and calories > 50:
+        warnings.append("⚠️ Label Anomaly: 0g protein detected in a meat-based product. Please double-check the label.")
+        
+    return warnings
 
 
 # ==========================================
@@ -202,23 +230,27 @@ def apply_dna_overrides(
     ingredients_raw: str,
     base_score: int,
     front_text: str = "",
+    product_name: str = "product",
 ) -> dict:
     """
-    Master function to apply Eatlytic DNA rules and potentially override LLM scores.
+    Master function to apply Eatlytic DNA rules.
+    Following the 'Blind Photocopier' rule, we NO LONGER hard-block on math/anomalies.
+    We instead surface clearly marked SYSTEM WARNINGS.
     """
     final_verdicts = []
+    anomaly_warnings = []
 
-    # 1. Run Fake Type 3 (Math Check) - BLOCK level
+    # 1. Check for Impossible Labels (Photocopier Rule Warnings)
+    anomalies = check_for_impossible_labels(nutrients, product_name)
+    if anomalies:
+        anomaly_warnings.extend(anomalies)
+
+    # 2. Run Math Check - Now a WARNING, not a BLOCK
     math_check = atwater_math_check(nutrients)
     if not math_check["is_valid"]:
-        return {
-            "action": "BLOCK",
-            "score": 0,
-            "reason": f"❌ CANNOT SCORE: {math_check['reason']}",
-            "extra_flags": [],
-        }
+        anomaly_warnings.append(f"⚠️ {math_check['reason']} (Data extraction matches printed label).")
 
-    # 2. Run Fake Type 1 (Lie Detector) - OVERRIDE level (Score 2)
+    # 3. Run Fake Type 1 (Lie Detector) - OVERRIDE level (Score 2)
     lie_check = detect_fake_claims(
         full_ocr_text, ingredients_raw, front_text=front_text
     )
@@ -228,10 +260,11 @@ def apply_dna_overrides(
             "action": "OVERRIDE",
             "score": 2,
             "reason": f"🚨 FAKE CLAIM: Brand claims healthy marketing, but contains {hidden_str}.",
-            "extra_flags": [],
+            "extra_flags": final_verdicts,
+            "anomaly_warnings": anomaly_warnings,
         }
 
-    # 3. Run Fake Type 2 (NOVA 4) - PASS level (Capped Score 3)
+    # 4. Run Fake Type 2 (NOVA 4) - PASS level (Capped Score 3)
     nova_check = detect_nova_4(ingredients_raw)
     score = base_score
     if nova_check["is_nova_4"]:
@@ -245,4 +278,5 @@ def apply_dna_overrides(
         "score": score,
         "reason": None,
         "extra_flags": final_verdicts,
+        "anomaly_warnings": anomaly_warnings,
     }

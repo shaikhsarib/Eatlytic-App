@@ -912,11 +912,19 @@ async def whatsapp_webhook(request: Request):
             summary = analysis.get("summary", "")
             cons = analysis.get("cons", [])
             alt = analysis.get("better_alternative", "")
+            nutrients = analysis.get("nutrient_breakdown", [])
+            warnings = analysis.get("anomaly_warnings", [])
 
+            # 6. Format Response (Photocopier Rule Style)
+            nut_text = "\n".join([f"{n['name']}: {n['value']}{n['unit']}" for n in nutrients])
             risk_text = "\n".join([f"• {c}" for c in cons]) if cons else "• None"
+            warning_text = "\n\n".join([f"🚨 SYSTEM WARNING: {w}" for w in warnings]) if warnings else ""
 
             response_text = (
-                f"*Eatlytic Score: {score}/10*\n"
+                f"*Eatlytic Scan Results:*\n"
+                f"{nut_text}\n\n"
+                f"{warning_text}\n\n"
+                f"*Analysis Score: {score}/10*\n"
                 f"[{verdict}]\n\n"
                 f"{summary}\n\n"
                 f"⚠️ *Risk Flags:*\n{risk_text}\n\n"

@@ -13,6 +13,9 @@ __pycache__/
 .env
 .env.local
 *.env.*
+.venv/
+venv/
+env/
 
 # Coverage
 .coverage

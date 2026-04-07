@@ -63,13 +63,14 @@ def call_llm(prompt: str, max_tokens: int = 2500) -> str:
 
 STRICT_EXTRACTION_PROMPT = """
 You are a strict data extraction bot. You will be given messy OCR text from a food label.
-Extract the nutritional data into EXACTLY this JSON format. 
+Extract the nutritional data into EXACTLY this JSON format.
 
-RULES:
-1. If a value is not explicitly in the text, output 0 for it. 
-2. DO NOT GUESS. DO NOT HALLUCINATE. If you cannot read a number, output 0.
-3. For 'product_category', ONLY use one of these exact words: ['biscuit', 'noodle', 'chip', 'beverage', 'chocolate', 'snack', 'dairy', 'unknown']. Do not invent categories.
-4. Output ONLY valid JSON. No markdown formatting, no chatting, no explanations.
+CRITICAL RULES FOR EXTRACTION (YOU ARE A PHOTOCOPIER):
+1. ZERO CREATIVITY: You must output EXACTLY the numbers printed on the label.
+2. NO ASSUMPTIONS: If the label says "Protein 0g" on a piece of meat, you MUST output "Protein 0". Do NOT assume the label is wrong. Do NOT try to fix it.
+3. NO GUESSING: If you cannot read a number clearly, output 0. Do not guess what the blurry number might be.
+4. For 'product_category', ONLY use one of these exact words: ['biscuit', 'noodle', 'chip', 'beverage', 'chocolate', 'snack', 'dairy', 'unknown']. Do not invent categories.
+5. Output ONLY valid JSON. No markdown formatting, no chatting, no explanations.
 
 {
   "product_name": "string",
@@ -101,21 +102,25 @@ def parse_llm_response(llm_output_string: str) -> dict:
 
 
 def run_sanity_check(nutrients: dict) -> dict:
-    """Catches obvious physics-defying LLM hallucinations."""
+    """
+    Catches obvious physics-defying LLM hallucinations.
+    Following 'Blind Photocopier' rule, this is now an ADVISORY check.
+    It returns a warning string instead of blocking the result.
+    """
     try:
         fat = float(nutrients.get('fat', 0) or 0)
         protein = float(nutrients.get('protein', 0) or 0)
         carbs = float(nutrients.get('carbs', 0) or 0)
         calories = float(nutrients.get('calories', 0) or 0)
         
-        # Physics check: A food item CANNOT have >100 calories and 0g fat/protein/carbs.
-        # If it does, the LLM failed to read the macros properly.
+        # Advisory Physics check: A food item CANNOT have >100 calories and 0g fat/protein/carbs.
+        # If it does, the LLM might have failed to read the macros properly.
         if calories > 100 and fat == 0 and protein == 0 and carbs == 0:
-            return {"error": "⚠️ Read Error: Detected calories but 0g macros. Label too blurry to read accurately."}
+            return {"warning": "⚠️ Extraction Note: Detected calories but 0g macros. Please verify label manually if blurry."}
             
-        return nutrients # Passes check
+        return {} # Passes check
     except (ValueError, TypeError):
-        return {"error": "⚠️ Data Error: LLM returned non-numeric values for nutritional facts."}
+        return {"warning": "⚠️ Data Note: Potential non-numeric values detected in extraction."}
 
 
 def _validate_atwater_math(
@@ -292,17 +297,25 @@ async def unified_analyze_flow(
         "fiber": float(result.get("fiber", 0) or 0),
     }
 
-    # Re-apply DNA Overrides and Scoring logic
+    # 4. Run Physics Check (Advisory)
+    extraction_note = run_sanity_check(flattened_nutrients)
+    
+    # Run DNA Overrides and Scoring logic
     dna_res = apply_dna_overrides(
         full_ocr_text=extracted_text,
         nutrients=flattened_nutrients,
         ingredients_raw=result.get("ingredients_raw", ""),
         base_score=5, # Strict extraction means we re-calculate score locally
         front_text=front_text,
+        product_name=result.get("product_name", "product")
     )
 
+    # Collect all warnings (Photocopier Rule)
+    all_anomaly_warnings = dna_res.get("anomaly_warnings", [])
+    if extraction_note.get("warning"):
+        all_anomaly_warnings.append(extraction_note["warning"])
+
     # Re-map result to match frontend expectation for UI display
-    # This ensures no breaking changes in the frontend
     final_output = {
         "product_name": result.get("product_name", "Unknown Product"),
         "product_category": result.get("product_category", "unknown"),
@@ -318,6 +331,7 @@ async def unified_analyze_flow(
         ],
         "cons": dna_res.get("extra_flags", []),
         "summary": dna_res["reason"],
+        "anomaly_warnings": all_anomaly_warnings, # Surfaced to Web/WhatsApp
         "disclaimer": MEDICAL_DISCLAIMER
     }
 
