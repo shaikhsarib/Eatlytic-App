@@ -78,7 +78,7 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
         "text": text,
         "word_count": word_count,
         "avg_confidence": round(avg_conf, 3),
-        "is_readable": word_count >= 3 and avg_conf > 0.10,
+        "is_readable": int(word_count >= 3 and avg_conf > 0.10),  # Convert bool to int for JSON serialization
     }
     set_ocr_cache(cache_key, result)
     return result

@@ -1,54 +1,31 @@
+```
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs and temp files
 *.log
 *.tmp
 *.swp
-*.swo
-*.pyc
-__pycache__/
-.DS_Store
-Thumbs.db
+
+# Environment
 .env
 .env.local
 *.env.*
-node_modules/
-venv/
+
+# Editors
+.vscode/
+.idea/
+
+# Dependencies
 .venv/
-.mypy_cache/
-.pytest_cache/
+venv/
+node_modules/
+
+# Build artifacts
 dist/
 build/
 target/
-.gradle/
-.vscode/
-.idea/
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
-coverage/
-htmlcov/
-.coverage
-*.class
-*.o
-*.exe
-*.dll
-*.so
-*.a
-*.out
+```
