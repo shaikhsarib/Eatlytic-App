@@ -208,3 +208,39 @@ class TestToxicProductFlagging:
         result = universal_label_filter(text)
         assert result["is_valid"] is True
         assert len(result["clean_text"].strip().split("\n")) >= 4
+
+    def test_maggi_full_label_preserves_product_name(self):
+        """Realistic Maggi label: product name in header, garbage words, nutrition table."""
+        from app.services.ocr import universal_label_filter
+
+        text = (
+            "MAGGI Masala Noodles\n"
+            "Tastiest Just 2 Minutes\n"
+            "Net Wt. 70g\n"
+            "FSSAI License No. 10012021000345\n"
+            "Nutritional Information per 100g per serving (70g)\n"
+            "Energy 500 kcal 350 kcal\n"
+            "Protein 8.2 g 5.7 g\n"
+            "Carbohydrate 59.0 g 41.3 g\n"
+            "Total Fat 20.0 g 14.0 g\n"
+            "Saturated Fat 8.5 g 5.9 g\n"
+            "Sodium 920 mg 644 mg\n"
+            "MRP Rs. 14 inclusive of all taxes\n"
+            "Best Before 6 months from manufacture\n"
+            "Ingredients: Wheat Flour, Palm Oil, Masala\n"
+        )
+        result = universal_label_filter(text)
+        assert result["is_valid"] is True
+        # Product name should be preserved in the first lines
+        assert "MAGGI Masala Noodles" in result["clean_text"]
+        # Nutrition data should be present
+        assert (
+            "Energy 500 kcal" in result["clean_text"]
+            or "Energy" in result["clean_text"]
+        )
+        assert "Protein" in result["clean_text"]
+        # Garbage should be removed
+        assert "FSSAI" not in result["clean_text"]
+        assert "MRP" not in result["clean_text"]
+        # Ingredients line should be kept for context
+        assert "Ingredients" in result["clean_text"]

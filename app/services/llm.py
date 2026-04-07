@@ -18,6 +18,7 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 _groq_client = None
 if GROQ_API_KEY:
     from groq import Groq
+
     _groq_client = Groq(api_key=GROQ_API_KEY)
 
 MEDICAL_DISCLAIMER = (
@@ -67,11 +68,13 @@ You are a strict data extraction bot for Indian food labels.
 Extract the data into EXACTLY this JSON format. 
 
 CRITICAL RULES:
-1. SINGLE INGREDIENTS: For pure products (Salt, Sugar, Oil), it is NORMAL to have 0g for everything except the main ingredient. Do NOT flag this as an error.
-2. ZERO CREATIVITY: Output EXACTLY the numbers printed. If it says "Sodium 39,100mg", output 39100. 
-3. MISSING DATA: If a macro is not mentioned, output 0.
-4. CATEGORIES: ONLY use: ['biscuit', 'noodle', 'chip', 'beverage', 'chocolate', 'snack', 'dairy', 'salt', 'sugar', 'oil', 'spice', 'spread', 'unknown'].
-5. Output ONLY valid JSON. No markdown, no chatting.
+1. PRODUCT NAME: The product name is ALWAYS in the first few lines of the text. Extract it from there (e.g., "MAGGI Masala Noodles", "Parle-G Gluco Biscuit"). NEVER output "Unknown Product" if any text is provided.
+2. SINGLE INGREDIENTS: For pure products (Salt, Sugar, Oil), it is NORMAL to have 0g for everything except the main ingredient. Do NOT flag this as an error.
+3. ZERO CREATIVITY: Output EXACTLY the numbers printed. If it says "Sodium 39,100mg", output 39100. 
+4. MISSING DATA: If a macro is not mentioned, output 0.
+5. CATEGORIES: ONLY use: ['biscuit', 'noodle', 'chip', 'beverage', 'chocolate', 'snack', 'dairy', 'salt', 'sugar', 'oil', 'spice', 'spread', 'unknown'].
+6. TABLE LOGIC: Indian labels often show two columns — "Per 100g" and "Per Serving". ALWAYS extract the "Per 100g" column values. If only one column exists, use that. If the columns are not labeled, the first number on each row is usually "Per 100g" and the second is "Per Serving".
+7. Output ONLY valid JSON. No markdown, no chatting.
 
 {
   "product_name": "string",
@@ -96,7 +99,9 @@ def parse_llm_response(llm_output_string: str) -> dict:
         if len(lines) >= 3:
             clean_string = "\n".join(lines[1:-1])
         else:
-            clean_string = clean_string.replace("```json", "").replace("```", "").strip()
+            clean_string = (
+                clean_string.replace("```json", "").replace("```", "").strip()
+            )
     return json.loads(clean_string)
 
 
@@ -112,35 +117,49 @@ async def unified_analyze_flow(
     front_text: str = "",
 ) -> dict:
     """The Master Pipeline."""
-    
+
     # 1. Cache Check
     cache_key = hashlib.md5(
         f"{extracted_text[:100]}:{persona}:{language}".encode()
     ).hexdigest()
     cached = get_ai_cache(cache_key)
     if cached:
-        cached["scan_meta"] = {"cached": True, "scans_remaining": 0, "is_pro": False, "scans_used": 0}
+        cached["scan_meta"] = {
+            "cached": True,
+            "scans_remaining": 0,
+            "is_pro": False,
+            "scans_used": 0,
+        }
         return cached
 
     # 2. THE TRASH COMPACTOR (Filter out FSSAI, marketing, etc.)
     from app.services.ocr import universal_label_filter
+
     filter_result = universal_label_filter(extracted_text)
-    
+
     if not filter_result["is_valid"]:
-        return {"error": "no_label", "message": "No nutrition table found. Ensure the numbers (e.g., 10g, 50kcal) are visible."}
-    
+        return {
+            "error": "no_label",
+            "message": "No nutrition table found. Ensure the numbers (e.g., 10g, 50kcal) are visible.",
+        }
+
     clean_text = filter_result["clean_text"]
-    logger.info(f"Original OCR length: {len(extracted_text)}, Cleaned length: {len(clean_text)}")
-    
+    logger.info(
+        f"Original OCR length: {len(extracted_text)}, Cleaned length: {len(clean_text)}"
+    )
+
     # 3. THE DATA ENTRY CLERK (Strict Extraction)
     prompt = f"{STRICT_EXTRACTION_PROMPT}\n\n[LABEL TEXT]:\n{clean_text}"
     raw_json_str = await asyncio.to_thread(call_llm, prompt, 1000)
-    
+
     try:
         result = parse_llm_response(raw_json_str)
     except Exception as e:
         logger.error(f"Parse Error: {e} | Raw: {raw_json_str}")
-        return {"error": "server_busy", "message": "⚠️ Analysis failed due to AI formatting. Please try again."}
+        return {
+            "error": "server_busy",
+            "message": "⚠️ Analysis failed due to AI formatting. Please try again.",
+        }
 
     # 4. Format for DNA Engine (Map sodium_mg -> sodium)
     flattened_nutrients = {
@@ -149,7 +168,7 @@ async def unified_analyze_flow(
         "carbs": float(result.get("carbs", 0) or 0),
         "fat": float(result.get("fat", 0) or 0),
         "sugar": float(result.get("sugar", 0) or 0),
-        "sodium": float(result.get("sodium_mg", 0) or 0), 
+        "sodium": float(result.get("sodium_mg", 0) or 0),
         "fiber": float(result.get("fiber", 0) or 0),
     }
 
@@ -158,7 +177,7 @@ async def unified_analyze_flow(
         full_ocr_text=extracted_text,
         nutrients=flattened_nutrients,
         ingredients_raw=result.get("ingredients_raw", ""),
-        base_score=5, 
+        base_score=5,
         front_text=front_text,
     )
 
@@ -170,7 +189,11 @@ async def unified_analyze_flow(
         "verdict": dna_res["reason"] if dna_res["reason"] else "Analyzed",
         "ingredients_raw": result.get("ingredients_raw", ""),
         "nutrient_breakdown": [
-            {"name": "Calories", "value": flattened_nutrients["calories"], "unit": "kcal"},
+            {
+                "name": "Calories",
+                "value": flattened_nutrients["calories"],
+                "unit": "kcal",
+            },
             {"name": "Protein", "value": flattened_nutrients["protein"], "unit": "g"},
             {"name": "Carbs", "value": flattened_nutrients["carbs"], "unit": "g"},
             {"name": "Fat", "value": flattened_nutrients["fat"], "unit": "g"},
@@ -178,16 +201,18 @@ async def unified_analyze_flow(
             {"name": "Sodium", "value": flattened_nutrients["sodium"], "unit": "mg"},
             {"name": "Fiber", "value": flattened_nutrients["fiber"], "unit": "g"},
         ],
-        "chart_data": [33, 33, 34], 
-        "pros": [], 
-        "age_warnings": [], 
+        "chart_data": [33, 33, 34],
+        "pros": [],
+        "age_warnings": [],
         "cons": dna_res.get("extra_flags", []),
         "summary": dna_res["reason"],
-        "disclaimer": MEDICAL_DISCLAIMER
+        "disclaimer": MEDICAL_DISCLAIMER,
     }
 
     # 7. Alternative Engine
-    final_output["better_alternative"] = get_healthy_alternative(final_output["product_category"], persona)
+    final_output["better_alternative"] = get_healthy_alternative(
+        final_output["product_category"], persona
+    )
 
     # 8. Cache success
     cacheable = {k: v for k, v in final_output.items() if k not in ("scan_meta")}

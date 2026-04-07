@@ -101,10 +101,12 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
 
 def universal_label_filter(raw_ocr_text: str) -> dict:
     """
-    THE TRASH COMPACTOR (v2 — robust):
+    THE TRASH COMPACTOR (v3 — context-aware):
     Strips out Indian legal text (FSSAI, MRP) and keeps only nutrition data.
     KEYWORD PRIORITY: a line containing a nutrition keyword is NEVER skipped,
     even if it also contains a garbage word (e.g. "Calories — MRP inclusive").
+    HEADER PRESERVATION: first 3-5 non-garbage lines are kept (product name lives here).
+    CONTEXT PRESERVATION: "Ingredients" / "Information" lines are kept for AI context.
     """
     lines = raw_ocr_text.split("\n")
     clean_lines = []
@@ -117,7 +119,13 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
         r"\b\d+(\.\d+)?\s*(g|mg|kcal|kj|kjoules|kilojoule|kilojoules|gm|gms|ml|iu|%)\b"
     )
 
-    for line in lines:
+    # HEADER PRESERVATION: keep first N non-garbage lines unconditionally
+    # but still reject lines that are pure garbage (FSSAI, MRP, etc.)
+    # Also require minimum text quality (at least 2 coherent words of 2+ chars)
+    header_line_count = 0
+    max_header_lines = 5
+
+    for idx, line in enumerate(lines):
         line_l = line.lower().strip()
         if not line_l:
             continue
@@ -125,6 +133,22 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
         has_nutrition_keyword = bool(re.search(nutrition_words, line_l))
         has_garbage = bool(re.search(garbage_words, line_l))
         has_number_unit = bool(re.search(unit_pattern, line_l))
+
+        # Quality check: at least 2 coherent words (2+ chars each) AND
+        # at least one substantial word (4+ chars) to filter out garbled text
+        coherent_words = [w for w in line_l.split() if len(w) >= 2]
+        substantial_words = [w for w in line_l.split() if len(w) >= 4]
+        has_min_quality = len(coherent_words) >= 2 and len(substantial_words) >= 1
+
+        # HEADER PRESERVATION: keep first N non-garbage lines with minimum quality
+        if header_line_count < max_header_lines and not has_garbage and has_min_quality:
+            header_line_count += 1
+            clean_lines.append(line)
+            if has_number_unit:
+                number_count += 1
+            if re.search(r"\b\d+(\.\d+)?\b", line_l):
+                number_count += 1
+            continue
 
         # KEYWORD PRIORITY: nutrition lines are never discarded
         if has_nutrition_keyword:
@@ -134,6 +158,12 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
             # Also count bare numbers on nutrition lines (e.g. "Protein 9.2")
             if re.search(r"\b\d+(\.\d+)?\b", line_l):
                 number_count += 1
+            continue
+
+        # CONTEXT PRESERVATION: keep "Ingredients" or "Information" lines
+        # so the AI understands what section it's reading
+        if re.search(r"(ingredient|information|nutritional|nutrition info)", line_l):
+            clean_lines.append(line)
             continue
 
         # Skip pure garbage lines (no nutrition keyword present)
