@@ -100,8 +100,9 @@ def validate_ocr_has_nutrition(extracted_text: str) -> bool:
     number_pattern = r'\b\d+(?:\.\d+)?\s*(?:g|mg|kcal|kj|mcg|%)\b'
     matches = re.findall(number_pattern, extracted_text, re.IGNORECASE)
     
-    # We require at least 3 unique hits to prevent false positives from single dates or weights
-    if len(matches) < 3:
+    # We require at least 2 unique hits to accept labels with sparse data or many zeros (e.g., 0g fat, 0g protein)
+    # This prevents rejecting valid labels that only have a few values
+    if len(matches) < 2:
         return False
     return True
 
