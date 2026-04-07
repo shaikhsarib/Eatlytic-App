@@ -735,16 +735,15 @@ async def export_pdf(request: Request, analysis_json: str = Form(...)):
     nutrients = data.get("nutrient_breakdown", [])
     if nutrients:
         story.append(Paragraph("Nutrient Breakdown", stys["Heading2"]))
-        tbl_data = [["Nutrient", "Amount", "Rating"]]
+        tbl_data = [["Nutrient", "Amount"]]
         for n in nutrients:
             tbl_data.append(
                 [
                     n.get("name", ""),
                     f"{n.get('value', '')} {n.get('unit', '')}",
-                    n.get("rating", "").upper(),
                 ]
             )
-        tbl = Table(tbl_data, colWidths=[6 * cm, 4 * cm, 4 * cm])
+        tbl = Table(tbl_data, colWidths=[7 * cm, 7 * cm])
         tbl.setStyle(
             TableStyle(
                 [

@@ -310,12 +310,17 @@ async def unified_analyze_flow(
         "verdict": dna_res["reason"] if dna_res["action"] == "OVERRIDE" else "Analyzed",
         "ingredients_raw": result.get("ingredients_raw", ""),
         "nutrient_breakdown": [
+            {"name": "Calories", "value": flattened_nutrients["calories"], "unit": "kcal"},
             {"name": "Protein", "value": flattened_nutrients["protein"], "unit": "g"},
-            {"name": "Sugar", "value": flattened_nutrients["sugar"], "unit": "g"},
+            {"name": "Carbs", "value": flattened_nutrients["carbs"], "unit": "g"},
             {"name": "Fat", "value": flattened_nutrients["fat"], "unit": "g"},
+            {"name": "Sugar", "value": flattened_nutrients["sugar"], "unit": "g"},
             {"name": "Sodium", "value": flattened_nutrients["sodium"], "unit": "mg"},
             {"name": "Fiber", "value": flattened_nutrients["fiber"], "unit": "g"},
         ],
+        "chart_data": [33, 33, 34],  # Default macro pie chart proportions (protein, carbs, fat)
+        "pros": [],  # Initialize pros list for PDF export and frontend
+        "age_warnings": [],  # Initialize age warnings for frontend display
         "cons": dna_res.get("extra_flags", []),
         "summary": dna_res["reason"],
         "disclaimer": MEDICAL_DISCLAIMER
