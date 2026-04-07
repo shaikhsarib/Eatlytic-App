@@ -161,7 +161,7 @@ RULES: chart_data sums to 100 | rating: good|moderate|caution|bad | status: good
 
 
 def _validate_atwater_math(
-    nutrient_breakdown: list, tolerance: float = 0.15
+    nutrient_breakdown: list, tolerance: float = 0.25
 ) -> dict | None:
     """Verify calories match macros via Atwater factors. Returns error dict on mismatch."""
 
@@ -209,12 +209,16 @@ def _flatten_nutrients(nutrient_list: list) -> dict:
             flat["calories"] = val
         elif "protein" in name:
             flat["protein"] = val
-        elif "carb" in name:
-            flat["carbs"] = val
-        elif "fat" in name:
+        elif "saturated" in name:
+            flat.setdefault("sat_fat", val)
+        elif "trans" in name:
+            flat.setdefault("trans_fat", val)
+        elif name == "fat" or name == "total fat":
             flat["fat"] = val
-        elif "sugar" in name:
-            flat["sugar"] = val
+        elif "carb" in name and "fiber" not in name:
+            flat.setdefault("carbs", val)
+        elif "sugar" in name and "added" not in name:
+            flat.setdefault("sugar", val)
         elif "sodium" in name:
             flat["sodium"] = val
     return flat
@@ -254,6 +258,9 @@ def sanitise_result(result: dict) -> dict:
     # 3. Clean up nutrient values (numeric extraction)
     for n in result.get("nutrient_breakdown", []):
         raw_val = str(n.get("value", "")).replace(",", ".")
+        # Detect inequality prefixes to flag trace amounts
+        if raw_val.strip().startswith("<"):
+            n["is_max_value"] = True
         m = re.search(r"[\d]+\.?[\d]*", raw_val)
         if m:
             n["value"] = float(m.group())
@@ -281,6 +288,7 @@ async def unified_analyze_flow(
     web_context: str,
     blur_info: dict,
     label_confidence: str,
+    front_text: str = "",
 ) -> dict:
     """
     Unified high-quality analysis pipeline used by Web, WhatsApp, and B2B.
@@ -329,6 +337,7 @@ async def unified_analyze_flow(
         nutrients=_flatten_nutrients(result.get("nutrient_breakdown", [])),
         ingredients_raw=result.get("ingredients_raw", ""),
         base_score=result.get("score", 5),
+        front_text=front_text,
     )
 
     if dna_res["action"] == "BLOCK":
@@ -359,3 +368,68 @@ async def unified_analyze_flow(
     set_ai_cache(cache_key, cacheable)
 
     return result
+
+
+def upsert_food_product(
+    name: str,
+    nutrients: list,
+    score: int,
+    barcode: str = "",
+    brand: str = "",
+    category: str = "",
+    ingredients_raw: str = "",
+) -> int:
+    """Insert a food product or increment scan_count if barcode already exists."""
+    from app.models.db import db_conn
+
+    def _get_nut(key):
+        for n in nutrients:
+            if key in n.get("name", "").lower():
+                v = n.get("value", 0)
+                return float(v) if isinstance(v, (int, float)) else 0
+        return 0
+
+    cal = _get_nut("calorie") or _get_nut("energy") or _get_nut("kcal")
+    pro = _get_nut("protein")
+    carb = _get_nut("carbohydrate") or _get_nut("carbs")
+    fat = _get_nut("fat")
+    sod = _get_nut("sodium")
+    fib = _get_nut("fiber")
+    sug = _get_nut("sugar")
+
+    with db_conn() as conn:
+        if barcode:
+            existing = conn.execute(
+                "SELECT id FROM food_products WHERE barcode=?", (barcode,)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE food_products SET scan_count=scan_count+1 WHERE id=?",
+                    (existing["id"],),
+                )
+                return existing["id"]
+
+        cursor = conn.execute(
+            """INSERT INTO food_products(
+                name, brand, category, barcode,
+                calories_100g, protein_100g, carbs_100g, fat_100g,
+                sodium_100g, fiber_100g, sugar_100g,
+                eatlytic_score, ingredients_raw, scan_count
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
+            (
+                name,
+                brand,
+                category,
+                barcode,
+                cal,
+                pro,
+                carb,
+                fat,
+                sod,
+                fib,
+                sug,
+                score,
+                ingredients_raw,
+            ),
+        )
+        return cursor.lastrowid

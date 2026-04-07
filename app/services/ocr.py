@@ -64,10 +64,11 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
     img_np = np.array(img)
     results = get_reader_for(lang_hint).readtext(img_np, detail=1)
     boxes = results  # each entry: (bbox, text, confidence)
-    
+
     # EasyOCR quirk: some boxes return 0.0 even when text is clearly read.
-    # Clamp those to 0.1 so avg_confidence is not poisoned by a single bad box.
-    confidences = [max(r[2], 0.1) if r[1].strip() else 0.0 for r in boxes]
+    # Clamp only boxes with non-empty text to 0.05 (not 0.1) so avg_confidence
+    # is not poisoned by a single bad box, but still reflects poor quality.
+    confidences = [max(r[2], 0.05) if r[1].strip() else 0.0 for r in boxes]
     words = [r[1] for r in boxes]
     text = " ".join(w for w in words if w.strip())
     word_count = len(text.split())  # count actual words from the joined text

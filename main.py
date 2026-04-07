@@ -206,6 +206,7 @@ async def analyze_product(
     product_category: str = Form("general"),
     language: str = Form("en"),
     extracted_text: str = Form(None),
+    front_text: str = Form(""),
     image: UploadFile = File(...),
 ):
     """
@@ -337,6 +338,7 @@ async def analyze_product(
             web_context="",  # Web context will be fetched inside flow async
             blur_info=blur_info,
             label_confidence=label_confidence,
+            front_text=front_text,
         )
 
         if "error" in result:
@@ -817,32 +819,6 @@ async def export_pdf(request: Request, analysis_json: str = Form(...)):
     )
 
 
-# ── WhatsApp webhook (Task 7) — requires twilio in requirements.txt ───
-def generate_whatsapp_response(
-    r: dict, ocr: dict, dna_result: dict = None, alt_advice: str = ""
-) -> str:
-    if ocr.get("avg_confidence", 1) < 0.30 and ocr.get("word_count", 0) < 20:
-        return "❌ Cannot Score\n\nThe label is too blurry or incomplete to provide a definitive score. Please send a clearer picture of the ingredients list."
-
-    if dna_result and dna_result["action"] == "BLOCK":
-        return dna_result["reason"]
-
-    s = r.get("score", "?")
-    v = r.get("verdict", "Analyzed")
-
-    if dna_result and dna_result["action"] == "OVERRIDE":
-        v = dna_result["reason"]
-
-    summ = r.get("summary", "")
-    fl = r.get("cons", [])
-    flags_t = "\n".join([f"- {f}" for f in fl]) if fl else "- None"
-
-    msg = f"Eatlytic Score: {s}/10\n\n[{v}]\n{summ}\n\n⚠️ Risk Flags:\n{flags_t}"
-    if alt_advice:
-        msg += f"\n\n{alt_advice}"
-    return msg
-
-
 @app.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):
     """Twilio WhatsApp sandbox webhook with DNA overrides and scan limits."""
@@ -868,7 +844,7 @@ async def whatsapp_webhook(request: Request):
 
     # 2. Identify user and check scan limits
     phone_number = form.get("From", "unknown_wa")
-    scan_check = check_and_increment_scan(phone_number)
+    scan_check = check_and_increment_scan(phone_number, limit=FREE_SCAN_LIMIT)
 
     media_url = form.get("MediaUrl0")
     if not media_url:
@@ -937,6 +913,7 @@ async def whatsapp_webhook(request: Request):
                 web_context="",  # Will be fetched inside flow
                 blur_info=blur_info,
                 label_confidence=lc.get("confidence", "medium"),
+                front_text="",  # WhatsApp: no front-of-pack text available
             )
 
             # 6. Format Response
