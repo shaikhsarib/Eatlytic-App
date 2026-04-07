@@ -61,103 +61,61 @@ def call_llm(prompt: str, max_tokens: int = 2500) -> str:
     raise RuntimeError(f"All LLM models failed. Last error: {str(last_err)[:100]}")
 
 
-def build_analysis_prompt(
-    extracted_text: str,
-    persona: str,
-    age_group: str,
-    product_category: str,
-    language: str,
-    label_confidence: str,
-    blur_info: dict,
-) -> str:
-    lang_name = LANGUAGE_MAP.get(language, "English")
-    conf_note = (
-        "⚠️ Label text may be partial — only list nutrients you can read confidently."
-        if label_confidence == "low"
-        else ""
-    )
-    blur_ctx = ""
-    if blur_info.get("detected"):
-        verb = (
-            "enhanced via Wiener deconvolution"
-            if blur_info.get("deblurred")
-            else "blurry, used original"
-        )
-        blur_ctx = f"IMAGE: {blur_info['severity']}ly blurry ({verb}). Only report confident values."
+STRICT_EXTRACTION_PROMPT = """
+You are a strict data extraction bot. You will be given messy OCR text from a food label.
+Extract the nutritional data into EXACTLY this JSON format. 
 
-    persona_rules = "GENERAL ADULT: Apply standard FSSAI limits."
-    p_lower = persona.lower()
-    if "diabetic" in p_lower:
-        persona_rules = "DIABETIC RULES: Multiply sugar penalty by 3x. Flag any Maltodextrin or Dextrose exactly like sugar."
-    elif "child" in p_lower or "baby" in p_lower or "parent" in p_lower:
-        persona_rules = (
-            "CHILD RULES: Multiply sodium penalty by 2x. Flag all artificial colors."
-        )
-    elif "pregnant" in p_lower:
-        persona_rules = "PREGNANCY RULES: Give bonus for folic acid and protein. Flag any raw/unpasteurized ingredients."
-    elif "senior" in p_lower:
-        persona_rules = (
-            "SENIOR RULES: Flag low fiber content strongly. Flag high sodium."
-        )
-    elif "gym" in p_lower or "athlete" in p_lower or "fitness" in p_lower:
-        persona_rules = "ATHLETE RULES: High sugar allowed if pre/post workout. High protein gives score bonus."
+RULES:
+1. If a value is not explicitly in the text, output 0 for it. 
+2. DO NOT GUESS. DO NOT HALLUCINATE. If you cannot read a number, output 0.
+3. For 'product_category', ONLY use one of these exact words: ['biscuit', 'noodle', 'chip', 'beverage', 'chocolate', 'snack', 'dairy', 'unknown']. Do not invent categories.
+4. Output ONLY valid JSON. No markdown formatting, no chatting, no explanations.
 
-    # Sanitise extracted_text to prevent prompt injection
-    safe_text = extracted_text.replace('"', "'").replace("\n", " ").strip()
+{
+  "product_name": "string",
+  "product_category": "string",
+  "calories": float,
+  "protein": float,
+  "carbs": float,
+  "fat": float,
+  "sugar": float,
+  "sodium": float,
+  "fiber": float,
+  "ingredients_raw": "string"
+}
+"""
 
-    return f"""[INST]
-You are an expert nutritional scientist and food safety auditor.
-CRITICAL: Respond ENTIRELY in {lang_name}. Every text field MUST be in {lang_name}.
-Persona: {persona} | Age: {age_group} | Category: {product_category}
-{persona_rules}
-{conf_note}
-{blur_ctx}
-Label Text: "{safe_text}"
+def parse_llm_response(llm_output_string: str) -> dict:
+    """Strip markdown code blocks if the LLM ignores instructions."""
+    clean_string = llm_output_string.strip()
+    if clean_string.startswith("```"):
+        # Remove first and last lines (the backticks and 'json' tag)
+        lines = clean_string.split("\n")
+        if len(lines) >= 3:
+            clean_string = "\n".join(lines[1:-1])
+        else:
+            # Fallback for inline backticks
+            clean_string = clean_string.replace("```json", "").replace("```", "").strip()
+        
+    return json.loads(clean_string)
 
-Analyze ONLY the label text above. Do NOT search the web or use external knowledge about brands. Extract nutrients and ingredients directly from the provided text.
 
-Return ONLY valid JSON — no markdown, no preamble:
-{{
-  "product_name"      : "Short name from label",
-  "product_category"  : "Categorize strictly as one of: biscuit|noodle|chip|beverage|juice|dairy|chocolate|protein_supplement|ready_to_eat|sweet",
-  "score"             : <INTEGER 1-10 per SCORING RUBRIC — modified by persona rules>,
-  "verdict"           : "Two-word verdict in {lang_name}",
-  "fake_claim_detected": <true if text claims 'No Added Sugar'/'Sugar-Free' BUT ingredients have Maltodextrin, Dextrose, Fructose, Corn Syrup, Date Syrup>,
-  "ingredients_raw"   : "Comma, separated, list, of, ingredients, extracted",
-  "chart_data"        : [<Safe%>, <Moderate%>, <Risky%>],
-  "summary"           : "2-sentence professional summary in {lang_name}.",
-  "eli5_explanation"  : "Child-friendly explanation with emojis in {lang_name}.",
-  "molecular_insight" : "1-2 sentences on biochemical body impact in {lang_name}.",
-  "paragraph_benefits": "Full paragraph on genuine benefits in {lang_name}.",
-  "paragraph_uniqueness": "Unique characteristics OR 2 better alternatives in {lang_name}.",
-  "is_unique"         : true,
-  "nutrient_breakdown": [
-    {{"name":"Protein","value":<ACTUAL g from label>,"unit":"g","rating":"good","impact":"brief note in {lang_name}"}},
-    {{"name":"Sugar","value":<ACTUAL g>,"unit":"g","rating":"moderate","impact":"brief note"}},
-    {{"name":"Fat","value":<ACTUAL g>,"unit":"g","rating":"good","impact":"brief note"}},
-    {{"name":"Sodium","value":<ACTUAL mg>,"unit":"mg","rating":"caution","impact":"brief note"}},
-    {{"name":"Fiber","value":<ACTUAL g>,"unit":"g","rating":"good","impact":"brief note"}}
-  ],
-  "pros"           : ["Benefit 1 in {lang_name}", "Benefit 2", "Benefit 3"],
-  "cons"           : ["Risk 1 in {lang_name}", "Risk 2"],
-  "age_warnings"   : [
-    {{"group":"Children","emoji":"👶","status":"warning","message":"in {lang_name}"}},
-    {{"group":"Adults","emoji":"🧑","status":"good","message":"in {lang_name}"}},
-    {{"group":"Seniors","emoji":"👴","status":"caution","message":"in {lang_name}"}},
-    {{"group":"Pregnant","emoji":"🤰","status":"caution","message":"in {lang_name}"}}
-  ],
-  "better_alternative": "A specific healthier alternative in {lang_name}.",
-  "is_low_confidence" : false
-}}
-
-SCORING RUBRIC — MANDATORY, never use 6 or 7 as defaults:
-  9-10: Whole food, no added sugar, low sodium, high fibre/protein
-  7-8 : Mildly processed, sugar <5g/100g, reasonable sodium
-  5-6 : Processed, sugar 5-15g/100g OR sodium 400-700mg/100g
-  3-4 : High sugar >15g/100g OR sodium >700mg/100g OR poor profile
-  1-2 : Ultra-processed, very high sugar/sodium/sat-fat
-RULES: chart_data sums to 100 | rating: good|moderate|caution|bad | status: good|caution|warning
-[/INST]"""
+def run_sanity_check(nutrients: dict) -> dict:
+    """Catches obvious physics-defying LLM hallucinations."""
+    try:
+        fat = float(nutrients.get('fat', 0) or 0)
+        protein = float(nutrients.get('protein', 0) or 0)
+        carbs = float(nutrients.get('carbs', 0) or 0)
+        calories = float(nutrients.get('calories', 0) or 0)
+        
+        # Physics check: A food item CANNOT have >100 calories and 0g fat/protein/carbs.
+        # If it does, the LLM failed to read the macros properly.
+        if calories > 100 and fat == 0 and protein == 0 and carbs == 0:
+            return {"error": "⚠️ Read Error: Detected calories but 0g macros. Label too blurry to read accurately."}
+            
+        return nutrients # Passes check
+    except (ValueError, TypeError):
+        return {"error": "⚠️ Data Error: LLM returned non-numeric values for nutritional facts."}
 
 
 def _validate_atwater_math(
@@ -307,67 +265,70 @@ async def unified_analyze_flow(
         }
         return cached
 
-    prompt = build_analysis_prompt(
-        extracted_text,
-        persona,
-        age_group,
-        product_category_hint,
-        language,
-        label_confidence,
-        blur_info,
-    )
-
-    raw_json_str = await asyncio.to_thread(call_llm, prompt, 1500)
+    # 2. Strict Extraction Call (Step 2 Implementation)
+    prompt = f"{STRICT_EXTRACTION_PROMPT}\n\n[LABEL TEXT]:\n{extracted_text}"
+    raw_json_str = await asyncio.to_thread(call_llm, prompt, 1000)
+    
     try:
-        result = json.loads(raw_json_str)
-    except json.JSONDecodeError:
-        # Emergency recovery: try to find JSON block in text
-        match = re.search(r"\{.*\}", raw_json_str, re.DOTALL)
-        if match:
-            result = json.loads(match.group())
-        else:
-            raise RuntimeError("LLM returned malformed JSON")
+        # Step 2: Markdown-safe parsing
+        result = parse_llm_response(raw_json_str)
+    except Exception as e:
+        logger.error(f"P0 Parse Error: {e} | Raw: {raw_json_str}")
+        return {"error": "server_busy", "message": "⚠️ Analysis failed due to AI data format mismatch. Please try again."}
 
-    # 3. Basic sanitisation
-    result = sanitise_result(result)
+    # Step 3: Physics Sanity Check
+    sanity = run_sanity_check(result)
+    if "error" in sanity:
+        return sanity
 
-    # 4. Eatlytic DNA Overrides (Lie Detector, NOVA 4, Atwater Physics)
+    # Convert strict output to internal flattened format for Score legacy logic
+    flattened_nutrients = {
+        "calories": float(result.get("calories", 0) or 0),
+        "protein": float(result.get("protein", 0) or 0),
+        "carbs": float(result.get("carbs", 0) or 0),
+        "fat": float(result.get("fat", 0) or 0),
+        "sugar": float(result.get("sugar", 0) or 0),
+        "sodium": float(result.get("sodium", 0) or 0),
+        "fiber": float(result.get("fiber", 0) or 0),
+    }
+
+    # Re-apply DNA Overrides and Scoring logic
     dna_res = apply_dna_overrides(
         full_ocr_text=extracted_text,
-        nutrients=_flatten_nutrients(result.get("nutrient_breakdown", [])),
+        nutrients=flattened_nutrients,
         ingredients_raw=result.get("ingredients_raw", ""),
-        base_score=result.get("score", 5),
+        base_score=5, # Strict extraction means we re-calculate score locally
         front_text=front_text,
     )
 
-    if dna_res["action"] == "BLOCK":
-        # We don't raise error, we return the block as a final assessment
-        result["score"] = 1
-        result["verdict"] = "❌ CANNOT VERIFY"
-        result["summary"] = dna_res["reason"]
-        result["is_low_confidence"] = True
-    elif dna_res["action"] == "OVERRIDE":
-        result["score"] = dna_res["score"]
-        result["verdict"] = dna_res["reason"]
-
-    # Append DNA flags to cons
-    if dna_res.get("extra_flags"):
-        for flag in dna_res["extra_flags"]:
-            if flag not in result["cons"]:
-                result["cons"].append(flag)
+    # Re-map result to match frontend expectation for UI display
+    # This ensures no breaking changes in the frontend
+    final_output = {
+        "product_name": result.get("product_name", "Unknown Product"),
+        "product_category": result.get("product_category", "unknown"),
+        "score": dna_res["score"] if dna_res["action"] == "OVERRIDE" else 5,
+        "verdict": dna_res["reason"] if dna_res["action"] == "OVERRIDE" else "Analyzed",
+        "ingredients_raw": result.get("ingredients_raw", ""),
+        "nutrient_breakdown": [
+            {"name": "Protein", "value": flattened_nutrients["protein"], "unit": "g"},
+            {"name": "Sugar", "value": flattened_nutrients["sugar"], "unit": "g"},
+            {"name": "Fat", "value": flattened_nutrients["fat"], "unit": "g"},
+            {"name": "Sodium", "value": flattened_nutrients["sodium"], "unit": "mg"},
+            {"name": "Fiber", "value": flattened_nutrients["fiber"], "unit": "g"},
+        ],
+        "cons": dna_res.get("extra_flags", []),
+        "summary": dna_res["reason"],
+        "disclaimer": MEDICAL_DISCLAIMER
+    }
 
     # 5. Healthy Alternative Engine
-    final_cat = result.get("product_category", product_category_hint)
-    result["better_alternative"] = get_healthy_alternative(final_cat, persona)
+    final_output["better_alternative"] = get_healthy_alternative(final_output["product_category"], persona)
 
-    # 6. Global disclaimer
-    result["disclaimer"] = MEDICAL_DISCLAIMER
-
-    # 7. Cache success (exclude session-specific blur_info)
-    cacheable = {k: v for k, v in result.items() if k not in ("blur_info", "scan_meta")}
+    # 7. Cache success
+    cacheable = {k: v for k, v in final_output.items() if k not in ("scan_meta")}
     set_ai_cache(cache_key, cacheable)
 
-    return result
+    return final_output
 
 
 def upsert_food_product(

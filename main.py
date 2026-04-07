@@ -32,7 +32,7 @@ from app.models.db import (
     set_ai_cache,
     check_and_increment_scan,
 )
-from app.services.ocr import run_ocr, detect_label_presence, passes_confidence_gate
+from app.services.ocr import run_ocr, validate_ocr_has_nutrition, passes_confidence_gate
 from app.services.image import (
     assess_image_quality,
     deblur_and_enhance,
@@ -309,24 +309,15 @@ async def analyze_product(
                 "tip": "flip_product",
             }
 
-        # ── Step 3b: Label presence check ─────────────────────────────
-        label_check = detect_label_presence(extracted_text)
-        if not label_check["has_label"]:
-            if label_check["suggestion"] == "wrong_side":
-                return {
-                    "error": "no_label",
-                    "message": "This looks like the front of the product. Please flip it over and scan the back label.",
-                    "tip": "wrong_side",
-                    "front_words_found": label_check.get("front_hits", []),
-                }
-            else:
-                return {
-                    "error": "no_label",
-                    "message": "Could not find nutrition or ingredient information. Please upload a clear photo of the back label.",
-                    "tip": "flip_product",
-                }
+        # ── Step 3b: Label presence check (CEO'S P0 FIX) ─────────────────────────────
+        if not validate_ocr_has_nutrition(extracted_text):
+            return {
+                "error": "no_label",
+                "message": "❌ No nutrition table found. Please ensure the nutritional facts are visible in the image.",
+                "tip": "flip_product",
+            }
 
-        label_confidence = label_check.get("confidence", "medium")
+        label_confidence = "high"  # Regex check ensures high confidence in label existence
 
         # ── Step 4-12: Unified High-Quality Analysis ───────────────
         result = await unified_analyze_flow(

@@ -226,6 +226,21 @@ NUTRITION_TABLE_ANCHORS = [
     "nutrichoice",
 ]
 
+import re
+
+def validate_ocr_has_nutrition(extracted_text: str) -> bool:
+    """
+    Replaces AI Image Classifier. 
+    If the OCR text doesn't contain at least 3 nutritional metrics, it's not a valid label.
+    """
+    # Looks for standard nutrition patterns: "10g", "50 kcal", "100.5 mg"
+    number_pattern = r'\b\d+(\.\d+)?\s*(g|mg|kcal|kj|mcg|%)\b'
+    matches = re.findall(number_pattern, extracted_text, re.IGNORECASE)
+    
+    if len(matches) < 3:
+        return False
+    return True
+
 
 def detect_label_presence(ocr_text: str) -> dict:
     if not ocr_text:
