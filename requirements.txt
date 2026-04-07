@@ -1,0 +1,37 @@
+# Core
+fastapi
+uvicorn[standard]
+python-multipart
+requests
+httpx
+pydantic
+
+# Image processing
+pillow
+opencv-python-headless
+numpy
+
+# OCR
+easyocr
+
+# AI / LLM
+groq
+
+# Supabase (production database)
+supabase
+
+# Rate limiting
+slowapi
+
+# PDF export
+reportlab
+
+# WhatsApp
+twilio
+
+# Payments
+razorpay
+
+# Testing
+pytest
+pytest-asyncio
