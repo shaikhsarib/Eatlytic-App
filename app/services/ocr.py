@@ -108,7 +108,43 @@ def validate_ocr_has_nutrition(extracted_text: str) -> bool:
     return True
 
 
-# Legacy detect_label_presence function DELETED as per CEO's P0 requirements.
+def detect_label_presence(text: str) -> dict:
+    """
+    Detect if text contains a nutrition label.
+    Returns dict with has_label, confidence, and suggestion fields.
+    """
+    if not text or not text.strip():
+        return {"has_label": False, "confidence": "low", "suggestion": "no_text"}
+    
+    # Nutrition label indicators
+    nutrition_keywords = [
+        "nutrition facts", "nutritional information", "per 100g", "per serving",
+        "calories", "protein", "fat", "carbohydrate", "carbs", "fiber", "sodium",
+        "ingredients:", "ingredients :", "best before", "expiry", "exp date"
+    ]
+    
+    text_lower = text.lower()
+    matches = sum(1 for kw in nutrition_keywords if kw in text_lower)
+    
+    # Front-of-pack marketing phrases (not nutrition labels)
+    front_of_pack_phrases = [
+        "new!", "improved", "premium quality", "natural goodness", 
+        "organic", "delicious", "tasty", "crunchy"
+    ]
+    is_front_only = all(kw not in text_lower for kw in nutrition_keywords[:8]) and \
+                    any(phrase in text_lower for phrase in front_of_pack_phrases)
+    
+    if is_front_only and matches < 2:
+        return {"has_label": False, "confidence": "high", "suggestion": "wrong_side"}
+    
+    if matches >= 4:
+        return {"has_label": True, "confidence": "high"}
+    elif matches >= 2:
+        return {"has_label": True, "confidence": "medium"}
+    elif matches == 1:
+        return {"has_label": True, "confidence": "low"}
+    else:
+        return {"has_label": False, "confidence": "low", "suggestion": "no_label"}
 
 
 # Gate rejects if confidence is too low.
