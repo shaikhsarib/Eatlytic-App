@@ -149,30 +149,35 @@ async def unified_analyze_flow(
         return {"error": "no_label", "message": "No nutrition table found."}
     clean_text = filter_result["clean_text"]
 
-    # 4. Hybrid Nutrition Parser (Fast Path vs Deep Path)
-    async def llm_extractor(text):
-        prompt = f"{STRICT_EXTRACTION_PROMPT}\n\n[LABEL TEXT]:\n{text}"
+    # 4. LLM Extraction — always use LLM in the unified flow for accuracy.
+    #    smart_parse (hybrid regex/LLM) is kept for lightweight callers only;
+    #    here we need guaranteed LLM output so the retry path works correctly.
+    async def _run_llm_extraction(text: str, extra_context: str = "") -> dict:
+        prompt = f"{STRICT_EXTRACTION_PROMPT}{extra_context}\n\n[LABEL TEXT]:\n{text}"
         raw_json_str = await asyncio.to_thread(call_llm, prompt, 1000)
         return parse_llm_response(raw_json_str)
 
     try:
-        result = await smart_parse(clean_text, llm_extractor)
+        result = await _run_llm_extraction(clean_text)
     except Exception as e:
-        logger.error(f"Parser Error: {e}")
-        return {"error": "server_busy", "message": "⚠️ Analysis failed."}
+        logger.error("LLM extraction failed: %s", e)
+        return {"error": "server_busy", "message": "⚠️ Analysis failed. Please try again."}
+
+    def _flatten(r: dict) -> dict:
+        return {
+            "calories": float(r.get("calories", 0) or 0),
+            "protein":  float(r.get("protein",  0) or 0),
+            "carbs":    float(r.get("carbs",     0) or 0),
+            "fat":      float(r.get("fat",       0) or 0),
+            "sugar":    float(r.get("sugar",     0) or 0),
+            "sodium":   float(r.get("sodium_mg", 0) or 0),
+            "fiber":    float(r.get("fiber",     0) or 0),
+        }
 
     # 5. Data Normalization
-    flattened_nutrients = {
-        "calories": float(result.get("calories", 0) or 0),
-        "protein": float(result.get("protein", 0) or 0),
-        "carbs": float(result.get("carbs", 0) or 0),
-        "fat": float(result.get("fat", 0) or 0),
-        "sugar": float(result.get("sugar", 0) or 0),
-        "sodium": float(result.get("sodium_mg", 0) or 0),
-        "fiber": float(result.get("fiber", 0) or 0),
-    }
+    flattened_nutrients = _flatten(result)
 
-    # 6. DNA Overrides (Atwater Physics Fix included)
+    # 6. DNA Overrides (Atwater Physics + Lie Detector + NOVA 4)
     dna_res = apply_dna_overrides(
         full_ocr_text=extracted_text,
         nutrients=flattened_nutrients,
@@ -181,6 +186,33 @@ async def unified_analyze_flow(
         category=result.get("product_category", "unknown"),
         front_text=front_text,
     )
+
+    # 6b. Hallucination self-correction — retry once on math mismatch ─────────
+    # "BLOCK" is only set by the Atwater math check (never by lie detector which uses "OVERRIDE").
+    if dna_res["action"] == "BLOCK":
+        logger.warning(
+            "Math mismatch detected (reason=%s). Retrying with correction prompt.",
+            dna_res["reason"],
+        )
+        correction_ctx = (
+            f"\n\nPREVIOUS EXTRACTION ERROR: {dna_res['reason']}\n"
+            "Please double-check the fat value. Re-extract all macros carefully "
+            "and ensure Protein*4 + Carbs*4 + Fat*9 ≈ Calories."
+        )
+        try:
+            result = await _run_llm_extraction(clean_text, correction_ctx)
+            flattened_nutrients = _flatten(result)
+            dna_res = apply_dna_overrides(
+                full_ocr_text=extracted_text,
+                nutrients=flattened_nutrients,
+                ingredients_raw=result.get("ingredients_raw", ""),
+                base_score=5,
+                category=result.get("product_category", "unknown"),
+                front_text=front_text,
+            )
+            logger.info("Retry DNA result: action=%s", dna_res["action"])
+        except Exception as retry_exc:
+            logger.error("Retry LLM call failed: %s", retry_exc)
 
     # 7. Explanation Engine (RDA/NOVA/Humanized)
     explanation = get_explanation_report(flattened_nutrients, result.get("ingredients_raw", ""))
@@ -207,9 +239,6 @@ async def unified_analyze_flow(
         "disclaimer": MEDICAL_DISCLAIMER,
     }
     
-    # Correction for summary
-    final_output["summary"] = dna_res["reason"]
-
     # 9. WhatsApp Formatter (Tiered Content)
     final_output["whatsapp_content"] = get_whatsapp_tiered_content(final_output)
 

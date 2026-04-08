@@ -132,7 +132,7 @@ class FakeDetector:
 
             calculated = self.calculate_expected_calories(nutrition_data)
             
-            diff_percent = abs(label_calories - calculated) / calculated * 100 if calculated > 0 else 100
+            diff_percent = abs(label_calories - calculated) / label_calories * 100 if label_calories > 0 else 100
             
             if diff_percent <= self.tolerance:
                 status = 'VALID'
@@ -153,6 +153,90 @@ class FakeDetector:
             }
         except Exception as e:
             return {'status': 'ERROR', 'message': f"Validation error: {str(e)}"}
+
+# Per-category Atwater tolerance overrides
+# High-variance products (noodles, snacks, spices) can have wider labeling error
+CATEGORY_TOLERANCES: dict[str, float] = {
+    "noodle": 35.0,  "noodles": 35.0, "instant noodles": 35.0,
+    "snack":  35.0,  "chips":   35.0, "biscuit": 35.0, "cracker": 35.0,
+    "spice":  40.0,  "condiment": 40.0, "sauce": 40.0,
+}
+DEFAULT_TOLERANCE = 25.0   # stricter for unknown / general products
+
+
+def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
+    """
+    Convenience wrapper used by tests and the unified pipeline.
+    Differs from FakeDetector.validate() in two ways:
+      1. Uses label_calories as the denominator (not calculated) for % diff.
+      2. Checks sub-component hierarchy integrity before Atwater math.
+
+    Returns {"is_valid": bool, "reason": str}
+    """
+    # ── 1. Hierarchy integrity: sub-components must not exceed parent totals ──
+    carbs   = float(nutrients.get("carbs", 0) or nutrients.get("carbohydrate", 0) or 0)
+    sugar   = float(nutrients.get("sugar",  0) or 0)
+    fiber   = float(nutrients.get("fiber",  0) or nutrients.get("fibre", 0) or 0)
+    fat     = float(nutrients.get("fat",    0) or nutrients.get("total_fat", 0) or 0)
+    sat_fat = float(nutrients.get("saturated_fat", 0) or 0)
+
+    if carbs > 0 and (sugar + fiber) > carbs * 1.05:   # 5 % rounding slack
+        return {
+            "is_valid": False,
+            "reason": (
+                f"Integrity Failure: Sugar ({sugar}g) + Fiber ({fiber}g) "
+                f"exceed Carbs ({carbs}g). Likely double-counting."
+            ),
+        }
+    if fat > 0 and sat_fat > fat * 1.05:
+        return {
+            "is_valid": False,
+            "reason": (
+                f"Integrity Failure: Saturated Fat ({sat_fat}g) > "
+                f"Total Fat ({fat}g)."
+            ),
+        }
+
+    # ── 2. Map to FakeDetector key names ──────────────────────────────────────
+    fd = dict(nutrients)
+    if "carbs" in fd and "carbohydrate" not in fd:
+        fd["carbohydrate"] = fd.pop("carbs")
+
+    label_calories = float(
+        fd.get("calories") or fd.get("energy") or fd.get("kcal") or 0
+    )
+
+    if label_calories == 0:
+        # Nothing to validate
+        return {"is_valid": True, "reason": "No calorie data to validate."}
+
+    # ── 3. Atwater calculation (sub-components excluded by FakeDetector) ───────
+    detector = FakeDetector(tolerance_percent=100)   # we apply our own tolerance
+    calculated = detector.calculate_expected_calories(fd)
+
+    if calculated == 0:
+        return {"is_valid": True, "reason": "No primary macros to validate against."}
+
+    # ── 4. % diff relative to label (not calculated) ──────────────────────────
+    diff_pct = abs(label_calories - calculated) / label_calories * 100
+    tolerance = CATEGORY_TOLERANCES.get(category.lower().strip(), DEFAULT_TOLERANCE)
+
+    if diff_pct <= tolerance:
+        return {
+            "is_valid": True,
+            "reason": (
+                f"✅ Math valid ({diff_pct:.1f}% within {tolerance:.0f}% tolerance)"
+            ),
+        }
+    return {
+        "is_valid": False,
+        "reason": (
+            f"Math Mismatch: Label={label_calories:.0f} kcal, "
+            f"Calculated={calculated:.0f} kcal ({diff_pct:.1f}% off, "
+            f"limit {tolerance:.0f}%)"
+        ),
+    }
+
 
 def detect_nova_4(ingredients_raw: str) -> dict:
     """Scans ingredients for ultra-processed markers."""
