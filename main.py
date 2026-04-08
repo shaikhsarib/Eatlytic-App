@@ -235,6 +235,7 @@ async def analyze_product(
             blur_info=blur_info,
             label_confidence="high",
             front_text=front_text,
+            image_content=working_content,
         )
 
         if "error" in result:
@@ -679,6 +680,7 @@ async def whatsapp_webhook(request: Request):
             blur_info=blur_info,
             label_confidence="high",
             front_text="",
+            image_content=img_to_ocr,
         )
 
         if "error" in analysis:
