@@ -46,10 +46,9 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
 
     calculated_calories = (protein * 4) + (carbs * 4) + (fat * 9)
     
-    # Standard margin is 25%. High-variance categories (Noodles, Snacks) get 35%.
+    # Standard margin is 25% for all categories to prevent "hallucination bypass".
+    # (Previously 35% for noodles, which was too loose).
     margin_percent = 0.25
-    if category.lower() in ["noodle", "chip", "snack", "biscuit"]:
-        margin_percent = 0.35
         
     margin = stated_calories * margin_percent
     lower_bound = stated_calories - margin

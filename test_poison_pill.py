@@ -326,3 +326,37 @@ class TestMultiColumnAwareness:
         assert res["is_valid"] is False
         assert "Integrity Failure" in res["reason"]
         assert "Sugar" in res["reason"]
+
+    @pytest.mark.asyncio
+    async def test_hallucination_self_correction(self):
+        """Verify that unified_analyze_flow triggers retry on math mismatch."""
+        from app.services.llm import unified_analyze_flow
+        import unittest.mock as mock
+        
+        # 1. Mock the first LLM response to be VERY WRONG (Fat 50g -> 721 kcal)
+        bad_json = '{"calories": 389, "protein": 8.2, "carbs": 59.6, "fat": 50, "sugar": 0, "sodium_mg": 719, "fiber": 0, "product_name": "Maggi", "product_category": "noodle"}'
+        # 2. Mock the second LLM response to be CORRECT (Fat 13.5g -> 393 kcal)
+        good_json = '{"calories": 389, "protein": 8.2, "carbs": 59.6, "fat": 13.5, "sugar": 0, "sodium_mg": 719, "fiber": 0, "product_name": "Maggi", "product_category": "noodle"}'
+        
+        with mock.patch("app.services.llm.call_llm") as mock_call:
+            mock_call.side_effect = [bad_json, good_json]
+            
+            result = await unified_analyze_flow(
+                extracted_text="Energy 389 Protein 8.2 Carbs 59.6 Fat 13.5 14.5",
+                persona="adult",
+                age_group="adult",
+                product_category_hint="noodle",
+                language="en",
+                web_context="",
+                blur_info={},
+                label_confidence="high"
+            )
+            
+            # Should have called LLM twice
+            assert mock_call.call_count == 2
+            # Should be valid now
+            assert result["score"] > 0
+            assert "Math Mismatch" not in result["verdict"]
+            # Should have the correct corrected fat
+            fat_val = next(n["value"] for n in result["nutrient_breakdown"] if n["name"] == "Fat")
+            assert fat_val == 13.5

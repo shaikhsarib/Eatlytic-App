@@ -74,6 +74,7 @@ CRITICAL RULES:
 4. MISSING DATA: If a macro is not mentioned, output 0.
 5. CATEGORIES: ONLY use: ['biscuit', 'noodle', 'chip', 'beverage', 'chocolate', 'snack', 'dairy', 'salt', 'sugar', 'oil', 'spice', 'spread', 'unknown'].
 6. TABLE LOGIC (STRICT): Food labels often have multiple columns (e.g., "Per 100g", "Per Serve", "% RDA"). 
+   - RULE 0 (ISOLATION): If you see two numbers for one nutrient (e.g. "Fat 13.5 14.5"), the first is Per 100g. The second is Per Serve. NEVER SUM THEM. NEVER ADD THEM. 
    - You MUST ONLY extract the "Per 100g" column.
    - IGNORE any numbers followed by a '%' sign (e.g. "14%" is NOT a nutrient value).
    - If a line has multiple numbers (e.g. "Energy 389 272 14%"), the FIRST number is "Per 100g". Extract 389. 
@@ -201,6 +202,53 @@ async def unified_analyze_flow(
         category=result.get("product_category", "unknown"),
         front_text=front_text,
     )
+
+    # 5b. SELF-CORRECTION LOOP: If Math Mismatch detected, retry once with feedback
+    if dna_res["action"] == "BLOCK" and "Math Mismatch" in dna_res["reason"]:
+        logger.info(f"🔄 Math Mismatch detected ({dna_res['reason']}). Triggering AI Self-Correction...")
+        
+        correction_prompt = f"""
+{STRICT_EXTRACTION_PROMPT}
+
+[ERROR FEEDBACK]:
+Your previous extraction FAILED our Physics-Sanity-Gate.
+Problem: {dna_res['reason']}
+Likely cause: You might have summed 'Per 100g' and 'Per Serve' columns together, or misread a decimal.
+
+[LABEL TEXT]:
+{clean_text}
+
+Analyze the columns again. IGNORE the 'Per Serve' column. Extract ONLY the 'Per 100g' values.
+"""
+        retry_json_str = await asyncio.to_thread(call_llm, correction_prompt, 1000)
+        try:
+            retry_result = parse_llm_response(retry_json_str)
+            # Re-flatten and re-calculate
+            retry_nutrients = {
+                "calories": float(retry_result.get("calories", 0) or 0),
+                "protein": float(retry_result.get("protein", 0) or 0),
+                "carbs": float(retry_result.get("carbs", 0) or 0),
+                "fat": float(retry_result.get("fat", 0) or 0),
+                "sugar": float(retry_result.get("sugar", 0) or 0),
+                "sodium": float(retry_result.get("sodium_mg", 0) or 0),
+                "fiber": float(retry_result.get("fiber", 0) or 0),
+            }
+            retry_dna = apply_dna_overrides(
+                full_ocr_text=extracted_text,
+                nutrients=retry_nutrients,
+                ingredients_raw=retry_result.get("ingredients_raw", ""),
+                base_score=5,
+                category=retry_result.get("product_category", "unknown"),
+                front_text=front_text,
+            )
+            # If retry succeeded or improved, use it
+            if retry_dna["action"] != "BLOCK" or "Math Mismatch" not in retry_dna["reason"]:
+                logger.info("✅ AI successfully self-corrected.")
+                result = retry_result
+                flattened_nutrients = retry_nutrients
+                dna_res = retry_dna
+        except Exception as e:
+            logger.error(f"Retry Parse Fail: {e}")
 
     # 6. Build Final Output for Frontend
     final_output = {
