@@ -73,8 +73,17 @@ CRITICAL RULES:
 3. ZERO CREATIVITY: Output EXACTLY the numbers printed. If it says "Sodium 39,100mg", output 39100. 
 4. MISSING DATA: If a macro is not mentioned, output 0.
 5. CATEGORIES: ONLY use: ['biscuit', 'noodle', 'chip', 'beverage', 'chocolate', 'snack', 'dairy', 'salt', 'sugar', 'oil', 'spice', 'spread', 'unknown'].
-6. TABLE LOGIC: Indian labels often show two columns — "Per 100g" and "Per Serving". ALWAYS extract the "Per 100g" column values. If only one column exists, use that. If the columns are not labeled, the first number on each row is usually "Per 100g" and the second is "Per Serving".
+6. TABLE LOGIC (VERY IMPORTANT): Indian and International labels often show multiple columns (e.g., "Per 100g", "Per Serving (70g)", "% RDA"). 
+   - ALWAYS extract the "Per 100g" column values into the JSON fields.
+   - If a line has multiple numbers (e.g. "Carbs 59.6 41.7 16%"), the FIRST number is almost always "Per 100g". Use that.
+   - NEVER sum or add values from different columns together.
+   - If a row contains only numbers (e.g. "389 272 14%"), match them to the label in the row directly above it while maintaining column alignment.
 7. Output ONLY valid JSON. No markdown, no chatting.
+
+HINT: If you see separate lines with numbers like "384" after a header like "Energy", assume they belong together. For example:
+"Energy (kcal) per 100g per serve (70g)"
+"384 288"
+This means 384 kcal per 100g. Extract 384 as "calories".
 
 {
   "product_name": "string",
@@ -178,6 +187,7 @@ async def unified_analyze_flow(
         nutrients=flattened_nutrients,
         ingredients_raw=result.get("ingredients_raw", ""),
         base_score=5,
+        category=result.get("product_category", "unknown"),
         front_text=front_text,
     )
 

@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def atwater_math_check(nutrients: dict) -> dict:
+def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
     """Fake Type 3: Prevents hallucinations and catches physically impossible labels."""
     try:
         protein = float(nutrients.get("protein", 0) or 0)
@@ -19,10 +19,20 @@ def atwater_math_check(nutrients: dict) -> dict:
         return {"is_valid": False, "reason": "Could not read macro numbers."}
 
     if stated_calories <= 0:
-        return {"is_valid": True, "reason": None} 
+        # If both are 0, it's valid. If macros > 0 but calories=0, it's a mismatch.
+        calculated_calories = (protein * 4) + (carbs * 4) + (fat * 9)
+        if calculated_calories > 20: 
+            return {"is_valid": False, "reason": f"Math Mismatch: Label says 0 kcal, but macros calculate to {calculated_calories:.0f} kcal."}
+        return {"is_valid": True, "reason": None}
 
     calculated_calories = (protein * 4) + (carbs * 4) + (fat * 9)
-    margin = stated_calories * 0.25
+    
+    # Standard margin is 25%. High-variance categories (Noodles, Snacks) get 35%.
+    margin_percent = 0.25
+    if category.lower() in ["noodle", "chip", "snack", "biscuit"]:
+        margin_percent = 0.35
+        
+    margin = stated_calories * margin_percent
     lower_bound = stated_calories - margin
     upper_bound = stated_calories + margin
 
@@ -132,13 +142,14 @@ def apply_dna_overrides(
     nutrients: dict,
     ingredients_raw: str,
     base_score: int,
+    category: str = "unknown",
     front_text: str = "",
 ) -> dict:
     """THE MASTER OVERRIDE FUNCTION"""
     final_verdicts = []
 
     # 1. Atwater Math Check (BLOCK level)
-    math_check = atwater_math_check(nutrients)
+    math_check = atwater_math_check(nutrients, category=category)
     if not math_check["is_valid"]:
         return {
             "action": "BLOCK",

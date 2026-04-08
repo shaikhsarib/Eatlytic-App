@@ -231,16 +231,36 @@ class TestToxicProductFlagging:
         )
         result = universal_label_filter(text)
         assert result["is_valid"] is True
-        # Product name should be preserved in the first lines
         assert "MAGGI Masala Noodles" in result["clean_text"]
-        # Nutrition data should be present
-        assert (
-            "Energy 500 kcal" in result["clean_text"]
-            or "Energy" in result["clean_text"]
-        )
+        assert "Energy 500 kcal" in result["clean_text"] or "Energy" in result["clean_text"]
         assert "Protein" in result["clean_text"]
-        # Garbage should be removed
         assert "FSSAI" not in result["clean_text"]
         assert "MRP" not in result["clean_text"]
-        # Ingredients line should be kept for context
         assert "Ingredients" in result["clean_text"]
+
+
+# ══ 5. MULTI-COLUMN & CATEGORY AWARENESS ═════════════════════════════
+class TestMultiColumnAwareness:
+    def test_noodle_category_higher_tolerance(self):
+        """Noodles should pass with 35% margin. 389 kcal stated vs 500 kcal calculated (~28% diff) should pass."""
+        from app.services.fake_detector import atwater_math_check
+
+        nutrients = {"calories": 389, "protein": 15, "carbs": 60, "fat": 22}
+        # (15*4) + (60*4) + (22*9) = 60 + 240 + 198 = 498 kcal.
+        
+        # Should FAIL with default unknown category (25% margin)
+        res_fail = atwater_math_check(nutrients, category="unknown")
+        assert res_fail["is_valid"] is False
+
+        # Should PASS with noodle category (35% margin)
+        res_pass = atwater_math_check(nutrients, category="noodle")
+        assert res_pass["is_valid"] is True
+
+    def test_double_column_extraction_logic(self):
+        """Verify that the filter preserves multiple numbers for the multi-column extract rules to work."""
+        from app.services.ocr import universal_label_filter
+        
+        text = "Energy (kcal) per 100g per serve\n389 272"
+        result = universal_label_filter(text)
+        assert "389 272" in result["clean_text"]
+        assert "Energy" in result["clean_text"]

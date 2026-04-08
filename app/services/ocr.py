@@ -71,8 +71,8 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
         if not text.strip():
             continue
         avg_y = sum(pt[1] for pt in box) / 4.0
-        # Bucket Y into ~8px bands to tolerate small alignment differences
-        band = int(round(avg_y / 8))
+        # Bucket Y into ~10px bands to tolerate small alignment differences
+        band = int(round(avg_y / 10))
         line_groups.setdefault(band, []).append((text, conf))
 
     # Sort bands top-to-bottom, then join words within each band
@@ -170,16 +170,19 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
         if has_garbage:
             continue
 
-        # Keep lines that look like numeric nutrition data even without keywords
+        # METRIC PRIORITY: any line with a number followed by a unit is KEPT
+        # regardless of context (e.g. "384 kcal", "9.2g", "500mg")
         if has_number_unit:
             clean_lines.append(line)
             number_count += 1
             continue
 
-        # Keep lines that have a number AND are short (likely a macro row)
-        if re.search(r"\b\d+(\.\d+)?\b", line_l) and len(line_l.split()) <= 6:
+        # RELAXED NUMBER GATE: allow more words in lines containing numbers
+        # to capture long rows like "Energy (kcal) per 100g 384 288"
+        if re.search(r"\b\d+(\.\d+)?\b", line_l) and len(line_l.split()) <= 10:
             clean_lines.append(line)
             number_count += 1
+            continue
 
     clean_text = "\n".join(clean_lines)
 
