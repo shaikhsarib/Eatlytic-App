@@ -264,3 +264,46 @@ class TestMultiColumnAwareness:
         result = universal_label_filter(text)
         assert "389 272" in result["clean_text"]
         assert "Energy" in result["clean_text"]
+
+    def test_ocr_horizontal_sorting(self):
+        """Simulate EasyOCR returning words out of order horizontally and verify they are sorted."""
+        from app.services.ocr import run_ocr
+        import hashlib
+        from unittest.mock import patch, MagicMock
+
+        # Mock easyocr results: (box, text, confidence) out of order
+        # boxes[0] is Energy (X=10, Y=10)
+        # boxes[1] is 272 (X=100, Y=10)
+        # boxes[2] is 389 (X=50, Y=10)
+        mock_results = [
+            ([[100, 10], [150, 10], [150, 20], [100, 20]], "272", 0.9),
+            ([[10, 10], [40, 10], [40, 20], [10, 20]], "Energy", 0.9),
+            ([[50, 10], [80, 10], [80, 20], [50, 20]], "389", 0.9),
+        ]
+
+        # Use patch to mock the reader and cache
+        with patch("app.services.ocr.get_reader_for") as mock_get_reader, \
+             patch("app.services.ocr.get_ocr_cache", return_value=None), \
+             patch("app.services.ocr.set_ocr_cache"), \
+             patch("PIL.Image.open") as mock_open, \
+             patch("numpy.array"):
+            
+            mock_img = MagicMock()
+            mock_img.size = (1000, 1000)
+            mock_img.convert.return_value = mock_img
+            mock_open.return_value = mock_img
+            
+            mock_reader = MagicMock()
+            mock_reader.readtext.return_value = mock_results
+            mock_get_reader.return_value = mock_reader
+            
+            # Dummy image bytes
+            res = run_ocr(b"dummy")
+            
+            # Should be sorted: "Energy 389 272"
+            # (Note: gap > 40 between 40 and 50 is not > 40, but 80 to 100 is not > 40)
+            # Actually with my 40px gap rule:
+            # Energy ends around 40. 389 starts at 50. Gap 10.
+            # 389 ends around 80. 272 starts at 100. Gap 20.
+            # So it should be "Energy 389 272" with spaces.
+            assert "Energy 389 272" in res["text"]

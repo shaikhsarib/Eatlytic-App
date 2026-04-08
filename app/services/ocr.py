@@ -66,20 +66,36 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
     # Reconstruct logical lines by grouping boxes by their vertical (Y) position.
     # Each result: (box_coords, text, confidence)
     # box_coords is a list of 4 [x,y] corners. We use the average Y of the box.
-    line_groups: dict[int, list[tuple[str, float]]] = {}
+    line_groups: dict[int, list[tuple[float, str, float]]] = {}
     for box, text, conf in boxes:
         if not text.strip():
             continue
+        avg_x = sum(pt[0] for pt in box) / 4.0
         avg_y = sum(pt[1] for pt in box) / 4.0
         # Bucket Y into ~10px bands to tolerate small alignment differences
         band = int(round(avg_y / 10))
-        line_groups.setdefault(band, []).append((text, conf))
+        line_groups.setdefault(band, []).append((avg_x, text, conf))
 
-    # Sort bands top-to-bottom, then join words within each band
+    # Sort bands top-to-bottom, then sort words within each band by X-coordinate
     sorted_lines = []
     for band in sorted(line_groups.keys()):
-        words_in_line = " ".join(t for t, _ in line_groups[band])
-        sorted_lines.append(words_in_line)
+        # Sort words in this line by their horizontal (X) position
+        words_sorted = sorted(line_groups[band], key=lambda x: x[0])
+        
+        # Assemble line with spacing awareness (use \t for large gaps)
+        line_text = ""
+        last_x = -1
+        for x, text, _ in words_sorted:
+            if last_x == -1:
+                line_text = text
+            else:
+                # If gap is > 40px, use \t to hint that it's a new column
+                gap = x - last_x
+                sep = "\t" if gap > 40 else " "
+                line_text += f"{sep}{text}"
+            last_x = x + (len(text) * 8) # Rough estimate of end-of-word X
+            
+        sorted_lines.append(line_text)
 
     all_text = "\n".join(sorted_lines)
     flat_text = " ".join(sorted_lines)

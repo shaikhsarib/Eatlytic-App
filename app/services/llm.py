@@ -73,11 +73,13 @@ CRITICAL RULES:
 3. ZERO CREATIVITY: Output EXACTLY the numbers printed. If it says "Sodium 39,100mg", output 39100. 
 4. MISSING DATA: If a macro is not mentioned, output 0.
 5. CATEGORIES: ONLY use: ['biscuit', 'noodle', 'chip', 'beverage', 'chocolate', 'snack', 'dairy', 'salt', 'sugar', 'oil', 'spice', 'spread', 'unknown'].
-6. TABLE LOGIC (VERY IMPORTANT): Indian and International labels often show multiple columns (e.g., "Per 100g", "Per Serving (70g)", "% RDA"). 
-   - ALWAYS extract the "Per 100g" column values into the JSON fields.
-   - If a line has multiple numbers (e.g. "Carbs 59.6 41.7 16%"), the FIRST number is almost always "Per 100g". Use that.
-   - NEVER sum or add values from different columns together.
-   - If a row contains only numbers (e.g. "389 272 14%"), match them to the label in the row directly above it while maintaining column alignment.
+6. TABLE LOGIC (STRICT): Food labels often have multiple columns (e.g., "Per 100g", "Per Serve", "% RDA"). 
+   - You MUST ONLY extract the "Per 100g" column.
+   - IGNORE any numbers followed by a '%' sign (e.g. "14%" is NOT a nutrient value).
+   - If a line has multiple numbers (e.g. "Energy 389 272 14%"), the FIRST number is "Per 100g". Extract 389. 
+   - NEVER ADD OR SUM numbers from different columns together.
+   - If you see a number that looks like a sum of others (e.g. Carbs 59 + 41 = 100), you HAVE FAILED. Only take the first number.
+   - If a row contains only numbers (e.g. "389 272 14%"), align them with the header row above it.
 7. Output ONLY valid JSON. No markdown, no chatting.
 
 HINT: If you see separate lines with numbers like "384" after a header like "Energy", assume they belong together. For example:
