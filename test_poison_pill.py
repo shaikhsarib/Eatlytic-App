@@ -307,3 +307,22 @@ class TestMultiColumnAwareness:
             # 389 ends around 80. 272 starts at 100. Gap 20.
             # So it should be "Energy 389 272" with spaces.
             assert "Energy 389 272" in res["text"]
+
+    def test_macro_hierarchy_integrity(self):
+        """Regression for double-counting bug where sugar+fiber > carbs or sat_fat > fat."""
+        from app.services.fake_detector import atwater_math_check
+        
+        # Scenario: Extraction misidentified and summed components
+        nutrients = {
+            "calories": 400,
+            "protein": 10,
+            "carbs": 50,
+            "sugar": 40,
+            "fiber": 20, # 40 + 20 = 60, which is > 50 carbs. Integrity failure!
+            "fat": 15
+        }
+        
+        res = atwater_math_check(nutrients, category="unknown")
+        assert res["is_valid"] is False
+        assert "Integrity Failure" in res["reason"]
+        assert "Sugar" in res["reason"]

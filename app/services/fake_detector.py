@@ -18,6 +18,25 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
     except (ValueError, TypeError):
         return {"is_valid": False, "reason": "Could not read macro numbers."}
 
+    # 1. Macro Integrity Check (Hierarchy Protection)
+    # Total Carbs must contain Sugar and Fiber
+    sugar = float(nutrients.get("sugar", 0) or 0)
+    fiber = float(nutrients.get("fiber", 0) or 0)
+    if (sugar + fiber) > (carbs + 0.5): # 0.5 allowance for rounding
+        return {
+            "is_valid": False,
+            "reason": f"Integrity Failure: Sugar ({sugar}g) + Fiber ({fiber}g) > Total Carbs ({carbs}g). Extraction error likely.",
+        }
+
+    # Total Fat must contain Saturated and Trans Fat
+    sat_fat = float(nutrients.get("saturated_fat", 0) or 0)
+    trans_fat = float(nutrients.get("trans_fat", 0) or 0)
+    if (sat_fat + trans_fat) > (fat + 0.5):
+        return {
+            "is_valid": False,
+            "reason": f"Integrity Failure: Sat Fat ({sat_fat}g) + Trans Fat ({trans_fat}g) > Total Fat ({fat}g). Extraction error likely.",
+        }
+
     if stated_calories <= 0:
         # If both are 0, it's valid. If macros > 0 but calories=0, it's a mismatch.
         calculated_calories = (protein * 4) + (carbs * 4) + (fat * 9)

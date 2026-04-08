@@ -85,7 +85,11 @@ CRITICAL RULES:
    - Computed Calories should be within 25% of the "calories" you extracted. 
    - If "calories" is 389 but Protein is 82g and Fat is 28g, your calculation says 580. 580 is 49% higher than 389. This is WRONG. Re-read the numbers. Protein is likely 8.2g, not 82g.
    - Adjust your extraction to maintain physical reality.
-9. Output ONLY valid JSON. No markdown, no chatting.
+10. NUTRIENT HIERARCHY (CRITICAL): 
+    - Sugar and Fiber are SUB-COMPONENTS of Carbohydrates. NEVER extract values that make Sugar + Fiber > Total Carbohydrates.
+    - Saturated and Trans Fat are SUB-COMPONENTS of Total Fat. NEVER extract values that make them > Total Fat.
+    - If a label says "Carbohydrates 59.6g" and below it says "Sugar 1.8g", the 59.6g ALREADY includes the 1.8g. 
+11. Output ONLY valid JSON. No markdown, no chatting.
 
 HINT: If you see separate lines with numbers like "384" after a header like "Energy", assume they belong together. For example:
 "Energy (kcal) per 100g per serve (70g)"
