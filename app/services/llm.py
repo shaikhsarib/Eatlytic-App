@@ -80,7 +80,12 @@ CRITICAL RULES:
    - NEVER ADD OR SUM numbers from different columns together.
    - If you see a number that looks like a sum of others (e.g. Carbs 59 + 41 = 100), you HAVE FAILED. Only take the first number.
    - If a row contains only numbers (e.g. "389 272 14%"), align them with the header row above it.
-7. Output ONLY valid JSON. No markdown, no chatting.
+8. PHYSICS CHECK: Before outputting, do a quick mental check. 
+   - Calculation: (Protein * 4) + (Carbs * 4) + (Fat * 9) = Computed Calories.
+   - Computed Calories should be within 25% of the "calories" you extracted. 
+   - If "calories" is 389 but Protein is 82g and Fat is 28g, your calculation says 580. 580 is 49% higher than 389. This is WRONG. Re-read the numbers. Protein is likely 8.2g, not 82g.
+   - Adjust your extraction to maintain physical reality.
+9. Output ONLY valid JSON. No markdown, no chatting.
 
 HINT: If you see separate lines with numbers like "384" after a header like "Energy", assume they belong together. For example:
 "Energy (kcal) per 100g per serve (70g)"
