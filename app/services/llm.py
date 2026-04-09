@@ -202,6 +202,46 @@ def compute_rule_based_score(nutrients: dict, nova_level: int) -> int:
     return max(1, min(10, score))
 
 
+async def recover_label_with_ai(raw_text: str) -> dict:
+    """
+    Final recovery step: asks the LLM if the text looks like a nutrition label.
+    This handles stylized mockups and messy OCR that deterministic filters miss.
+    """
+    if not raw_text or len(raw_text) < 20:
+        return {"is_valid": False, "clean_text": ""}
+
+    # Only send top 1000 chars to be efficient
+    sample = raw_text[:1000]
+    prompt = f"""
+    The following text was extracted via OCR from a food product. 
+    Analyze if this contains a nutrition table or ingredients. 
+    Stylized fonts or minor OCR errors are expected.
+    
+    TEXT:
+    {sample}
+    
+    RULES:
+    1. If you see words like 'Fat', 'Energy', 'Calories', 'Sugar', 'Protein', OR a list of chemicals/ingredients, respond with "VALID".
+    2. If it is only marketing text (e.g. "Tasty", "Natural", "Best in India") with no numbers or nutrient names, respond with "INVALID".
+    
+    Return ONLY this JSON:
+    {{
+      "status": "VALID" | "INVALID",
+      "cleaned_text": "<Full relevant text if valid, else empty>"
+    }}
+    """
+    try:
+        raw = await asyncio.to_thread(call_llm, prompt, 1200)
+        res = parse_llm_response(raw)
+        return {
+            "is_valid": res.get("status") == "VALID",
+            "clean_text": res.get("cleaned_text") or raw_text
+        }
+    except Exception as e:
+        logger.error("AI recovery failed: %s", e)
+        return {"is_valid": False, "clean_text": ""}
+
+
 # ── Master pipeline ────────────────────────────────────────────────────
 async def unified_analyze_flow(
     extracted_text: str,
@@ -259,7 +299,15 @@ async def unified_analyze_flow(
             filter_result = fallback_filter
             extracted_text = full_ocr_res["text"]
         else:
-            logger.warning("Full Image fallback also failed.")
+            logger.warning("Full Image fallback also failed. Attempting AI Recovery...")
+            # FINAL TRIPLE-CHECK: Ask AI if it sees a label in the messy text
+            ai_recovery = await recover_label_with_ai(full_ocr_res["text"])
+            if ai_recovery["is_valid"]:
+                logger.info("AI Recovery SUCCEEDED!")
+                filter_result = ai_recovery
+                extracted_text = ai_recovery["clean_text"]
+            else:
+                logger.error("AI Recovery also failed. Rejecting image.")
 
     if not filter_result["is_valid"]:
         return {

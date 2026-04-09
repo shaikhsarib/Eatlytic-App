@@ -154,7 +154,11 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
         # at least one substantial word (4+ chars) to filter out garbled text
         coherent_words = [w for w in line_l.split() if len(w) >= 2]
         substantial_words = [w for w in line_l.split() if len(w) >= 4]
-        has_min_quality = len(coherent_words) >= 2 and len(substantial_words) >= 1
+        
+        # RELAXED QUALITY: If we already found a nutrition keyword, lower the bar
+        has_min_quality = len(coherent_words) >= 1
+        if not has_nutrition_keyword:
+             has_min_quality = len(coherent_words) >= 2 and len(substantial_words) >= 1
 
         # HEADER PRESERVATION: keep first N non-garbage lines with minimum quality
         if header_line_count < max_header_lines and not has_garbage and has_min_quality:
@@ -178,8 +182,10 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
 
         # CONTEXT PRESERVATION: keep "Ingredients" or "Information" lines
         # so the AI understands what section it's reading
-        if re.search(r"(ingredient|information|nutritional|nutrition info)", line_l):
+        if re.search(r"(ingredient|information|nutritional|nutrition info|serving)", line_l):
             clean_lines.append(line)
+            if re.search(r"\b\d+(\.\d+)?\b", line_l):
+                number_count += 1
             continue
 
         # Skip pure garbage lines (no nutrition keyword present)
@@ -187,23 +193,22 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
             continue
 
         # METRIC PRIORITY: any line with a number followed by a unit is KEPT
-        # regardless of context (e.g. "384 kcal", "9.2g", "500mg")
         if has_number_unit:
             clean_lines.append(line)
             number_count += 1
             continue
 
-        # RELAXED NUMBER GATE: allow more words in lines containing numbers
-        # to capture long rows like "Energy (kcal) per 100g 384 288"
-        if re.search(r"\b\d+(\.\d+)?\b", line_l) and len(line_l.split()) <= 10:
+        # RELAXED NUMBER GATE: captures rows like "Energy (kcal) per 100g 384"
+        if re.search(r"\b\d+(\.\d+)?\b", line_l) and len(line_l.split()) <= 15:
             clean_lines.append(line)
             number_count += 1
             continue
 
     clean_text = "\n".join(clean_lines)
 
-    # If we find AT LEAST 1 metric number, it's a valid label.
-    is_valid = number_count >= 1
+    # FINAL GATE: Valid if numbers found OR if a high-strength keyword was found
+    high_strength_header = bool(re.search(r"(nutrition\s*facts|amount\s*per\s*serving|information\s*per)", raw_ocr_text.lower()))
+    is_valid = number_count >= 1 or high_strength_header
 
     return {"is_valid": is_valid, "clean_text": clean_text}
 
