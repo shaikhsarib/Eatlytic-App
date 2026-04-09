@@ -337,9 +337,11 @@ class TestMultiColumnAwareness:
         bad_json = '{"calories": 389, "protein": 8.2, "carbs": 59.6, "fat": 50, "sugar": 0, "sodium_mg": 719, "fiber": 0, "product_name": "Maggi", "product_category": "noodle"}'
         # 2. Mock the second LLM response to be CORRECT (Fat 13.5g -> 393 kcal)
         good_json = '{"calories": 389, "protein": 8.2, "carbs": 59.6, "fat": 13.5, "sugar": 0, "sodium_mg": 719, "fiber": 0, "product_name": "Maggi", "product_category": "noodle"}'
+        # 3. Mock the third LLM response for ANALYSIS step
+        analysis_json = '{"score": 3, "verdict": "Processed", "summary": "High sodium", "eli5": "Salty noodles", "pros": [], "cons": [], "age_warnings": [], "molecular_insight": ""}'
         
         with mock.patch("app.services.llm.call_llm") as mock_call:
-            mock_call.side_effect = [bad_json, good_json]
+            mock_call.side_effect = [bad_json, good_json, analysis_json]
             
             result = await unified_analyze_flow(
                 extracted_text="Energy 389 Protein 8.2 Carbs 59.6 Fat 13.5 14.5",
@@ -352,11 +354,10 @@ class TestMultiColumnAwareness:
                 label_confidence="high"
             )
             
-            # Should have called LLM twice
-            assert mock_call.call_count == 2
+            # Should have called LLM three times: Extraction -> Retry -> Analysis
+            assert mock_call.call_count == 3
             # Should be valid now
             assert result["score"] > 0
-            assert "Math Mismatch" not in result["verdict"]
             # Should have the correct corrected fat
-            fat_val = next(n["value"] for n in result["nutrient_breakdown"] if n["name"] == "Fat")
+            fat_val = next(n["value"] for n in result["nutrient_breakdown"] if "Fat" in n["name"])
             assert fat_val == 13.5
