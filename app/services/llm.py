@@ -369,8 +369,9 @@ async def unified_analyze_flow(
     if dna_res["action"] == "OVERRIDE":
         dna_flags = [dna_res.get("reason", "")] + dna_flags
 
+    # Build the high-precision nutritionist prompt
     analysis_prompt = build_analysis_prompt(
-        product_name=extracted.get("product_name", "Unknown Product"),
+        product_name=extracted.get("product_name", "Unknown"),
         category=category,
         nutrients_list=nutrient_breakdown,
         ingredients_raw=ingredients_raw,
@@ -384,31 +385,46 @@ async def unified_analyze_flow(
     try:
         raw_analysis = await asyncio.to_thread(call_llm, analysis_prompt, 2000)
         analysis = parse_llm_response(raw_analysis)
-    except Exception as ae:
-        logger.error("Analysis LLM failed, using fallback: %s", ae)
+    except Exception as e:
+        logger.error("Analysis LLM failed: %s", e)
 
-    # Step 11: Final score (DNA hard overrides > LLM > rule-based) ───
-    llm_score = int(analysis.get("score") or 0)
-
-    if dna_res["action"] == "BLOCK":
-        final_score = 0
-    elif dna_res["action"] == "OVERRIDE":
-        final_score = dna_res["score"]          # lie detector forces to 2
-    elif llm_score > 0:
-        final_score = llm_score
+    # Step 11: Final Scoring & Humanization ───────────────────────────
+    
+    # Priority Score logic
+    if dna_res["action"] == "OVERRIDE":
+        final_score = dna_res.get("base_score", 4)
+    elif analysis.get("score"):
+        final_score = analysis["score"]
+        # Physics Sanity Gate: if it's NOVA 4, cap it even if LLM missed it
         if nova_level == 4 and final_score > 4:
-            final_score = 4                     # NOVA 4 hard cap
+            final_score = 4
     else:
         final_score = compute_rule_based_score(rich, nova_level)
 
-    # Step 12: Assemble output ────────────────────────────────────────
+    # Step 12: Merge AI Insights with Physics-based Logic ──────────────
     product_name = extracted.get("product_name", "Unknown Product")
     verdict      = analysis.get("verdict") or dna_res.get("reason") or "Analyzed"
     summary      = analysis.get("summary") or dna_res.get("reason") or ""
     pros         = analysis.get("pros", [])
     cons_llm     = analysis.get("cons", [])
     cons         = dna_flags + [c for c in cons_llm if c not in dna_flags]
+    
+    # Merge Age Warnings: Explanation Engine (Physics) + LLM (AI Context)
     age_warnings = analysis.get("age_warnings", [])
+    phys_warnings = explanation.get("persona_warnings", [])
+    
+    # Create a merged set of warnings keyed by persona
+    merged_warnings = {w["group"].lower(): w for w in age_warnings}
+    for pw in phys_warnings:
+        key = pw["persona"].lower()
+        if key in merged_warnings:
+            # Append physics-based fact to AI message
+            merged_warnings[key]["message"] = f"{merged_warnings[key]['message']}. {pw['msg']}"
+            if pw["type"] == "WARNING":
+                merged_warnings[key]["status"] = "warning"
+        else:
+            merged_warnings[key] = {"group": pw["persona"], "status": pw["type"].lower(), "message": pw["msg"], "emoji": "⚠️"}
+
     eli5         = analysis.get("eli5", "")
     mol_insight  = analysis.get("molecular_insight", "")
     score_color  = "#22c55e" if final_score >= 7 else "#f59e0b" if final_score >= 4 else "#ef4444"
