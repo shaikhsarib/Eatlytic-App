@@ -41,7 +41,7 @@ def get_nutrition_table_roi(image_np: np.ndarray) -> np.ndarray:
             aspect_ratio = w / float(h)
             
             # Nutrition tables are usually wider than 0.5 and height is significant
-            if area > 5000 and 0.2 < aspect_ratio < 5.0:
+            if area > 800 and 0.2 < aspect_ratio < 5.0:
                 if area > max_area:
                     max_area = area
                     roi = image_np[y:y+h, x:x+w]

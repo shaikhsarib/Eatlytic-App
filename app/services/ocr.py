@@ -128,7 +128,7 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
     clean_lines = []
     number_count = 0
 
-    nutrition_words = r"(energy|calories|protein|protien|fat|carb|sugar|sodium|fibre|fiber|salt|per\s*100\s*g|per\s*serve|serving|trans\s*fat|saturated|cholesterol|polyunsaturated|monounsaturated|total\s*fat|total\s*carb|dietary\s*fibre|dietary\s*fiber|added\s*sugar|vitamin|calcium|iron|potassium|moisture|ash|total\s*sugar)"
+    nutrition_words = r"(energy|calories|protein|protien|fat|carb|sugar|sodium|fibre|fiber|salt|per\s*100\s*g|per\s*serve|serving|trans\s*fat|saturated|cholesterol|polyunsaturated|monounsaturated|total\s*fat|total\s*carb|dietary\s*fibre|dietary\s*fiber|added\s*sugar|vitamin|calcium|iron|potassium|moisture|ash|total\s*sugar|amount\s*per\s*serving|nutrition\s*facts|dietary\s*info|information\s*per)"
     garbage_words = r"(fssai|lic\.?|net\s*wt|net\s*qty|mrp|customer\s*care|batch\s*no|best\s*before|mfd|date\s*of|packed\s*on|manufactured\s*by|marketed\s*by|imported\s*by|country\s*of|origin|www\.|toll\s*free|phone|tel\.|e-mail|email|ingredient\s*you\s*know|storage\s*instructions|keep\s*in\s*a|store\s*in\s*a|cool\s*and\s*dry|place\s*away|direct\s*heat|sunlight|consumption|vegetarian|non.?vegetarian|green\s*dot|red\s*dot|fpo|license\s*no)"
 
     unit_pattern = (

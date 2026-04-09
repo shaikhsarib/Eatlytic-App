@@ -244,14 +244,29 @@ async def unified_analyze_flow(
         cached["scan_meta"] = {"cached": True, "scans_remaining": 0, "is_pro": False}
         return cached
 
-    # Step 3: Label filter ────────────────────────────────────────────
+    # Step 3: Label filter & Fallback ──────────────────────────────────
     from app.services.ocr import universal_label_filter
     filter_result = universal_label_filter(extracted_text)
+    
+    # SMART FALLBACK: If crop failed to find a label, try the FULL image
+    if not filter_result["is_valid"] and image_content:
+        logger.info("Smart Crop failed to find label. Falling back to Full Image...")
+        full_ocr_res = run_ocr(image_content, language)
+        fallback_filter = universal_label_filter(full_ocr_res["text"])
+        
+        if fallback_filter["is_valid"]:
+            logger.info("Full Image fallback SUCCEEDED.")
+            filter_result = fallback_filter
+            extracted_text = full_ocr_res["text"]
+        else:
+            logger.warning("Full Image fallback also failed.")
+
     if not filter_result["is_valid"]:
         return {
             "error": "no_label",
             "message": "⚠️ No nutrition table detected. Please photograph the back of the package.",
         }
+    
     clean_text = filter_result["clean_text"]
 
     # Step 4: LLM — extract ALL nutrients ─────────────────────────────
