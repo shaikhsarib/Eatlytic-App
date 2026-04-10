@@ -331,7 +331,7 @@ async def unified_analyze_flow(
 
     category = extracted.get("product_category") or product_category_hint or "unknown"
 
-    # Step 5: Atwater check + retry ───────────────────────────────────
+    # Step 5: Atwater check + retry (Max 2 Attempts) ───────────────────
     def _primary(ex):
         return {
             "calories":      float(ex.get("calories")      or 0),
@@ -343,19 +343,24 @@ async def unified_analyze_flow(
             "saturated_fat": float(ex.get("saturated_fat") or 0),
         }
 
-    math_ok = atwater_math_check(_primary(extracted), category)
-    if not math_ok["is_valid"]:
-        logger.warning("Math mismatch, retrying: %s", math_ok["reason"])
+    for attempt in range(2):
+        math_ok = atwater_math_check(_primary(extracted), category)
+        if math_ok["is_valid"]:
+            break
+            
+        logger.warning(f"Math mismatch (Attempt {attempt+1}): {math_ok['reason']}")
         correction = (
             f"\n\nERROR IN PREVIOUS EXTRACTION: {math_ok['reason']}\n"
-            "Re-read the label. Sugar/Fiber are sub-sets of Carbs; "
-            "Sat-Fat is a sub-set of Fat. Do NOT double-count."
+            "CRITICAL: Re-read the label carefully. Ensure sugar/fiber are part of carbs, "
+            "and saturated fat is part of total fat. Do NOT double-count. "
+            "If the numbers on the label are inconsistent, prioritize the macro gram values over the calorie counts."
         )
         try:
             extracted = await _extract(clean_text, correction)
             category = extracted.get("product_category") or category
         except Exception as re_err:
-            logger.error("Retry extraction failed: %s", re_err)
+            logger.error(f"Retry {attempt+1} extraction failed: {re_err}")
+            break
 
     # Step 6: Build rich nutrients dict ───────────────────────────────
     rich = {
@@ -376,6 +381,14 @@ async def unified_analyze_flow(
     ingredients_raw = extracted.get("ingredients_raw", "") or ""
 
     # Step 7: DNA overrides ───────────────────────────────────────────
+    rich = _primary(extracted)
+    rich["sodium"] = float(extracted.get("sodium_mg") or 0)
+    rich["trans_fat"] = float(extracted.get("trans_fat") or 0)
+    rich["cholesterol"] = float(extracted.get("cholesterol_mg") or 0)
+    rich["potassium"] = float(extracted.get("potassium_mg") or 0)
+    rich["calcium"] = float(extracted.get("calcium_mg") or 0)
+    rich["iron"] = float(extracted.get("iron_mg") or 0)
+
     dna_res = apply_dna_overrides(
         full_ocr_text=extracted_text,
         nutrients=rich,
@@ -384,6 +397,14 @@ async def unified_analyze_flow(
         category=category,
         front_text=front_text,
     )
+
+    if dna_res["action"] == "BLOCK":
+        logger.error("DNA BLOCK: %s", dna_res["reason"])
+        return {
+            "error": "impossible_data",
+            "message": dna_res["reason"],
+            "dna_action": "BLOCK"
+        }
 
     # Step 8: Explanation engine ──────────────────────────────────────
     explanation = get_explanation_report(rich, ingredients_raw)

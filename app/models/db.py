@@ -336,7 +336,7 @@ def set_ai_cache(key: str, value: dict):
         logger.warning("set_ai_cache: %s", exc)
 
 
-def check_and_increment_scan(device_key: str, limit: int = 10) -> dict:
+def check_and_increment_scan(device_key: str, limit: int = 10, increment: bool = True) -> dict:
     """Consolidated scan limit logic: tracks usage by device_key/month."""
     month_key = datetime.date.today().isoformat()[:7]
     with db_conn() as conn:
@@ -361,13 +361,14 @@ def check_and_increment_scan(device_key: str, limit: int = 10) -> dict:
             u["scan_count"] = 0
 
         if u["is_pro"]:
-            conn.execute(
-                "UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?",
-                (device_key,),
-            )
+            if increment:
+                conn.execute(
+                    "UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?",
+                    (device_key,),
+                )
             return {
                 "allowed": True,
-                "scans_used": u["scan_count"] + 1,
+                "scans_used": u["scan_count"] + (1 if increment else 0),
                 "scans_remaining": 9999,
                 "is_pro": True,
             }
@@ -380,11 +381,13 @@ def check_and_increment_scan(device_key: str, limit: int = 10) -> dict:
                 "is_pro": False,
             }
 
-        conn.execute(
-            "UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?",
-            (device_key,),
-        )
-        new_count = u["scan_count"] + 1
+        if increment:
+            conn.execute(
+                "UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?",
+                (device_key,),
+            )
+
+        new_count = u["scan_count"] + (1 if increment else 0)
         return {
             "allowed": True,
             "scans_used": new_count,

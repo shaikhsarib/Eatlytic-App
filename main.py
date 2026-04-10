@@ -13,7 +13,10 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 from io import BytesIO
-from twilio.twiml.messaging_response import MessagingResponse
+try:
+    from twilio.twiml.messaging_response import MessagingResponse
+except ImportError:
+    MessagingResponse = None
 from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -177,7 +180,7 @@ async def analyze_product(
         return {"error": "Server Error: Missing GROQ_API_KEY"}
 
     device_key = get_device_key(request)
-    scan_check = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT)
+    scan_check = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=False)
     if not scan_check["allowed"]:
         return JSONResponse(
             status_code=402,
@@ -215,18 +218,11 @@ async def analyze_product(
             except Exception as e:
                 logger.warning(f"Deblurring failed: {e}")
 
-        if not extracted_text:
-            ocr_result = run_ocr(working_content, language)
-            extracted_text = ocr_result["text"]
-            if len(extracted_text.split()) < 3:
-                return {
-                    "error": "blurry_image",
-                    "message": "⚠️ Not enough text detected. Please move closer.",
-                }
-
-        # P0 FIX: No more manual validate_ocr_has_nutrition here. unified_analyze_flow handles it.
+        # P0 OPTIMIZATION: Removed manual run_ocr. unified_analyze_flow will handle it.
+        # This saves 1-3 seconds per scan.
+        
         result = await unified_analyze_flow(
-            extracted_text=extracted_text,
+            extracted_text=extracted_text, # can be None
             persona=persona,
             age_group=age_group,
             product_category_hint=product_category,
@@ -241,10 +237,12 @@ async def analyze_product(
         if "error" in result:
             return result
 
+        # DEDUCT QUOTA ONLY ON SUCCESS
+        scan_update = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=True)
         result["scan_meta"] = {
-            "scans_remaining": scan_check["scans_remaining"],
-            "is_pro": scan_check["is_pro"],
-            "scans_used": scan_check["scans_used"],
+            "scans_remaining": scan_update["scans_remaining"],
+            "is_pro": scan_update["is_pro"],
+            "scans_used": scan_update["scans_used"],
         }
         return result
 
@@ -337,12 +335,13 @@ async def generate_share_card(
     font = None
     for p in font_paths:
         try:
-            font = ImageFont.truetype(p, 48)
-            break
+            if os.path.exists(p):
+                font = ImageFont.truetype(p, 48)
+                break
         except Exception:
             continue
     if not font:
-        font = ImageFont.load_default()
+        font = ImageFont.load_default(size=48)
     score_rgb = (
         (34, 197, 94) if score >= 7 else (245, 158, 11) if score >= 4 else (239, 68, 68)
     )
@@ -620,11 +619,14 @@ async def whatsapp_webhook(request: Request):
     except ImportError:
         pass
 
+    if not MessagingResponse:
+        return Response("Twilio Support Disabled", status_code=501)
+
     resp = MessagingResponse()
     msg = resp.message()
 
     phone_number = form.get("From", "unknown_wa")
-    scan_check = check_and_increment_scan(phone_number, limit=FREE_SCAN_LIMIT)
+    scan_check = check_and_increment_scan(phone_number, limit=FREE_SCAN_LIMIT, increment=False)
 
     media_url = form.get("MediaUrl0")
     if not media_url:
@@ -706,8 +708,11 @@ async def whatsapp_webhook(request: Request):
                 f"*Score: {score}/10*\n[{verdict}]\n\n"
                 f"{summary}\n\n"
                 f"⚠️ *Risk Flags:*\n{risk_text}\n\n"
-                f"{alt}\n\n_Scans left: {scan_check['scans_remaining']}_"
+                f"{alt}\n\n"
             )
+            # DEDUCT ON SUCCESS
+            scan_update = check_and_increment_scan(phone_number, limit=FREE_SCAN_LIMIT, increment=True)
+            response_text += f"_Scans left: {scan_update['scans_remaining']}_"
             msg.body(response_text)
 
     except Exception as e:
