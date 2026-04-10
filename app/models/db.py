@@ -394,3 +394,30 @@ def check_and_increment_scan(device_key: str, limit: int = 10, increment: bool =
             "scans_remaining": max(0, limit - new_count),
             "is_pro": False,
         }
+
+def load_api_keys() -> dict:
+    """Load all API keys from SQLite into a dictionary."""
+    with db_conn() as conn:
+        rows = conn.execute("SELECT * FROM api_keys").fetchall()
+        return {r["api_key"]: dict(r) for r in rows}
+
+
+def verify_api_key(api_key: str) -> dict:
+    """Verify an API key and return its data."""
+    if not api_key:
+        return None
+    with db_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM api_keys WHERE api_key=? AND active=1", (api_key,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def increment_api_scan(api_key: str) -> None:
+    """Increment the scan count for a specific API key."""
+    month_key = datetime.date.today().isoformat()[:7]
+    with db_conn() as conn:
+        conn.execute(
+            "UPDATE api_keys SET scans_this_month = CASE WHEN month = ? THEN scans_this_month + 1 ELSE 1 END, month = ? WHERE api_key = ?",
+            (month_key, month_key, api_key),
+        )

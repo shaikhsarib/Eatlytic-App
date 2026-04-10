@@ -19,6 +19,7 @@ from app.services.alternatives import get_healthy_alternative
 from app.services.label_detector import process_image_for_ocr
 from app.services.explanation_engine import get_explanation_report
 from app.services.formatter import get_whatsapp_tiered_content
+from app.services.research_engine import get_live_search
 
 logger = logging.getLogger(__name__)
 
@@ -121,13 +122,28 @@ Return ONLY this JSON (no markdown, no extra text):
 # ── Prompt 2: Full health analysis + real score ────────────────────────
 def build_analysis_prompt(
     product_name, category, nutrients_list, ingredients_raw,
-    persona, language, nova_level, dna_flags,
+    persona, language, nova_level, dna_flags, research_context="",
+    blur_info=None
 ) -> str:
     lang_name = LANGUAGE_MAP.get(language, "English")
     nut_text = "\n".join(
         f"  {n['name']}: {n['value']} {n['unit']}" for n in nutrients_list
     )
     flags_text = "\n".join(f"  - {f}" for f in dna_flags) if dna_flags else "  None"
+    
+    blur_context = ""
+    if blur_info and blur_info.get("detected"):
+        if blur_info.get("deblurred"):
+            blur_context = (
+                f"Note: The image was detected as {blur_info['severity']}ly blurry and "
+                f"has been enhanced. OCR text was extracted from the deblurred image. "
+                "Prioritize identifiable keywords."
+            )
+        else:
+            blur_context = (
+                f"Note: Image has some blur ({blur_info['severity']}). "
+                "OCR results might be slightly ambiguous. Use context to infer values."
+            )
 
     return f"""\
 You are an expert Indian nutritionist and food safety auditor.
@@ -144,13 +160,14 @@ NUTRIENTS FOUND ON LABEL (per 100g):
 INGREDIENTS: {ingredients_raw or "Not listed"}
 
 PERSONA: {persona}
+WEB CONTEXT (Live health research): {research_context or "No specific web data found."}
 
-SCORING RUBRIC — assign the EXACT right score, NEVER default to 5, 6, or 7:
-  9-10 → Whole food. Sugar <2g/100g, sodium <200mg, high protein or fiber.
-  7-8  → Mildly processed. Sugar <5g, sodium <400mg, decent macros.
+SCORING RUBRIC — assign the EXACT right score based on Indian health standards:
+  9-10 → Whole food / minimal processing. Sugar <2g/100g, sodium <200mg.
+  7-8  → Moderately processed. Sugar <5g, sodium <400mg, decent nutrients.
   5-6  → Processed. Sugar 5-15g OR sodium 400-700mg.
-  3-4  → High sugar >15g OR sodium >700mg OR poor fat profile.
-  1-2  → Ultra-processed (NOVA 4) OR very high sugar/sodium/sat-fat.
+  3-4  → High sugar (>15g/100g) OR high sodium (>700mg/100g) OR poor nutrient profile.
+  1-2  → Ultra-processed (NOVA 4) OR very high sugar/sodium/saturated fat.
   HARD CAPS: NOVA 4 → max score 4. Sodium >1000mg → max score 5.
 
 Return ONLY this JSON (no markdown):
@@ -168,8 +185,15 @@ Return ONLY this JSON (no markdown):
     {{"group": "Diabetics",            "emoji": "🩸", "status": "warning|caution|good", "message": "<in {lang_name}>"}},
     {{"group": "Pregnant",             "emoji": "🤰", "status": "warning|caution|good", "message": "<in {lang_name}>"}}
   ],
-  "molecular_insight": "<1 sentence on biochemical impact in {lang_name}>"
-}}"""
+  "molecular_insight": "<1 sentence on biochemical impact in {lang_name}>",
+  "chart_data": [<Safe%>, <Moderate%>, <Risky%>]
+}}
+RULES:
+- score MUST match actual nutrient values — NEVER default to middle scores.
+- chart_data must be [Safe%, Moderate%, Risky%] summing to exactly 100%.
+- Extract ACTUAL values from the label text.
+{blur_context}
+"""
 
 
 # ── Fallback scoring (pure math, used when LLM analysis fails) ────────
@@ -463,12 +487,21 @@ async def unified_analyze_flow(
         language=language,
         nova_level=nova_level,
         dna_flags=dna_flags,
+        research_context=web_context,
+        blur_info=blur_info,
     )
 
     analysis = {}
     try:
         raw_analysis = await asyncio.to_thread(call_llm, analysis_prompt, 2000)
         analysis = parse_llm_response(raw_analysis)
+        
+        # Validate chart_data (sums to 100)
+        if "chart_data" in analysis:
+            cd = analysis["chart_data"]
+            if len(cd) == 3 and sum(cd) != 100 and sum(cd) > 0:
+                total = sum(cd)
+                analysis["chart_data"] = [round(v * 100 / total) for v in cd]
     except Exception as e:
         logger.error("Analysis LLM failed: %s", e)
 

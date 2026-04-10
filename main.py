@@ -45,6 +45,7 @@ from app.services.image import (
     ocr_quality_score,
 )
 from app.services.llm import unified_analyze_flow
+from app.services.research_engine import get_live_search
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -100,9 +101,11 @@ def generate_api_key(client_name: str, plan: str = "business") -> str:
 
 # --- DEVICE FINGERPRINT ---
 def get_device_key(request: Request) -> str:
+    """Fingerprint device using IP + UserAgent + Fingerprint header hint."""
     ip = request.client.host if request.client else "unknown"
     ua = request.headers.get("user-agent", "")
-    return hashlib.md5(f"{ip}:{ua}".encode()).hexdigest()[:16]
+    fp_hint = request.headers.get("x-fingerprint", "")
+    return hashlib.md5(f"{ip}:{ua}:{fp_hint}".encode()).hexdigest()[:16]
 
 
 # --- GROQ CLIENT ---
@@ -221,13 +224,22 @@ async def analyze_product(
         # P0 OPTIMIZATION: Removed manual run_ocr. unified_analyze_flow will handle it.
         # This saves 1-3 seconds per scan.
         
+        # P0 RESEARCH: Fetch live context for the product/ingredients
+        web_context = ""
+        try:
+            # Only search if we have a product name or some text
+            search_query = extracted_text[:100] if extracted_text else "food nutrition info"
+            web_context = get_live_search(f"health analysis ingredients {search_query}")
+        except Exception as e:
+            logger.warning(f"Web research failed: {e}")
+
         result = await unified_analyze_flow(
             extracted_text=extracted_text, # can be None
             persona=persona,
             age_group=age_group,
             product_category_hint=product_category,
             language=language,
-            web_context="",
+            web_context=web_context,
             blur_info=blur_info,
             label_confidence="high",
             front_text=front_text,
@@ -435,13 +447,20 @@ async def api_analyze(
     text = ocr["text"]
 
     # P0 FIX: B2B now uses the exact same unified flow as the web. No manual LLM calls.
+    # Research context for B2B
+    web_ctx = ""
+    try:
+        web_ctx = get_live_search(f"health analysis ingredients {text[:100]}")
+    except Exception:
+        pass
+
     result = await unified_analyze_flow(
         extracted_text=text,
         persona=persona,
         age_group=age_group,
         product_category_hint="general",
         language=language,
-        web_context="",
+        web_context=web_ctx,
         blur_info=blur_info,
         label_confidence="high",
         front_text="",
