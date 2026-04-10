@@ -105,11 +105,26 @@ def get_persona_advice(nutrients: dict, ingredients: str) -> list:
         })
 
     # 4. Pregnant Advice
-    if "trans fat" in ing_lower or nutrients.get("trans_fat", 0) > 0:
+    if "trans fat" in ing_lower or nutrients.get("trans_fat", 0) > 0 or "vanaspati" in ing_lower:
         advice.append({
             "persona": "Pregnant",
             "type": "WARNING",
-            "msg": "Trans fat crosses the placenta. High sodium contributes to pregnancy hypertension (preeclampsia). Avoid."
+            "msg": "Trans fat (Vanaspati) crosses the placenta and is harmful. High sodium contributes to pregnancy hypertension. Strictly avoid."
+        })
+
+    # 5. Athlete Advice
+    protein = nutrients.get("protein", 0)
+    if protein < 5 and ("snack" in ing_lower or "noodle" in ing_lower):
+        advice.append({
+            "persona": "Athletes",
+            "type": "CAUTION",
+            "msg": "Empty calories. Very low protein content will not help with recovery or muscle synthesis."
+        })
+    elif protein >= 15:
+        advice.append({
+            "persona": "Athletes",
+            "type": "GOOD",
+            "msg": "High protein content detected. Good for muscle recovery."
         })
 
     return advice

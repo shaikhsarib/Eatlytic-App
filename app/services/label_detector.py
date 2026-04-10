@@ -66,15 +66,17 @@ def deskew_image(image_np: np.ndarray) -> np.ndarray:
         coords = np.column_stack(np.where(thresh > 0))
         angle = cv2.minAreaRect(coords)[-1]
         
-        # Adjust angle
-        if angle < -45:
-            angle = -(90 + angle)
-        else:
-            angle = -angle
+        # Adjust angle for OpenCV 4.5+ (angle range is 0-90)
+        # or handle older formats by normalizing to +/- 45
+        if angle > 45:
+            angle = angle - 90
+        
+        # Final rotation angle
+        rotation_angle = -angle
             
         (h, w) = image_np.shape[:2]
         center = (w // 2, h // 2)
-        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+        M = cv2.getRotationMatrix2D(center, rotation_angle, 1.0)
         rotated = cv2.warpAffine(image_np, M, (w, h), flags=cv2.INTER_CUBIC, 
                                  borderMode=cv2.BORDER_REPLICATE)
         

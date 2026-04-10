@@ -228,6 +228,18 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
                 f"✅ Math valid ({diff_pct:.1f}% within {tolerance:.0f}% tolerance)"
             ),
         }
+    
+    # HARDEN: If calculated > label, it's a major safety violation (undercounting calories)
+    # If calculated < label, it might be due to missing components (ash, water, polyols)
+    if calculated > label_calories * 1.5:
+        return {
+            "is_valid": False,
+            "reason": (
+                f"Safety Failure: Calculated energy ({calculated:.0f} kcal) is significantly HIGHER "
+                f"than the label says ({label_calories:.0f} kcal). This product is likely being marketed as lower calorie than it is."
+            ),
+        }
+
     return {
         "is_valid": False,
         "reason": (
