@@ -34,32 +34,14 @@ INS_DATABASE = {
     "211": "Sodium Benzoate (Preservative). Common in beverages; best avoided in high quantities.",
 }
 
+from app.services.fake_detector import detect_nova_4
+
 def get_nova_level(ingredients_raw: str) -> int:
     """
-    NOVA Classification logic:
-    4: Ultra-processed foods (UPF) - Industrial markers detected.
+    Consolidated NOVA Classification via FakeDetector.
     """
-    if not ingredients_raw:
-        return 1
-    
-    ingredients_lower = ingredients_raw.lower()
-    
-    # Industrial markers (emulsifiers, flavors, etc.)
-    upf_markers = [
-        "emulsifier", "stabilizer", "maltodextrin", "high fructose",
-        "artificial", "sweetener", "flavor enhancer", "ins", "e-",
-        "hydrolyzed", "hydrogenated", "color", "thickener", "preservative"
-    ]
-    
-    marker_count = 0
-    for marker in upf_markers:
-        if marker in ingredients_lower:
-            marker_count += 1
-            
-    if marker_count >= 5: return 4
-    if marker_count >= 2: return 3
-    if marker_count >= 1: return 2
-    return 1
+    res = detect_nova_4(ingredients_raw)
+    return 4 if res["is_nova_4"] else 3 if len(res["flags_found"]) > 0 else 1
 
 def identify_additives(ingredients_raw: str) -> list:
     """Extracts INS/E numbers and provides context."""
@@ -145,11 +127,20 @@ def generate_humanized_insights(nutrients: dict, ingredients: str) -> list:
         daily_limit_pct = round((sodium_mg / INDIAN_RDA["sodium_mg"]) * 100)
         insights.append(f"🧂 Provides {daily_limit_pct}% of your daily Indian salt limit per 100g.")
         
-    # 3. Cultural calorie comparison (Chapati)
+    # 3. Cultural calorie comparison (Dynamic)
     calories = nutrients.get("calories", 0)
-    if calories > 150:
-        chapatis = round(calories / CULTURAL_EQUIVALENTS["chapati"]["calories"], 1)
-        insights.append(f"🫓 This portion is equivalent to ~{chapatis} {CULTURAL_EQUIVALENTS['chapati']['name']} in calories.")
+    if calories > 70:
+        # Choose the most relatable benchmark based on calories
+        if calories > 250:
+            key = "samosa"
+        elif calories > 120:
+            key = "chapati"
+        else:
+            key = "chai"
+            
+        bench = CULTURAL_EQUIVALENTS[key]
+        count = round(calories / bench["calories"], 1)
+        insights.append(f"⚖️ This portion is equivalent to ~{count} {bench['name']} in calories.")
 
     # 4. Additive scanning
     additives = identify_additives(ingredients)
