@@ -738,13 +738,42 @@ input[type="file"]{display:none}
 [data-theme="dark"] .risk-flag {
   filter:brightness(0.9);
 }
+/* risk-flags (reveal) */
+.risk-flags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.risk-flag{display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:var(--r-pill);
+  font-size:11px;font-weight:800;border:1.5px solid;cursor:pointer;
+  transition:transform 0.15s}
+.risk-flag:hover{transform:scale(1.05)}
+.rf-red{background:rgba(255,23,68,0.1);border-color:var(--red);color:var(--red)}
+.rf-orange{background:rgba(255,107,0,0.1);border-color:var(--orange);color:var(--orange)}
+.rf-yellow{background:rgba(255,214,0,0.2);border-color:#C8A800;color:#665500}
+.rf-green{background:rgba(0,200,150,0.1);border-color:var(--mint);color:var(--green)}
+.rf-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* nutrient-pack (reveal) */
+.pack-label{font-size:9px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;
+  color:var(--muted);padding:4px 0 10px}
+.nutrient-pack{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.ns-card{border:2px solid var(--ink);border-radius:var(--r);padding:11px 9px;
+  background:white;
+  box-shadow:var(--shadow-sticker);cursor:pointer;text-align:center;position:relative;overflow:hidden;
+  opacity:0;transform:scale(0) rotate(8deg);
+  transition:opacity 0.4s cubic-bezier(0.34,1.56,0.64,1),transform 0.4s cubic-bezier(0.34,1.56,0.64,1)}
+.ns-card.visible{opacity:1;transform:rotate(var(--rot,2deg))}
+.ns-card:hover{transform:translateY(-5px) rotate(0deg) scale(1.06)!important}
+.ns-card:active{transform:translateY(1px)!important;box-shadow:var(--shadow-sm)}
+.ns-rating-badge{position:absolute;top:5px;right:5px;width:16px;height:16px;border-radius:50%;
+  border:1.5px solid var(--ink);background:var(--white);display:flex;align-items:center;
+  justify-content:center;font-size:8px;font-weight:800}
+.ns-icon{font-size:1.2rem;display:block;margin-bottom:4px}
+.ns-name{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:3px}
+.ns-val{font-family:'Fraunces',serif;font-weight:900;font-size:1rem;letter-spacing:-0.5px}
+.ns-bar{height:4px;background:rgba(10,10,10,0.12);border-radius:2px;margin-top:7px;overflow:hidden}
+.ns-fill{height:100%;width:0%;border-radius:2px;transition:width 1.2s cubic-bezier(0.34,1.56,0.64,1);background:var(--ink);opacity:0.35}
+
 /* dark mode toggle icon flip */
 #theme-toggle { transition: transform 0.25s; }
 [data-theme="dark"] #theme-toggle { content:'☀️'; }
-.daily-macro-item{text-align:center;background:var(--bg);border-radius:8px;padding:6px 4px}
-.dm-val{font-family:'Fraunces',serif;font-weight:900;font-size:1rem;color:var(--ink)}
-.dm-label{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted)}
-.nutrient-detail-sheet{position:fixed;inset:0;z-index:200;display:flex;align-items:flex-end;background:rgba(0,0,0,0.5)}
 </style>
 </head>
 <body>
@@ -839,10 +868,7 @@ input[type="file"]{display:none}
   <div class="camera-viewport">
     <video id="camera-video" autoplay playsinline muted></video>
     <!-- AR nutrition overlay -->
-    <div class="camera-overlay-pill" id="cam-overlay-pill">📦 Point at the <strong>BACK</strong> of the pack</div>
-    <div id="cam-hint-strip" style="position:absolute;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;font-size:11px;font-weight:700;padding:6px 14px;border-radius:20px;letter-spacing:0.5px;white-space:nowrap;text-align:center;pointer-events:none;opacity:0;transition:opacity 0.4s">
-      Look for: Nutrition Facts / Nutritional Information
-    </div>
+    <div class="camera-overlay-pill" id="cam-overlay-pill">Point at a food label</div>
 
     <!-- Reticle (scan mode) -->
     <div class="camera-reticle" id="camera-reticle">
@@ -1120,6 +1146,23 @@ input[type="file"]{display:none}
   </div>
 </div>
 
+<!-- INGREDIENT DETAIL SHEET -->
+<div class="ing-detail-overlay" id="ing-detail-overlay" onclick="if(event.target===this)closeIngDetail()">
+  <div class="ing-detail-sheet">
+    <div class="ing-handle"></div>
+    <div class="ing-detail-name" id="ing-detail-name"></div>
+    <div class="ing-detail-risk" id="ing-detail-risk"></div>
+    <div class="ing-section-lbl">What it is</div>
+    <div class="ing-detail-text" id="ing-detail-what"></div>
+    <div class="ing-section-lbl">Health impact</div>
+    <div class="ing-detail-text" id="ing-detail-impact"></div>
+    <div class="ing-fact-box">
+      <div class="ing-fact-lbl">✦ Curiosity</div>
+      <div class="ing-fact-text" id="ing-detail-fact"></div>
+    </div>
+  </div>
+</div>
+
 <div class="scan-flash" id="scan-flash"></div>
 <div class="toast" id="toast"></div>
 <input type="file" id="file-input" accept="image/*" onchange="handleFile(event)">
@@ -1275,6 +1318,7 @@ function captureFrame() {
 }
 
 
+
 /* ── FILE UPLOAD */
 function handlePortalTap() {
   if (!state.blob) openCamera();
@@ -1364,6 +1408,7 @@ function applyQuality(sev, pct) {
   }
 }
 
+
 /* ═══════════════════════════════════════
    VOICE LOGGING
 ═══════════════════════════════════════ */
@@ -1412,16 +1457,14 @@ function stopVoice() {
 async function parseVoiceMeal(transcript) {
   stopVoice();
   document.getElementById('voice-transcript').textContent = '🧠 Parsing "' + transcript + '"…';
-  // Use the API to parse the meal text
   try {
     const fd = new FormData();
     fd.append('text', transcript);
     fd.append('persona', state.persona);
     fd.append('language', state.language);
     const res = await fetch(`${API}/parse-voice-meal`, { method:'POST', body:fd });
-    if (!res.ok) throw new Error('API unavailable');
     const d = await res.json();
-    if (d.error) throw new Error(d.message||d.error);
+    if (d.error) throw new Error();
     state.lastResult = d;
     saveHistory(d, null);
     buildConstellationData(d);
@@ -1430,23 +1473,22 @@ async function parseVoiceMeal(transcript) {
     spawnConfetti(window.innerWidth/2, window.innerHeight/2);
     document.getElementById('voice-transcript').textContent = 'Say what you ate…';
   } catch {
-    // Graceful fallback — store as a text entry
-    const fakeResult = {
+    const fallback = {
       product_name: transcript,
       score: 5, verdict: 'Voice logged',
-      summary: 'Logged via voice: "' + transcript + '". Analysis requires image scan.',
+      summary: 'Logged via voice: "' + transcript + '".',
       nutrient_breakdown: [],
       pros:[], cons:[], ingredients_spotlight:[], is_voice_log:true,
     };
-    state.lastResult = fakeResult;
-    saveHistory(fakeResult, null);
-    renderReveal(fakeResult);
+    state.lastResult = fallback;
+    saveHistory(fallback, null);
+    renderReveal(fallback);
     goTo('reveal');
     document.getElementById('voice-transcript').textContent = '✓ Logged: ' + transcript;
     showToast('✓ Voice meal logged!');
-    spawnStickerPop('🎤', window.innerWidth/2, window.innerHeight/2);
   }
 }
+
 
 /* ═══════════════════════════════════════
    VINE LOADER
@@ -1496,6 +1538,9 @@ function crystallizeText(text) {
 /* ═══════════════════════════════════════
    RUN ANALYSIS
 ═══════════════════════════════════════ */
+/* ═══════════════════════════════════════
+   RUN ANALYSIS
+═══════════════════════════════════════ */
 async function runAnalysis() {
   if (!state.blob) return;
   if (state.quotaRemaining<=0 && !state.isPro) { openPaywall('limit'); return; }
@@ -1504,125 +1549,39 @@ async function runAnalysis() {
   state.abortCtrl = new AbortController();
   const tid = setTimeout(()=>state.abortCtrl?.abort(), 90000);
 
-  // Capture thumbnail for history
   let thumbData = null;
   try {
     const bmp = await createImageBitmap(state.blob);
-    const tc  = document.createElement('canvas');
-    tc.width=80; tc.height=80;
-    const tctx=tc.getContext('2d');
-    const ar=bmp.width/bmp.height;
-    if(ar>1){tctx.drawImage(bmp,(bmp.width-bmp.height)/2,0,bmp.height,bmp.height,0,0,80,80);}
-    else{tctx.drawImage(bmp,0,(bmp.height-bmp.width)/2,bmp.width,bmp.width,0,0,80,80);}
+    const tc = document.createElement('canvas'); tc.width=80; tc.height=80;
+    const tctx=tc.getContext('2d'); const ar=bmp.width/bmp.height;
+    if(ar>1) tctx.drawImage(bmp,(bmp.width-bmp.height)/2,0,bmp.height,bmp.height,0,0,80,80);
+    else tctx.drawImage(bmp,0,(bmp.height-bmp.width)/2,bmp.width,bmp.width,0,0,80,80);
     thumbData = tc.toDataURL('image/jpeg',0.6);
   } catch{}
 
-  const fd = new FormData();
-  fd.append('image',state.blob);
-  fd.append('persona',state.persona);
-  fd.append('language',state.language);
-  fd.append('age_group','adult');
-  fd.append('product_category','general');
-
+  const fd = new FormData(); fd.append('image',state.blob); fd.append('persona',state.persona); fd.append('language',state.language);
   try {
-    const res  = await fetch(`${API}/analyze`, {method:'POST',body:fd,signal:state.abortCtrl.signal});
-    clearTimeout(tid);
-    const data = await res.json();
-    if (res.status===429 || data.error==='quota_exceeded') { goTo('scan'); openPaywall('limit'); return; }
-    // Pass the specific error type so showError can show the right icon + message
-    if (data.error) {
-      const errType = data.error === 'no_label' && data.tip === 'wrong_side'
-        ? 'wrong_side' : data.error;
-      goTo('scan');
-      showError(errType, data.message || 'Analysis failed.');
-      return;
-    }
-    if (data.quota) { state.quotaRemaining=data.quota.remaining??state.quotaRemaining; updateQuota(); }
+    const res = await fetch(`${API}/analyze`, {method:'POST',body:fd,signal:state.abortCtrl.signal});
+    clearTimeout(tid); const data = await res.json();
+    if (res.status===429) { goTo('scan'); openPaywall('limit'); return; }
+    if (data.error) { goTo('scan'); showError(data.error, data.message||'Analysis failed.'); return; }
+    if (data.quota) { state.quotaRemaining=data.quota.remaining??5; updateQuota(); }
 
-    const sampleText = data.extracted_text
-      ? data.extracted_text.substring(0,80)+'…'
-      : 'Ingredients: '+(data.ingredients_spotlight?.map(i=>i.name)||[]).slice(0,5).join(', ')+'…';
-    crystallizeText(sampleText);
-
-    if (!data.risk_flags) buildRiskFlagsFromAnalysis(data);
-    state.lastResult = data;
-    saveHistory(data, thumbData);
-    buildConstellationData(data);
-    updateStreak();
-
-    setTimeout(() => {
-      renderReveal(data); goTo('reveal'); resetPortal();
-    }, 2200);
-  } catch(e) {
-    clearTimeout(tid); goTo('scan');
-    if (e.name==='AbortError') showToast('⏱ Analysis cancelled');
-    else showError('error', e.message||'Network error.');
-  }
-}
-
-function buildRiskFlagsFromAnalysis(data) {
-  const flags = [];
-  const nutr  = data.nutrient_breakdown || [];
-  const ingrs = data.ingredients_spotlight || [];
-  const sodium= nutr.find(n=>n.name?.toLowerCase().includes('sodium'))?.value||0;
-  const sugar = nutr.find(n=>n.name?.toLowerCase().includes('sugar'))?.value||0;
-  const addrs = ingrs.filter(i=>i.type==='additive'||i.type==='preservative');
-  if (addrs.length>0)  flags.push({label:'Additives ('+addrs.length+')',level:'orange',icon:'⚗️'});
-  if (sugar>15)        flags.push({label:'High sugar',level:'red',icon:'🍬'});
-  if (sodium>700)      flags.push({label:'High sodium',level:'orange',icon:'🧂'});
-  if (ingrs.some(i=>['e102','e110','e122','tartrazine'].some(k=>i.name?.toLowerCase().includes(k))))
-    flags.push({label:'Artificial dye',level:'red',icon:'🎨'});
-  if (data.score>=8)   flags.push({label:'Clean label',level:'green',icon:'✓'});
-  data.risk_flags = flags;
+    const st = data.extracted_text ? data.extracted_text.substring(0,80)+'…' : 'Ingredients: '+(data.ingredients_spotlight?.map(i=>i.name)||[]).slice(0,5).join(', ')+'…';
+    crystallizeText(st);
+    state.lastResult = data; saveHistory(data, thumbData); buildConstellationData(data); updateStreak();
+    setTimeout(() => { renderReveal(data); goTo('reveal'); resetPortal(); }, 2200);
+  } catch(e) { clearTimeout(tid); goTo('scan'); showError('error', e.message||'Network error.'); }
 }
 
 function cancelAnalysis() { state.abortCtrl?.abort(); goTo('scan'); }
-
 function showError(type, message) {
-  // Choose icon and title based on error type
-  const icon  = type==='no_label'  ? '🔄'
-              : type==='wrong_side'? '🔄'
-              : type==='no_text'   ? '🔍'
-              : type==='blurry_image' ? '📐'
-              : type==='invalid_image'?'🖼': '❌';
-  const title = type==='no_label'   ? 'No Nutrition Label Found'
-              : type==='wrong_side' ? "That's the Front — Flip It Over!"
-              : type==='no_text'    ? 'No Text Detected'
-              : type==='blurry_image'? 'Move Closer to the Label'
-              : type==='invalid_image'?'Invalid Image'
-              : 'Analysis Failed';
-  // For wrong-side errors, show a helpful flip instruction
-  const extra = (type==='no_label' || type==='wrong_side' || type==='no_text')
-    ? `<div style="margin:20px auto;max-width:250px;display:flex;align-items:center;justify-content:center;gap:15px;background:rgba(255,45,120,0.05);padding:15px;border-radius:12px;border:1.5px dashed var(--pink)">
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-          <div style="width:40px;height:55px;background:var(--pink);border:2px solid var(--ink);border-radius:4px;display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:10px">FRONT</div>
-          <span style="font-size:12px">❌</span>
-        </div>
-        <div style="font-size:1.5rem;animation:portal-breath 2s infinite">🔄</div>
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-          <div style="width:40px;height:55px;background:var(--mint);border:2px solid var(--ink);border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-items:center;padding:4px;gap:2px">
-            <div style="width:100%;height:3px;background:white"></div>
-            <div style="width:100%;height:3px;background:white"></div>
-            <div style="width:100%;height:3px;background:white"></div>
-            <div style="width:100%;height:8px;background:rgba(0,0,0,0.1)"></div>
-          </div>
-          <span style="font-size:12px">✅</span>
-        </div>
-       </div>
-       <div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:8px">
-         Flip the product! We need the <span style="color:var(--mint)">Back Label</span> (showing ingredients & nutrients) to analyze it.
-       </div>`
-    : '';
-  document.getElementById('reveal-scroll').innerHTML=`
-    <div class="result-empty">
-      <div class="result-empty-icon">${icon}</div>
-      <div class="result-empty-title">${title}</div>
-      ${extra}
-      <div class="result-empty-sub">${esc(message)}</div>
-      <button class="result-empty-btn" onclick="goTo('scan')">Try Again →</button>
-    </div>`;
+  const icon = type==='no_label'||type==='wrong_side'?'🔄':type==='no_text'?'🔍':type==='blurry_image'?'📐':'❌';
+  const title = type==='no_label'?'No Nutrition Label Found':type==='wrong_side'?"That's the Front — Flip It Over!":type==='no_text'?'No Text Detected':type==='blurry_image'?'Move Closer to the Label':'Analysis Failed';
+  document.getElementById('reveal-scroll').innerHTML=`<div class="result-empty"><div class="result-empty-icon">${icon}</div><div class="result-empty-title">${title}</div><div class="result-empty-sub">${esc(message)}</div><button class="result-empty-btn" onclick="goTo('scan')">Try Again →</button></div>`;
   goTo('reveal');
 }
+
 
 /* ═══════════════════════════════════════
    RENDER REVEAL
@@ -1633,7 +1592,7 @@ function renderReveal(d) {
   const glyph      = score>=7?'✅':score>=4?'⚠️':'❌';
   let html='';
 
-  /* header */
+  /* Header */
   html+=`<div class="reveal-top">
     <div class="reveal-product">${esc(d.product_name||'Unknown Product')}</div>
     <div class="reveal-score-group">
@@ -1642,12 +1601,11 @@ function renderReveal(d) {
     </div>
   </div>`;
 
-  /* confidence + metadata strip */
+  /* Metadata Strip */
   const meta = [
     d.product_category && esc(d.product_category),
     d.nutriscore && 'Nutri-Score: '+esc(d.nutriscore),
     d.nova_group  && 'NOVA: '+d.nova_group,
-    d.is_barcode_scan && 'Barcode scan',
     d.is_voice_log    && 'Voice logged',
   ].filter(Boolean);
   if (meta.length) {
@@ -1657,7 +1615,7 @@ function renderReveal(d) {
     </div>`;
   }
 
-  /* actions */
+  /* Actions */
   html+=`<div class="result-actions">
     <button class="rac-btn" onclick="shareResult()">📤 Share</button>
     <button class="rac-btn" onclick="goTo('map')">✦ Map</button>
@@ -1665,1040 +1623,174 @@ function renderReveal(d) {
     <button class="rac-btn" onclick="goTo('scan')">🔄 Rescan</button>
   </div>`;
 
-  /* risk flags (NEW) */
-  if (d.risk_flags?.length) {
-    html+=`<div class="risk-flags">`;
-    d.risk_flags.forEach(f => {
-      const cls='rf-'+f.level;
-      html+=`<div class="risk-flag ${cls}"><div class="rf-dot"></div>${esc(f.icon)} ${esc(f.label)}</div>`;
-    });
-    html+=`</div>`;
-  }
+  /* ═══════════════════════════════════════
+   RENDER REVEAL
+═══════════════════════════════════════ */
+function renderReveal(d) {
+  const score = d.score??0, scoreColor = score>=7?'var(--mint)':score>=4?'var(--orange)':'var(--red)', glyph = score>=7?'✅':score>=4?'⚠️':'❌';
+  let html=`<div class="reveal-top"><div class="reveal-product">${esc(d.product_name||'Unknown')}</div><div class="reveal-score-group"><span class="reveal-score" style="color:${scoreColor}">${score}</span><span class="reveal-verdict-label" style="color:${scoreColor}">${esc(d.verdict||'')}</span></div></div>`;
 
-  /* Oracle satellite orb */
-  html+=`<div class="orb-stage">
-    <div class="score-orb-wrap" id="sorb-wrap">
-      <div class="orb-pulse-ring" style="border-color:${scoreColor}"></div>
-      <div class="score-orb" onclick="expandSatellite('summary')">
-        <div class="orb-num" style="color:${scoreColor}">${score}</div>
-        <div class="orb-denom">/10</div>
-      </div>
-    </div>
-  </div>`;
+  const meta = [ d.product_category, d.nutriscore && 'Nutri-Score: '+d.nutriscore, d.nova_group && 'NOVA: '+d.nova_group, d.is_voice_log && 'Voice logged' ].filter(Boolean);
+  if (meta.length) html+=`<div class="confidence-strip"><div class="conf-dot"></div><span style="font-size:9px;letter-spacing:1.5px">${meta.join(' · ')}</span></div>`;
 
-  /* blur notice */
-  if (d.blur_info?.detected) {
-    html+=`<div class="blur-notice visible">
-      ${d.blur_info.deblurred
-        ?`<strong>🔧 Enhanced</strong> — ${d.blur_info.method_log||'AI deblur'}.`
-        :`<strong>📷 Blur detected</strong> (${d.blur_info.severity}) — results may vary.`}
-    </div>`;
-  }
+  html+=`<div class="result-actions"><button class="rac-btn" onclick="shareResult()">📤 Share</button><button class="rac-btn" onclick="goTo('map')">✦ Map</button><button class="rac-btn" onclick="goTo('history')">📋 History</button><button class="rac-btn" onclick="goTo('scan')">🔄 Rescan</button></div>`;
 
-  /* nutrient sticker pack */
+  const rf = d.risk_flags || deriveRiskFlags(d);
+  if (rf.length) { html+=`<div class="risk-flags">`; rf.forEach(f=>{ html+=`<div class="risk-flag rf-${f.level}"><div class="rf-dot"></div>${esc(f.icon)} ${esc(f.label)}</div>`; }); html+=`</div>`; }
+
+  html+=`<div class="orb-stage"><div class="score-orb-wrap" id="sorb-wrap"><div class="orb-pulse-ring" style="border-color:${scoreColor}"></div><div class="score-orb" onclick="expandSatellite('summary')"><div class="orb-num" style="color:${scoreColor}">${score}</div><div class="orb-denom">/10</div></div></div></div>`;
+
   if (d.nutrient_breakdown?.length) {
-    html+=`<div class="pack-label">Your Nutrient Pack — ${d.nutrient_breakdown.length} cards</div>
-    <div class="nutrient-pack" id="nutrient-pack">`;
+    html+=`<div class="pack-label">Your Nutrient Pack — ${d.nutrient_breakdown.length} cards</div><div class="nutrient-pack">`;
     d.nutrient_breakdown.forEach((n,i)=>{
-      const bg  = SAT_BG[i%SAT_BG.length];
-      const rot = ((i%2===0?1:-1)*(i%3+1))+'deg';
-      const rIcon={good:'✓',moderate:'~',caution:'~',bad:'!'}[n.rating]||'?';
-      const ratingBg={good:'#00A87822',moderate:'#F59E0B22',caution:'#FF6B0022',bad:'#FF2D7822'}[n.rating]||'';
-      html+=`<div class="ns-card" id="nsc-${i}" style="background:${bg};--rot:${rot};outline:${n.rating==='bad'?'2px solid #FF2D7888':'none'}" onclick="flipNutrientCard(${i})">
-        <div class="ns-rating-badge" style="background:${{good:'#00A878',moderate:'#F59E0B',caution:'#FF6B00',bad:'#FF2D78'}[n.rating]||'#888'}">${rIcon}</div>
-        <span class="ns-icon">${getNutrientIcon(n.name)}</span>
-        <div class="ns-name">${esc(n.name)}</div>
-        <div class="ns-val">${n.value}<small style="font-size:0.55em;font-weight:700"> ${n.unit||''}</small></div>
-        <div class="ns-bar"><div class="ns-fill" id="nsf-${i}" style="background:${{good:'#00A878',moderate:'#F59E0B',caution:'#FF6B00',bad:'#FF2D78'}[n.rating]||'var(--ink)'}"></div></div>
-      </div>`;
+      const bg = SAT_BG[i%SAT_BG.length], rot = ((i%2===0?1:-1)*(i%3+1))+'deg';
+      const rating = n.rating || deriveNutrientRating(n.name, n.value);
+      const rIcon={good:'✓',moderate:'~',caution:'~',bad:'!'}[rating]||'?', rColor={good:'#00A878',moderate:'#F59E0B',caution:'#FF6B00',bad:'#FF2D78'}[rating]||'#888';
+      html+=`<div class="ns-card" id="nsc-${i}" style="background:${bg};--rot:${rot}" onclick="showNutrientDetail(${JSON.stringify(n).replace(/"/g,'&quot;')}, '${rating}')">
+        <div class="ns-rating-badge" style="background:${rColor}">${rIcon}</div><span class="ns-icon">${getNutrientIcon(n.name)}</span><div class="ns-name">${esc(n.name)}</div><div class="ns-val">${n.value}<small style="font-size:0.55em;font-weight:700"> ${n.unit||''}</small></div>
+        <div class="ns-bar"><div class="ns-fill" id="nsf-${i}" style="background:${rColor}"></div></div></div>`;
     });
     html+=`</div>`;
   }
 
-  /* verdict tape */
-  if (d.summary) {
-    html+=`<div class="verdict-tape">
-      <div class="vt-stamp" style="background:${score>=7?'var(--mint)':score>=4?'var(--yellow)':'var(--pink)'}">${glyph}</div>
-      <div><div class="vt-title">${esc(d.verdict||'')}</div><div class="vt-desc">${esc(d.summary)}</div></div>
-    </div>`;
-  }
+  if (d.summary) html+=`<div class="verdict-tape"><div class="vt-stamp" style="background:${score>=7?'var(--mint)':score>=4?'var(--yellow)':'var(--pink)'}">${glyph}</div><div><div class="vt-title">${esc(d.verdict)}</div><div class="vt-desc">${esc(d.summary)}</div></div></div>`;
 
-  /* ingredient tags */
   if (d.ingredients_spotlight?.length) {
-    html+=`<div class="ingr-section">
-      <div class="section-label" style="margin-bottom:8px">Ingredients spotted</div>
-      <div class="ingr-tags">`;
+    html+=`<div class="ingr-section"><div class="section-label" style="margin-bottom:8px">Ingredients Spotlight</div><div class="ingr-tags">`;
     d.ingredients_spotlight.forEach(ing=>{
-      const t = ing.type?.toLowerCase();
-      const cls = (t==='additive'||t==='preservative') ? 'itag-warn' : (ing.safety_rating?.toLowerCase()==='safe'||t==='natural'||t==='vitamin') ? 'itag-good' : 'itag-ok';
+      const t = (ing.type || deriveIngredientType(ing.name)).toLowerCase();
+      const cls = (t==='additive'||t==='preservative') ? 'itag-warn' : (ing.safety_rating?.toLowerCase()==='safe'||t==='natural') ? 'itag-good' : 'itag-ok';
       html+=`<div class="ingr-tag ${cls}" onclick="showIngDetail(${JSON.stringify(ing).replace(/"/g,'&quot;')})">${esc(ing.name)}</div>`;
     });
     html+=`</div></div>`;
   }
 
-  /* pros/cons */
   if (d.pros?.length||d.cons?.length) {
     html+=`<div class="pro-con-grid">`;
-    if (d.pros?.length) {
-      html+=`<div class="pc-card"><div class="pc-head pros">Benefits</div>`;
-      d.pros.forEach(p=>{html+=`<div class="pc-item">${esc(p)}</div>`;});
-      html+=`</div>`;
-    }
-    if (d.cons?.length) {
-      html+=`<div class="pc-card"><div class="pc-head cons">Concerns</div>`;
-      d.cons.forEach(c=>{html+=`<div class="pc-item">${esc(c)}</div>`;});
-      html+=`</div>`;
-    }
+    if (d.pros?.length){ html+=`<div class="pc-card"><div class="pc-head pros">Benefits</div>`; d.pros.forEach(p=>html+=`<div class="pc-item">${esc(p)}</div>`); html+=`</div>`; }
+    if (d.cons?.length){ html+=`<div class="pc-card"><div class="pc-head cons">Concerns</div>`; d.cons.forEach(c=>html+=`<div class="pc-item">${esc(c)}</div>`); html+=`</div>`; }
     html+=`</div>`;
   }
 
-  /* age warnings */
-  if (d.age_warnings?.length) {
-    html+=`<div class="section-label" style="padding:4px 0 8px">Who should be cautious?</div>
-    <div class="age-grid">`;
-    d.age_warnings.forEach(w=>{
-      html+=`<div class="age-card ${w.status||'caution'}">
-        <div class="ac-group">${w.emoji||''} ${esc(w.group)}</div>
-        <div class="ac-msg">${esc(w.message)}</div>
-      </div>`;
-    });
-    html+=`</div>`;
+  const simple = d.eli5_explanation || d.eli5;
+  if (simple || d.molecular_insight) {
+    html+=`<div class="insight-tabs"><button class="itab active" onclick="switchInsight(event,'is1')">Simple</button>${d.molecular_insight?`<button class="itab" onclick="switchInsight(event,'is2')">Science</button>`:''}</div><div class="insight-panel active" id="is1"><div class="insight-text">${esc(simple||'')}</div></div>${d.molecular_insight?`<div class="insight-panel" id="is2"><div class="insight-text">${esc(d.molecular_insight)}</div></div>`:''}`;
   }
 
-  /* insight tabs */
-  if (d.summary&&(d.eli5_explanation||d.molecular_insight)) {
-    html+=`<div class="insight-tabs">
-      ${d.summary?`<button class="itab active" onclick="switchInsight(event,'is0')">Summary</button>`:''}
-      ${d.eli5_explanation?`<button class="itab" onclick="switchInsight(event,'is1')">Simple</button>`:''}
-      ${d.molecular_insight?`<button class="itab" onclick="switchInsight(event,'is2')">Science</button>`:''}
-    </div>
-    ${d.summary?`<div class="insight-panel active" id="is0"><div class="insight-text">${esc(d.summary)}</div></div>`:''}
-    ${d.eli5_explanation?`<div class="insight-panel" id="is1"><div class="insight-text">${esc(d.eli5_explanation)}</div></div>`:''}
-    ${d.molecular_insight?`<div class="insight-panel" id="is2"><div class="insight-text">${esc(d.molecular_insight)}</div></div>`:''}`;
-  }
+  if (d.better_alternative) html+=`<div class="alt-card"><div style="font-size:1.2rem">💡</div><div><div class="alt-label">Better Alternative</div><div class="alt-text">${esc(d.better_alternative)}</div></div></div>`;
 
-  /* better alternative */
-  if (d.better_alternative) {
-    html+=`<div class="alt-card">
-      <div style="font-size:1.2rem">💡</div>
-      <div><div class="alt-label">Better Alternative</div><div class="alt-text">${esc(d.better_alternative)}</div></div>
-    </div>`;
-  }
-
-  document.getElementById('reveal-scroll').innerHTML = html;
-  buildSatellites(d);
-
-  /* animate sticker cards */
-  requestAnimationFrame(()=>{
-    document.querySelectorAll('.ns-card').forEach((card,i)=>{
-      setTimeout(()=>{
-        card.classList.add('visible');
-        const fill=document.getElementById('nsf-'+i);
-        if (!fill) return;
-        const n=d.nutrient_breakdown?.[i];
-        if (n) {
-          // BUG FIX: proper Daily Value denominators per nutrient
-          const DV_G  = {energy:2000,calorie:2000,protein:50,carb:300,carbohydrate:300,fat:65,sugar:25,fiber:28,fibre:28,'saturated fat':20,'trans fat':2};
-          const DV_MG = {sodium:2000,iron:18,calcium:1000,potassium:3500,cholesterol:300};
-          const nm = n.name.toLowerCase();
-          let dv = 50;
-          if (n.unit==='kcal'||n.unit==='kJ') { dv=2000; }
-          else if (n.unit==='g') {
-            for (const [k,v] of Object.entries(DV_G)) { if (nm.includes(k)) { dv=v; break; } }
-          } else if (n.unit==='mg') {
-            for (const [k,v] of Object.entries(DV_MG)) { if (nm.includes(k)) { dv=v; break; } }
-          }
-          const pct=Math.min(100,Math.round(((n.value||0)/dv)*100));
-          setTimeout(()=>{fill.style.width=pct+'%';},500);
-        }
-      }, i*130);
-    });
-  });
+  document.getElementById('reveal-scroll').innerHTML = html; buildSatellites(d);
+  requestAnimationFrame(()=>{ document.querySelectorAll('.ns-card').forEach((card,i)=>{ setTimeout(()=>{ card.classList.add('visible'); const fill=document.getElementById('nsf-'+i); if(fill){ const n=d.nutrient_breakdown[i]; const dv=(n.unit==='g'?50:n.unit==='mg'?2000:100); fill.style.width=Math.min(100,(n.value/dv)*100)+'%'; fill.style.opacity='1'; } }, i*80); }); });
 }
 
-/* ingredient detail sheet */
+/* ═══════════════════════════════════════
+   NEW UI HELPERS & DERIVATIONS
+═══════════════════════════════════════ */
+function showNutrientDetail(n, rating) {
+  const overlay = document.getElementById('ing-detail-overlay'), rLabel = {good:'Safe',moderate:'Caution',caution:'Caution',bad:'Avoid'}[rating]||'Neutral', rCls = 'rf-'+(rating==='good'?'green':rating==='bad'?'red':'orange');
+  document.getElementById('ing-detail-name').textContent = n.name; document.getElementById('ing-detail-risk').className = 'ing-detail-risk ' + rCls; document.getElementById('ing-detail-risk').textContent = rLabel;
+  document.getElementById('ing-detail-what').textContent = n.description || `Extracted value: ${n.value} ${n.unit||''}. Essential for body's daily function.`;
+  document.getElementById('ing-detail-impact').textContent = n.impact || `Balanced intake helps maintain metabolic health.`;
+  document.getElementById('ing-detail-fact').textContent = `In ${state.persona} mode, we monitor this closely.`;
+  overlay.style.display = 'flex'; setTimeout(()=>overlay.classList.add('open'), 10);
+}
 function showIngDetail(ing) {
-  if (typeof ing === 'string') {
-    try { ing = JSON.parse(ing); } catch { return; }
-  }
-  const risk = ing.type?.toLowerCase();
-  const riskColor = {additive:'#FF2D78',preservative:'#FF2D78',natural:'#00A878',vitamin:'#C084FC'}[risk]||'#FF6B00';
-  const riskLabel = {additive:'Additive',preservative:'Preservative',natural:'Natural',vitamin:'Vitamin',emulsifier:'Emulsifier',seasoning:'Seasoning'}[risk]||(risk||'Ingredient');
-  document.getElementById('ing-detail-name').textContent = ing.name||'Ingredient';
-  const riskEl = document.getElementById('ing-detail-risk');
-  riskEl.style.cssText = `background:${riskColor}18;border-color:${riskColor};color:${riskColor}`;
-  riskEl.textContent = riskLabel;
-  document.getElementById('ing-detail-what').textContent = ing.what_it_is||'An ingredient found in this product.';
-  document.getElementById('ing-detail-impact').textContent = ing.health_impact||'Effects vary based on quantity consumed.';
-  document.getElementById('ing-detail-fact').textContent = ing.curiosity_fact||ing.health_impact||'Tap the Constellation Map for more details.';
-  document.getElementById('ing-detail-overlay').classList.add('open');
+  const overlay = document.getElementById('ing-detail-overlay'), t = ing.type || deriveIngredientType(ing.name), risk = (t==='additive'||t==='preservative')?'bad':(ing.safety_rating==='safe'||t==='natural')?'good':'moderate';
+  const rLabel = {good:'Safe',moderate:'Neutral',bad:'Avoid'}[risk], rCls = 'rf-'+(risk==='good'?'green':risk==='bad'?'red':'orange');
+  document.getElementById('ing-detail-name').textContent = ing.name; document.getElementById('ing-detail-risk').className = 'ing-detail-risk ' + rCls; document.getElementById('ing-detail-risk').textContent = rLabel + ' ('+t+')';
+  document.getElementById('ing-detail-what').textContent = ing.details || `Primary role is ${t}.`;
+  document.getElementById('ing-detail-impact').textContent = ing.health_impact || `Regulatory bodies consider this safe in limited quantities.`;
+  document.getElementById('ing-detail-fact').textContent = ing.fact || `Ingredients are listed in order of weight.`;
+  overlay.style.display = 'flex'; setTimeout(()=>overlay.classList.add('open'), 10);
 }
-function closeIngDetail() { document.getElementById('ing-detail-overlay').classList.remove('open'); }
+function closeIngDetail() { const o = document.getElementById('ing-detail-overlay'); o.classList.remove('open'); setTimeout(()=>o.style.display='none', 300); }
 
-/* satellites */
+function deriveNutrientRating(n, v) { const nm=n.toLowerCase(); if(nm.includes('sugar')&&v>15)return 'bad'; if(nm.includes('sodium')&&v>600)return 'bad'; if(nm.includes('fat')&&v>20)return 'caution'; if(nm.includes('protein')&&v>10)return 'good'; return 'moderate'; }
+function deriveIngredientType(n) { const nm=n.toLowerCase(); if(nm.includes('acid')||nm.includes('gum')||nm.includes('lecithin')) return 'additive'; if(nm.includes('extract')||nm.includes('flour')||nm.includes('oil')) return 'natural'; return 'seasoning'; }
+function deriveRiskFlags(d) {
+  const flags=[], nutr=d.nutrient_breakdown||[], sug=nutr.find(n=>n.name?.toLowerCase().includes('sugar'))?.value||0, sod=nutr.find(n=>n.name?.toLowerCase().includes('sodium'))?.value||0;
+  if(sug>15) flags.push({label:'High Sugar',level:'red',icon:'🍬'}); if(sod>700) flags.push({label:'High Sodium',level:'orange',icon:'🧂'}); if(d.score>=8) flags.push({label:'Clean Label',level:'green',icon:'✓'}); return flags;
+}
+
 function buildSatellites(d) {
-  const wrap=document.getElementById('sorb-wrap');
-  if (!wrap) return;
-  wrap.querySelectorAll('.orb-satellite').forEach(e=>e.remove());
-  const sats=(d.nutrient_breakdown||[]).slice(0,6).map((n,i)=>({
-    label:n.name.split(' ')[0], val:n.value+(n.unit||''),
-    color:SAT_COLORS[i%SAT_COLORS.length], bg:SAT_BG[i%SAT_BG.length],
-    desc:n.impact||`${n.name}: ${n.value}${n.unit||''} in this product.`, full:n,
-  }));
-  sats.forEach((sat,i)=>{
-    const el=document.createElement('div');
-    el.className='orb-satellite sat-'+i;
-    el.innerHTML=`<div class="sat-dot" style="background:${sat.bg}"><span style="font-size:9px;font-weight:800;color:var(--ink)">${sat.val}</span></div><div class="sat-label">${esc(sat.label)}</div>`;
-    el.onclick=()=>expandSatelliteData(sat);
+  const wrap=document.getElementById('sorb-wrap'); if(!wrap) return; wrap.querySelectorAll('.orb-satellite').forEach(e=>e.remove());
+  (d.nutrient_breakdown||[]).slice(0,6).forEach((n,i)=>{
+    const el=document.createElement('div'); el.className='orb-satellite sat-'+i; el.innerHTML=`<div class="sat-dot" style="background:${SAT_BG[i%SAT_BG.length]}"><span style="font-size:9px;font-weight:800">${n.value}</span></div><div class="sat-label">${esc(n.name.split(' ')[0])}</div>`;
+    el.onclick=()=>{ document.getElementById('se-name').textContent=n.name; document.getElementById('se-val').textContent=n.value+(n.unit||''); document.getElementById('se-desc').textContent=n.impact||n.name; document.getElementById('sat-expand').classList.add('open'); };
     wrap.appendChild(el);
   });
 }
-
-function expandSatelliteData(sat) {
-  document.getElementById('se-name').textContent=sat.full?.name||sat.label;
-  document.getElementById('se-val').textContent=sat.val;
-  document.getElementById('se-val').style.color=sat.color;
-  document.getElementById('se-desc').textContent=sat.desc;
-  document.getElementById('sat-expand').classList.add('open');
-}
-function expandSatellite(key) {
-  if (key==='summary'&&state.lastResult) {
-    document.getElementById('se-name').textContent=state.lastResult.product_name||'Product';
-    document.getElementById('se-val').textContent=state.lastResult.score+'/10';
-    document.getElementById('se-val').style.color='var(--ink)';
-    document.getElementById('se-desc').textContent=state.lastResult.summary||'';
-    document.getElementById('sat-expand').classList.add('open');
-  }
-}
+function expandSatellite(key) { if(key==='summary'&&state.lastResult){ document.getElementById('se-name').textContent=state.lastResult.product_name; document.getElementById('se-val').textContent=state.lastResult.score+'/10'; document.getElementById('se-desc').textContent=state.lastResult.summary; document.getElementById('sat-expand').classList.add('open'); } }
 function closeSatellite() { document.getElementById('sat-expand').classList.remove('open'); }
-
-function flipNutrientCard(i) {
-  const card=document.getElementById('nsc-'+i);
-  const n=state.lastResult?.nutrient_breakdown?.[i];
-  if (!card||!n) return;
-  spawnStickerPop(getNutrientIcon(n.name),card.getBoundingClientRect().left+20,card.getBoundingClientRect().top);
-  card.style.transform='scale(1.18) rotate(0deg)';
-  setTimeout(()=>{if(card.classList.contains('visible'))card.style.transform='';},500);
-  // Show a proper info bottom-sheet with explanation
-  showNutrientDetail(n);
-}
-function showNutrientDetail(n) {
-  const ratingColor = {good:'#00A878',moderate:'#F59E0B',caution:'#FF6B00',bad:'#FF2D78'}[n.rating]||'#888';
-  const ratingLabel = {good:'✓ Good level',moderate:'~ Moderate',caution:'⚠ High',bad:'✗ Concerning'}[n.rating]||(n.rating||'?');
-  const impact = n.impact || getNutrientDefaultInfo(n.name);
-  let el = document.getElementById('nutrient-detail-overlay');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'nutrient-detail-overlay';
-    el.style.cssText='position:fixed;inset:0;z-index:200;display:flex;align-items:flex-end;background:rgba(0,0,0,0.5);opacity:0;transition:opacity 0.2s';
-    el.onclick=function(e){if(e.target===el)closeNutrientDetail();};
-    document.body.appendChild(el);
-  }
-  el.innerHTML=`<div style="width:100%;background:var(--white);border-radius:20px 20px 0 0;border:2px solid var(--ink);padding:20px;max-height:55vh;overflow-y:auto">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-      <span style="font-size:2rem">${getNutrientIcon(n.name)}</span>
-      <div style="flex:1">
-        <div style="font-family:'Fraunces',serif;font-size:1.2rem;font-weight:900">${esc(n.name)}</div>
-        <div style="font-size:0.85rem;color:var(--muted)">Per 100g of this product</div>
-      </div>
-      <button onclick="closeNutrientDetail()" style="background:none;border:none;font-size:1.4rem;cursor:pointer">✕</button>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <div style="font-family:'Fraunces',serif;font-size:2.2rem;font-weight:900">${n.value}</div>
-      <div style="font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">${n.unit||''}</div>
-      <div style="margin-left:auto;background:${ratingColor}20;border:1.5px solid ${ratingColor};color:${ratingColor};padding:4px 10px;border-radius:20px;font-size:0.75rem;font-weight:800">${ratingLabel}</div>
-    </div>
-    <div style="background:var(--bg);border-radius:10px;padding:12px;font-size:0.88rem;line-height:1.5;color:var(--ink)">${esc(impact)}</div>
-  </div>`;
-  el.style.display='flex';
-  requestAnimationFrame(()=>{ el.style.opacity='1'; });
-}
-function closeNutrientDetail() {
-  const el=document.getElementById('nutrient-detail-overlay');
-  if (!el) return;
-  el.style.opacity='0';
-  setTimeout(()=>{ el.style.display='none'; },200);
-}
-function getNutrientDefaultInfo(name) {
-  const n=(name||'').toLowerCase();
-  if (n.includes('sodium')) return 'Sodium controls fluid balance. Indians consume ~11g of salt/day vs the 5g limit. High sodium raises blood pressure — a leading risk for heart disease and stroke.';
-  if (n.includes('trans fat')) return 'Trans fat raises bad cholesterol (LDL) and lowers good cholesterol (HDL) at the same time. Even 0.5g/day increases heart disease risk. WHO calls for global elimination.';
-  if (n.includes('saturated fat')) return 'Saturated fat raises LDL cholesterol. Indian diets are often already high in saturated fat from ghee, coconut oil, and dairy. Keep total daily intake under 20g.';
-  if (n.includes('sugar')||n.includes('sucrose')) return 'Added sugar provides empty calories with no nutrients. Linked to obesity, type 2 diabetes, fatty liver, and dental decay. WHO recommends less than 25g/day.';
-  if (n.includes('calorie')||n.includes('energy')) return 'Calories measure total food energy. An average Indian adult needs ~2000 kcal/day. Consistently exceeding this leads to weight gain over time.';
-  if (n.includes('protein')) return 'Protein builds and repairs muscles, organs, and immune cells. Most Indians are protein-deficient — average intake is 47g vs the 54g recommended daily for adults.';
-  if (n.includes('fiber')||n.includes('fibre')) return 'Dietary fiber feeds good gut bacteria, regulates blood sugar, and prevents constipation. Aim for 28g/day — most Indians get less than 15g.';
-  if (n.includes('carb')) return 'Carbohydrates are the body's main fuel source. Quality matters: complex carbs (whole grains, legumes) are far better than refined carbs (maida, white rice) which spike blood sugar.';
-  if (n.includes('fat') && !n.includes('saturated') && !n.includes('trans')) return 'Total fat includes both healthy unsaturated fats (nuts, seeds, olive oil) and unhealthy saturated/trans fats. The type of fat matters more than the total amount.';
-  if (n.includes('iron')) return 'Iron carries oxygen in red blood cells. India has the highest anaemia burden in the world — about 50% of women are iron-deficient. Look for ≥15% RDA per serving.';
-  if (n.includes('calcium')) return 'Calcium builds bones and teeth. Indians typically get less than 50% of their daily requirement (1000mg). Deficiency causes osteoporosis later in life.';
-  if (n.includes('potassium')) return 'Potassium balances sodium's blood pressure effects. Most processed foods are low in potassium — another reason to eat whole fruits and vegetables daily.';
-  if (n.includes('cholesterol')) return 'Dietary cholesterol has less impact than saturated/trans fat on blood cholesterol. Still, limit to under 300mg/day as part of a heart-healthy diet.';
-  return `${name} is a nutrient found in this product. Check how it contributes to your daily nutrition goals.`;
-}
-function switchInsight(e,panel) {
-  document.querySelectorAll('.itab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.insight-panel').forEach(p=>p.classList.remove('active'));
-  e.target.classList.add('active');
-  document.getElementById(panel)?.classList.add('active');
-}
-function getNutrientIcon(name) {
-  const n=name?.toLowerCase()||'';
-  if(n.includes('sodium')||n.includes('salt'))return'🧂';
-  if(n.includes('trans fat'))return'🚫';
-  if(n.includes('saturated fat'))return'🥩';
-  if(n.includes('protein'))return'💪';
-  if(n.includes('calorie')||n.includes('energy'))return'⚡';
-  if(n.includes('added sugar'))return'🍭';
-  if(n.includes('sugar'))return'🍬';
-  if(n.includes('fiber')||n.includes('fibre'))return'🌱';
-  if(n.includes('carb'))return'🌾';
-  if(n.includes('fat'))return'🫒';
-  if(n.includes('cholesterol'))return'🫀';
-  if(n.includes('iron'))return'💊';
-  if(n.includes('calcium'))return'🦴';
-  if(n.includes('potassium'))return'🍌';
-  if(n.includes('vitamin'))return'✨';
-  return'🔬';
-}
+function switchInsight(e,p) { document.querySelectorAll('.itab').forEach(t=>t.classList.remove('active')); document.querySelectorAll('.insight-panel').forEach(v=>v.classList.remove('active')); e.target.classList.add('active'); document.getElementById(p).classList.add('active'); }
+function getNutrientIcon(n) { const nm=n.toLowerCase(); return nm.includes('sodium')?'🧂':nm.includes('protein')?'💪':nm.includes('calorie')?'⚡':nm.includes('carb')?'🌾':nm.includes('fat')?'🫒':nm.includes('fiber')?'🌱':'🔬'; }
 
 /* ═══════════════════════════════════════
-   HISTORY SCREEN (FULL)
+   HISTORY & PROFILE
 ═══════════════════════════════════════ */
 function renderHistory() {
-  const allHist = getHistory();
-  const filter  = state.histFilter;
-  const now     = new Date();
-
-  // Filter history
-  const filtered = allHist.filter(h => {
-    const ts = new Date(h.ts);
-    if (filter==='today') return ts.toDateString()===now.toDateString();
-    if (filter==='week') {
-      const weekAgo=new Date(now); weekAgo.setDate(now.getDate()-7);
-      return ts>=weekAgo;
-    }
-    if (filter==='month') {
-      return ts.getMonth()===now.getMonth()&&ts.getFullYear()===now.getFullYear();
-    }
-    return true; // all
-  });
-
-  // Build streak + badges
-  const streak = getStreak();
-  const todayCals = allHist.filter(h=>new Date(h.ts).toDateString()===now.toDateString())
-    .reduce((s,h)=>{
-      const cal=(h.data?.nutrient_breakdown||[]).find(n=>n.name?.toLowerCase().includes('calorie'));
-      return s+(cal?.value||0);
-    },0);
-  const profile=getProfile();
-  const tdee=computeTDEE(profile)||2000;
-
-  let html='';
-
-  /* streak card */
-  html+=`<div class="streak-card">
-    <div><div class="streak-num">🔥${streak.count}</div></div>
-    <div><div class="streak-text">Day Streak</div><div class="streak-label">${streak.count===1?'Keep it up!':streak.count>=7?'On fire!':'Stay consistent'}</div></div>
-    <div style="margin-left:auto;text-align:right">
-      <div style="font-family:'Fraunces',serif;font-weight:900;font-size:1.1rem">${allHist.length}</div>
-      <div style="font-size:8px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Total Scans</div>
-    </div>
-  </div>`;
-
-  /* daily summary */
-  if (todayCals>0) {
-    const calPct=Math.min(100,Math.round(todayCals/tdee*100));
-    html+=`<div class="daily-banner">
-      <div class="db-title">Today — ${todayCals} kcal logged</div>
-      <div class="db-macros">
-        <div class="db-macro"><div class="db-macro-val">${todayCals}</div><div class="db-macro-label">Calories</div></div>
-        <div class="db-macro"><div class="db-macro-val">${tdee}</div><div class="db-macro-label">Target</div></div>
-        <div class="db-macro"><div class="db-macro-val">${Math.max(0,tdee-todayCals)}</div><div class="db-macro-label">Remaining</div></div>
-      </div>
-      <div class="db-progress-bar"><div class="db-progress-fill" style="width:${calPct}%;background:${calPct>100?'var(--red)':calPct>75?'var(--orange)':'var(--yellow)'}"></div></div>
-    </div>`;
-  }
-
-  /* badges */
-  const badges = computeBadges(allHist, streak);
-  if (badges.length) {
-    html+=`<div class="section-label">Achievements</div>
-    <div class="badges-row">`;
-    badges.forEach(b=>{
-      html+=`<div class="badge" onclick="showToast('${b.locked?'🔒 '+b.cond:'🎉 '+b.name+' unlocked!'}')" title="${b.cond}">
-        <div class="badge-icon${b.locked?' locked':''}" style="${b.locked?'':'background:'+b.color}">${b.icon}</div>
-        <div class="badge-name">${b.name}</div>
-      </div>`;
-    });
-    html+=`</div>`;
-  }
-
-  /* filter tabs */
-  html+=`<div class="hist-filter-row">
-    ${['today','week','month','all'].map(f=>`<button class="hf-btn${state.histFilter===f?' active':''}" onclick="setHistFilter('${f}')">${{today:'Today',week:'Week',month:'Month',all:'All'}[f]}</button>`).join('')}
-  </div>`;
-
-  /* list */
-  if (!filtered.length) {
-    html+=`<div class="hist-empty">
-      <div class="hist-empty-icon">${filter==='today'?'🌱':'📋'}</div>
-      ${filter==='today'?'No scans today.<br>Use the Portal to log your first meal!':'No scans in this period.'}
-    </div>`;
-  } else {
-    // Group by date
-    const grouped={};
+  const all=getHistory(), f=state.histFilter, now=new Date(), filtered=all.filter(h=>{ const ts=new Date(h.ts); if(f==='today') return ts.toDateString()===now.toDateString(); if(f==='week'){const w=new Date();w.setDate(w.getDate()-7);return ts>=w;} return true; });
+  const streak=getStreak(), todayCals=all.filter(h=>new Date(h.ts).toDateString()===now.toDateString()).reduce((s,h)=>{const c=(h.data?.nutrient_breakdown||[]).find(n=>n.name?.toLowerCase().includes('calorie')); return s+(c?.value||0);},0);
+  const profile=getProfile(), tdee=computeTDEE(profile)||2000;
+  let html=`<div class="streak-card"><div><div class="streak-num">🔥${streak.count}</div></div><div><div class="streak-text">Day Streak</div></div><div style="margin-left:auto;text-align:right"><div style="font-family:'Fraunces',serif;font-weight:900;font-size:1.1rem">${all.length}</div><div style="font-size:8px;font-weight:800;text-transform:uppercase">Total Scans</div></div></div>`;
+  if(todayCals>0){ const pct=Math.min(100,Math.round(todayCals/tdee*100)); html+=`<div class="daily-banner"><div class="db-title">Today — ${todayCals} kcal</div><div class="db-macros"><div class="db-macro"><div class="db-macro-val">${todayCals}</div><div class="db-macro-label">Cal</div></div><div class="db-macro"><div class="db-macro-val">${tdee}</div><div class="db-macro-label">Goal</div></div></div><div class="db-progress-bar"><div class="db-progress-fill" style="width:${pct}%;background:${pct>100?'var(--red)':'var(--mint)'}"></div></div></div>`; }
+  html+=`<div class="hist-filter-row">${['today','week','all'].map(x=>`<button class="hf-btn${f===x?' active':''}" onclick="setHistFilter('${x}')">${x.toUpperCase()}</button>`).join('')}</div>`;
+  if(!filtered.length) html+=`<div class="hist-empty">🌱 No scans yet</div>`;
+  else {
     filtered.forEach(h=>{
-      const key=new Date(h.ts).toDateString();
-      if(!grouped[key]) grouped[key]=[];
-      grouped[key].push(h);
-    });
-    Object.entries(grouped).forEach(([dateStr,items])=>{
-      const label=dateStr===now.toDateString()?'Today':new Date(dateStr).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
-      html+=`<div class="hist-date-header">${label}</div>`;
-      items.forEach(h=>{
-        const score=h.score||0;
-        const scoreColor=score>=7?'var(--mint)':score>=4?'var(--orange)':'var(--red)';
-        const scoreBg=score>=7?'#C0FFE8':score>=4?'#FFE8C0':'#FFE0EC';
-        const time=new Date(h.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
-        const cal=(h.data?.nutrient_breakdown||[]).find(n=>n.name?.toLowerCase().includes('calorie'));
-        const calStr=cal?cal.value+'kcal':'—';
-        html+=`<div class="hist-item" onclick="replayHistoryItem('${h.id}')">
-          ${h.thumb
-            ?`<img class="hist-thumb" src="${h.thumb}" alt="">`
-            :`<div class="hist-thumb-placeholder">${h.is_voice?'🎤':h.is_barcode?'▦':'🌿'}</div>`}
-          <div class="hist-info">
-            <div class="hist-name">${esc(h.product_name)}</div>
-            <div class="hist-meta">${time} · ${esc(h.category)||'Food'} · ${calStr}</div>
-            <div class="hist-verdict">${esc(h.verdict)}</div>
-          </div>
-          <div class="hist-score-badge" style="background:${scoreBg};border-color:${scoreColor};color:${scoreColor}">${score}</div>
-        </div>`;
-      });
+      const score=h.score||0, color=score>=7?'var(--mint)':score>=4?'var(--orange)':'var(--red)';
+      html+=`<div class="hist-item" onclick="replayHistoryItem('${h.id}')"><div class="hist-info"><div class="hist-name">${esc(h.product_name)}</div><div class="hist-meta">${new Date(h.ts).toLocaleTimeString()} · ${esc(h.verdict)}</div></div><div class="hist-score-badge" style="color:${color};border-color:${color}">${score}</div></div>`;
     });
   }
-
   document.getElementById('history-scroll').innerHTML=html;
 }
+function setHistFilter(f){ state.histFilter=f; renderHistory(); }
+function replayHistoryItem(id){ const item=getHistory().find(h=>String(h.id)===String(id)); if(item){ state.lastResult=item.data; renderReveal(item.data); goTo('reveal'); } }
+function getHistory(){ try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');}catch{return[];} }
+function saveHistory(res, thumb){ const h=getHistory(); h.unshift({id:Date.now(), ts:new Date().toISOString(), product_name:res.product_name, score:res.score, verdict:res.verdict, data:res}); if(h.length>50)h.pop(); localStorage.setItem(HISTORY_KEY,JSON.stringify(h)); }
+function clearHistory(){ if(confirm('Clear history?')){ localStorage.removeItem(HISTORY_KEY); renderHistory(); } }
 
-function setHistFilter(f) { state.histFilter=f; renderHistory(); }
+function getStreak() { try{return JSON.parse(localStorage.getItem(STREAK_KEY)||'{"count":0,"lastDate":""}');}catch{return {count:0, lastDate:''};} }
+function updateStreak() { const s=getStreak(), t=new Date().toDateString(); if(s.lastDate===t)return; s.count=(s.lastDate===new Date(Date.now()-864e5).toDateString()?s.count+1:1); s.count = s.count || 1; s.lastDate=t; localStorage.setItem(STREAK_KEY,JSON.stringify(s)); }
 
-function replayHistoryItem(id) {
-  const item=getHistory().find(h=>String(h.id)===String(id));
-  if (!item) return;
-  state.lastResult=item.data;
-  buildConstellationData(item.data);
-  renderReveal(item.data);
-  goTo('reveal');
-}
-
-function computeBadges(hist, streak) {
-  return [
-    {icon:'🌱',name:'First Scan',color:'#C0FFE8',cond:'Complete your first scan',locked:hist.length<1},
-    {icon:'🔥',name:'3-Day Streak',color:'#FFE8C0',cond:'Scan 3 days in a row',locked:streak.count<3},
-    {icon:'🏆',name:'10 Scans',color:'#FFF8C0',cond:'Complete 10 total scans',locked:hist.length<10},
-    {icon:'💯',name:'Perfect Score',color:'#C0FFE8',cond:'Get a 10/10 scan',locked:!hist.some(h=>h.score>=10)},
-    {icon:'🥗',name:'Clean Eater',color:'#C0FFE8',cond:'Get 5 scans scoring 8+',locked:hist.filter(h=>h.score>=8).length<5},
-    {icon:'🔬',name:'Scientist',color:'#F0C0FF',cond:'View 5 constellation maps',locked:false},
-    {icon:'🌍',name:'Multilingual',color:'#C8D8FF',cond:'Scan in another language',locked:hist.every(h=>!h.language||h.language==='en')},
-  ];
-}
+function getProfile() { try{return JSON.parse(localStorage.getItem(PROFILE_KEY)||'{}');}catch{return {};} }
+function computeTDEE(p) { if(!p.weight||!p.height||!p.age)return 2000; let bmr=10*p.weight+6.25*p.height-5*p.age+(p.gender==='male'?5:-161); return Math.round(bmr*1.5); }
+function renderProfile() { const p=getProfile(); if(p.name) document.getElementById('pf-name').value=p.name; if(p.weight) document.getElementById('pf-weight').value=p.weight; }
+function saveProfile() { const name=document.getElementById('pf-name').value, weight=parseFloat(document.getElementById('pf-weight').value), p={name,weight}; localStorage.setItem(PROFILE_KEY,JSON.stringify(p)); showToast('✓ Profile saved'); }
 
 /* ═══════════════════════════════════════
-   STREAK ENGINE
+   UTILS & INIT
 ═══════════════════════════════════════ */
-function getStreak() {
-  try { return JSON.parse(localStorage.getItem(STREAK_KEY)||'{"count":0,"lastDate":""}'); } catch { return {count:0,lastDate:''}; }
-}
-function updateStreak() {
-  const streak=getStreak();
-  const today=new Date().toDateString();
-  if (streak.lastDate===today) return; // already counted today
-  const yesterday=new Date(); yesterday.setDate(yesterday.getDate()-1);
-  if (streak.lastDate===yesterday.toDateString()) {
-    streak.count++; // consecutive
-  } else {
-    streak.count=1; // reset
-  }
-  streak.lastDate=today;
-  localStorage.setItem(STREAK_KEY, JSON.stringify(streak));
-  if (streak.count===3||streak.count===7||streak.count===14||streak.count===30) {
-    spawnConfetti(window.innerWidth/2, window.innerHeight/2);
-    showToast('🔥 '+streak.count+'-day streak! Keep it up!');spawnConfetti(window.innerWidth/2,window.innerHeight/2);
-  }
-}
-
-/* ═══════════════════════════════════════
-   DAILY INTAKE TRACKER
-═══════════════════════════════════════ */
-function updateDailyIntake() {
-  var hist=getHistory(), todayStr=new Date().toDateString();
-  var todayScans=hist.filter(function(h){return new Date(h.ts).toDateString()===todayStr&&h.data;});
-  var bar=document.getElementById('daily-intake-bar');
-  if(!bar)return;
-  if(todayScans.length===0){bar.style.display='none';return;}
-  bar.style.display='block';
-  var totalCal=0,totalPro=0,totalCarb=0,totalFat=0;
-  todayScans.forEach(function(s){
-    var nb=s.data&&s.data.nutrient_breakdown?s.data.nutrient_breakdown:[];
-    function get(kw){var n=nb.find(function(x){return x.name&&x.name.toLowerCase().includes(kw);});return parseFloat(n&&n.value||0);}
-    totalCal+=get('energy')||get('calorie');
-    totalPro+=get('protein');
-    totalCarb+=get('carb');
-    totalFat+=get('total fat')||get('fat');
-  });
-  var profile=getProfile(),tdee=computeTDEE(profile)||2000;
-  var calPct=Math.min(100,Math.round((totalCal/tdee)*100));
-  var calBarColor=calPct>90?'#FF2D78':calPct>70?'#F59E0B':'#00A878';
-  document.getElementById('dm-cal').textContent=Math.round(totalCal);
-  document.getElementById('dm-pro').textContent=Math.round(totalPro)+'g';
-  document.getElementById('dm-carb').textContent=Math.round(totalCarb)+'g';
-  document.getElementById('dm-fat').textContent=Math.round(totalFat)+'g';
-  document.getElementById('dm-cal-pct').textContent=calPct+'% of '+Math.round(tdee)+' kcal';
-  var bar2=document.getElementById('dm-cal-bar');
-  if(bar2){bar2.style.width=calPct+'%';bar2.style.background=calBarColor;}
-  var sc=document.getElementById('daily-scan-count');
-  if(sc)sc.textContent=todayScans.length+' scan'+(todayScans.length!==1?'s':'')+' today';
-}
-
-/* ═══════════════════════════════════════
-   WEEKLY REPORT CARD
-═══════════════════════════════════════ */
-function showWeeklyReport() {
-  var hist=getHistory(),now=new Date(),weekAgo=new Date(now);
-  weekAgo.setDate(now.getDate()-6);
-  var weekScans=hist.filter(function(h){return new Date(h.ts)>=weekAgo&&h.data;});
-  if(weekScans.length===0){showToast('Scan food labels this week to see your report!');return;}
-  var avgScore=(weekScans.reduce(function(s,h){return s+(h.score||0);},0)/weekScans.length).toFixed(1);
-  var good=0,ok=0,bad=0;
-  weekScans.forEach(function(h){if((h.score||0)>=7)good++;else if((h.score||0)>=4)ok++;else bad++;});
-  function countHigh(kw,limit){return weekScans.filter(function(h){var n=(h.data&&h.data.nutrient_breakdown||[]).find(function(x){return x.name&&x.name.toLowerCase().includes(kw);});return(n&&n.value||0)>limit;}).length;}
-  var sodiumHigh=countHigh('sodium',700),sugarHigh=countHigh('sugar',15),transHigh=countHigh('trans',0.5);
-  var bestScan=weekScans.reduce(function(a,b){return(a.score||0)>(b.score||0)?a:b;},weekScans[0]);
-  var worstScan=weekScans.reduce(function(a,b){return(a.score||0)<(b.score||0)?a:b;},weekScans[0]);
-  var half=Math.ceil(weekScans.length/2);
-  var firstAvg=weekScans.slice(half).reduce(function(s,h){return s+(h.score||0);},0)/Math.max(weekScans.slice(half).length,1);
-  var secondAvg=weekScans.slice(0,half).reduce(function(s,h){return s+(h.score||0);},0)/Math.max(weekScans.slice(0,half).length,1);
-  var trend=secondAvg>firstAvg+0.5?'📈 Improving':secondAvg<firstAvg-0.5?'📉 Declining':'➡ Steady';
-  var gradeColor=avgScore>=7?'#00A878':avgScore>=4?'#F59E0B':'#FF2D78';
-  var grade=avgScore>=8?'A':avgScore>=7?'B':avgScore>=5?'C':avgScore>=3?'D':'F';
-  var el=document.getElementById('weekly-report-overlay');
-  if(!el){el=document.createElement('div');el.id='weekly-report-overlay';el.style.cssText='position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.6);overflow-y:auto;padding:16px';document.body.appendChild(el);}
-  el.innerHTML='<div style="max-width:400px;margin:0 auto;background:var(--white);border:2.5px solid var(--ink);border-radius:18px;overflow:hidden"><div style="background:'+gradeColor+';padding:20px;display:flex;align-items:center;gap:16px"><div style="width:70px;height:70px;border-radius:50%;background:white;border:3px solid rgba(0,0,0,0.2);display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-family:Fraunces,serif;font-weight:900;font-size:2rem;color:'+gradeColor+';line-height:1">'+grade+'</div></div><div style="color:white"><div style="font-family:Fraunces,serif;font-weight:900;font-size:1.2rem">Weekly Report</div><div style="font-size:0.85rem;opacity:0.9">'+weekScans.length+' products scanned &middot; avg '+avgScore+'/10</div><div style="font-size:0.8rem;opacity:0.8;margin-top:2px">'+trend+'</div></div><button onclick="document.getElementById('weekly-report-overlay').style.display='none'" style="margin-left:auto;background:rgba(255,255,255,0.3);border:none;color:white;width:32px;height:32px;border-radius:50%;font-size:1rem;cursor:pointer;flex-shrink:0">&#x2715;</button></div><div style="padding:16px;border-bottom:1px solid var(--bg)"><div style="font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px">Score Breakdown</div><div style="display:flex;gap:8px"><div style="flex:1;text-align:center;background:#00A87822;border:1.5px solid #00A878;border-radius:10px;padding:10px"><div style="font-family:Fraunces,serif;font-size:1.6rem;font-weight:900;color:#00A878">'+good+'</div><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#00A878">&#x2713; Good<br>7-10</div></div><div style="flex:1;text-align:center;background:#F59E0B22;border:1.5px solid #F59E0B;border-radius:10px;padding:10px"><div style="font-family:Fraunces,serif;font-size:1.6rem;font-weight:900;color:#F59E0B">'+ok+'</div><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#F59E0B">~ OK<br>4-6</div></div><div style="flex:1;text-align:center;background:#FF2D7822;border:1.5px solid #FF2D78;border-radius:10px;padding:10px"><div style="font-family:Fraunces,serif;font-size:1.6rem;font-weight:900;color:#FF2D78">'+bad+'</div><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#FF2D78">&#x2717; Avoid<br>1-3</div></div></div></div>'
-  +'<div style="padding:16px;border-bottom:1px solid var(--bg)"><div style="font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px">Nutrient Alerts</div>'
-  +(sodiumHigh>0?'<div style="display:flex;align-items:center;gap:10px;padding:8px;background:#FF6B0015;border-radius:8px;margin-bottom:6px"><span>&#x1F9C2;</span><div><strong>'+sodiumHigh+' product'+(sodiumHigh!==1?'s':'')+'</strong> had high sodium (&gt;700mg/100g)</div></div>':'')
-  +(sugarHigh>0?'<div style="display:flex;align-items:center;gap:10px;padding:8px;background:#FF2D7815;border-radius:8px;margin-bottom:6px"><span>&#x1F36C;</span><div><strong>'+sugarHigh+' product'+(sugarHigh!==1?'s':'')+'</strong> had high sugar (&gt;15g/100g)</div></div>':'')
-  +(transHigh>0?'<div style="display:flex;align-items:center;gap:10px;padding:8px;background:#FF2D7815;border-radius:8px;margin-bottom:6px"><span>&#x1F6AB;</span><div><strong>'+transHigh+' product'+(transHigh!==1?'s':'')+'</strong> contained significant trans fat</div></div>':'')
-  +(sodiumHigh===0&&sugarHigh===0&&transHigh===0?'<div style="color:#00A878;font-weight:700">&#x1F389; No major alerts this week!</div>':'')
-  +'</div><div style="padding:16px;border-bottom:1px solid var(--bg)"><div style="font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px">Highlights</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div style="background:#00A87815;border:1.5px solid #00A87866;border-radius:10px;padding:10px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#00A878;margin-bottom:4px">&#x1F3C6; Best Choice</div><div style="font-weight:800;font-size:0.85rem;line-height:1.3">'+esc(bestScan.product_name||'')+'</div><div style="font-family:Fraunces,serif;font-weight:900;color:#00A878">'+(bestScan.score||0)+'/10</div></div><div style="background:#FF2D7815;border:1.5px solid #FF2D7866;border-radius:10px;padding:10px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#FF2D78;margin-bottom:4px">&#x26A0; Avoid Again</div><div style="font-weight:800;font-size:0.85rem;line-height:1.3">'+esc(worstScan.product_name||'')+'</div><div style="font-family:Fraunces,serif;font-weight:900;color:#FF2D78">'+(worstScan.score||0)+'/10</div></div></div></div>'
-  +'<div style="padding:16px"><div style="font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">Advice</div><div style="font-size:0.88rem;line-height:1.6">'
-  +(sodiumHigh>=2?'&#x1F9C2; <strong>Cut sodium.</strong> You chose high-sodium products '+sodiumHigh+' times this week.<br><br>':'')
-  +(sugarHigh>=2?'&#x1F36C; <strong>Watch added sugar.</strong> Look for products with &lt;5g sugar/100g.<br><br>':'')
-  +(avgScore>=7?'&#x1F389; <strong>Great week!</strong> Avg '+avgScore+'/10. Keep scanning before you buy.':'')
-  +(avgScore<7&&avgScore>=4?'&#x1F4A1; <strong>Room to improve.</strong> Avg '+avgScore+'/10. Try one green-scored (7+) product/day.':'')
-  +(avgScore<4?'&#x1F6A8; <strong>High-risk choices.</strong> Avg '+avgScore+'/10. Replace one bad product per day.':'')
-  +'</div></div></div>';
-  el.style.display='block';
-}
-
-function showShareCard(d) {
-  var score=d.score||0;
-  var scoreColor=score>=7?'#00A878':score>=4?'#F59E0B':'#FF2D78';
-  var bg=score>=7?'#C0FFE8':score>=4?'#FFF8C0':'#FFE0EC';
-  var topNutrients=(d.nutrient_breakdown||[]).slice(0,3).map(function(n){
-    return '<div style="text-align:center"><div style="font-weight:900;font-size:1.1rem">'+n.value+'<small style="font-size:0.6em">'+(n.unit||'')+'</small></div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;opacity:0.7">'+n.name.replace('of which ','').replace('Total ','').substring(0,8)+'</div></div>';
-  }).join('');
-  var el=document.getElementById('share-card-overlay');
-  if(!el){el=document.createElement('div');el.id='share-card-overlay';el.style.cssText='position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);padding:20px';el.onclick=function(e){if(e.target===el)el.style.display='none';};document.body.appendChild(el);}
-  el.innerHTML='<div style="width:100%;max-width:340px"><div style="background:'+bg+';border:2.5px solid #0a0a0a;border-radius:18px;padding:22px;font-family:Fraunces,serif"><div style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#0a0a0a88;margin-bottom:8px">EATLYTIC &middot; FOOD REPORT</div><div style="font-weight:900;font-size:1.25rem;margin-bottom:4px;line-height:1.2">'+esc(d.product_name||'Food Product')+'</div><div style="font-size:0.78rem;color:#0a0a0a99;margin-bottom:16px">'+esc(d.product_category||'')+'</div><div style="display:flex;align-items:center;gap:16px;margin-bottom:16px"><div style="width:80px;height:80px;border-radius:50%;border:3px solid '+scoreColor+';background:white;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-weight:900;font-size:2rem;color:'+scoreColor+';line-height:1">'+score+'</div><div style="font-size:10px;font-weight:800;color:#0a0a0a66">/10</div></div><div><div style="font-weight:900;font-size:1rem;margin-bottom:4px">'+esc(d.verdict||'')+'</div><div style="font-size:0.8rem;line-height:1.4;color:#0a0a0aaa">'+esc((d.summary||'').substring(0,120))+'&hellip;</div></div></div>'
-  +(topNutrients?'<div style="display:flex;gap:12px;justify-content:space-around;background:white;border-radius:12px;border:1.5px solid #0a0a0a22;padding:10px 6px;margin-bottom:14px">'+topNutrients+'</div>':'')
-  +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'
-  +(d.cons||[]).slice(0,2).map(function(c){return'<div style="background:#FF2D7822;border:1px solid #FF2D7888;border-radius:20px;padding:3px 10px;font-size:10px;font-weight:700;color:#cc1155">&#x26A0; '+esc(c.substring(0,35))+'</div>';}).join('')
-  +(d.pros||[]).slice(0,1).map(function(p){return'<div style="background:#00A87822;border:1px solid #00A87888;border-radius:20px;padding:3px 10px;font-size:10px;font-weight:700;color:#007755">&#x2713; '+esc(p.substring(0,35))+'</div>';}).join('')
-  +'</div><div style="font-size:9px;color:#0a0a0a55;font-family:Space Mono,monospace">eatlytic.app &middot; Know what you eat</div></div>'
-  +'<div style="display:flex;gap:10px;margin-top:12px"><button onclick="copyShareText()" style="flex:1;background:white;border:2px solid #0a0a0a;border-radius:10px;padding:11px;font-weight:800;font-size:13px;cursor:pointer">&#x1F4CB; Copy text</button><button onclick="nativeShare()" style="flex:1;background:#0a0a0a;color:white;border:2px solid #0a0a0a;border-radius:10px;padding:11px;font-weight:800;font-size:13px;cursor:pointer">&#x1F4E4; Share</button><button onclick="document.getElementById('share-card-overlay').style.display='none'" style="background:none;border:2px solid #0a0a0a66;border-radius:10px;padding:11px;font-weight:800;font-size:13px;cursor:pointer">&#x2715;</button></div></div>';
-  el.style.display='flex';
-}
-
-function copyShareText(){
-  var d=state.lastResult||{};
-  var pros=(d.pros||[]).slice(0,2).map(function(p){return'+ '+p;}).join('\n');
-  var cons=(d.cons||[]).slice(0,2).map(function(c){return'- '+c;}).join('\n');
-  var text='Eatlytic Report: '+esc(d.product_name||'')+' | Score: '+(d.score||0)+'/10 — '+(d.verdict||'')+'\n\n'+(d.summary||'')+'\n\n'+pros+'\n'+cons+'\n\nScan yours @ eatlytic.app';
-  navigator.clipboard.writeText(text).then(function(){showToast('Copied to clipboard!');}).catch(function(){showToast('Copy failed');});
-}
-async function nativeShare(){
-  var d=state.lastResult||{};
-  var text='Eatlytic: '+(d.product_name||'Food')+' scored '+(d.score||0)+'/10 — '+(d.verdict||'')+'. '+(d.summary||'')+' Check yours @ eatlytic.app';
-  try{if(navigator.share)await navigator.share({title:'Eatlytic Food Report',text:text});else copyShareText();}catch(e){copyShareText();}
-}
-
-/* ═══════════════════════════════════════
-   PROFILE SCREEN
-═══════════════════════════════════════ */
-function getProfile() {
-  try { return JSON.parse(localStorage.getItem(PROFILE_KEY)||'{}'); } catch { return {}; }
-}
-
-function renderProfile() {
-  const p=getProfile();
-  if (p.name) {
-    document.getElementById('pf-name').value=p.name;
-    document.getElementById('profile-name-disp').textContent=p.name;
-    const avatars=['🌿','🥦','🍎','🥗','💪','🌱','🥑','🍊'];
-    document.getElementById('profile-avatar').textContent=avatars[p.name.charCodeAt(0)%avatars.length];
-  }
-  if (p.age)    document.getElementById('pf-age').value=p.age;
-  if (p.weight) document.getElementById('pf-weight').value=p.weight;
-  if (p.height) document.getElementById('pf-height').value=p.height;
-  if (p.gender) document.getElementById('pf-gender').value=p.gender;
-  if (p.activity) document.getElementById('pf-activity').value=p.activity;
-  if (p.goal) {
-    document.querySelectorAll('#goal-row .chip').forEach(c=>c.classList.toggle('active',c.dataset.goal===p.goal));
-  }
-  if (p.tdee) {
-    showTDEE(p.tdee, p.goal);
-    updateProgressRings(p.tdee, p.goal);
-  }
-}
-
-function computeTDEE(p) {
-  if (!p.weight||!p.height||!p.age||!p.gender) return null;
-  // Mifflin-St Jeor
-  let bmr;
-  if (p.gender==='male') bmr=10*p.weight+6.25*p.height-5*p.age+5;
-  else bmr=10*p.weight+6.25*p.height-5*p.age-161;
-  const pal=parseFloat(p.activity||1.55);
-  const tdee=Math.round(bmr*pal);
-  const adj={lose:-500,maintain:0,gain:+300};
-  return tdee+(adj[p.goal||'maintain']||0);
-}
-
-function showTDEE(tdee, goal) {
-  document.getElementById('tdee-card').style.display='';
-  document.getElementById('macro-targets').style.display='';
-  document.getElementById('today-progress').style.display='';
-  document.getElementById('tdee-val').textContent=tdee+' kcal';
-  document.getElementById('tdee-sub').textContent={lose:'Weight loss target',maintain:'Maintenance target',gain:'Muscle building target'}[goal]||'Daily target';
-  // Macro split
-  const prot=Math.round((tdee*0.30)/4);
-  const fat =Math.round((tdee*0.28)/9);
-  const carb=Math.round((tdee*0.42)/4);
-  document.getElementById('mt-protein').textContent=prot+'g';
-  document.getElementById('mt-carbs').textContent=carb+'g';
-  document.getElementById('mt-fat').textContent=fat+'g';
-}
-
-function updateProgressRings(tdee, goal) {
-  const today = new Date().toDateString();
-  const hist  = getHistory().filter(h=>new Date(h.ts).toDateString()===today);
-  let totCal=0,totProt=0,totCarb=0,totFat=0;
-  hist.forEach(h=>{
-    const n=h.data?.nutrient_breakdown||[];
-    totCal +=(n.find(x=>x.name?.toLowerCase().includes('calorie'))?.value||0);
-    totProt+=(n.find(x=>x.name?.toLowerCase().includes('protein'))?.value||0);
-    totCarb+=(n.find(x=>x.name?.toLowerCase().includes('carb'))?.value||0);
-    totFat +=(n.find(x=>x.name?.toLowerCase().includes('fat'))?.value||0);
-  });
-  const prot=Math.round((tdee*0.30)/4);
-  const fat =Math.round((tdee*0.28)/9);
-  const carb=Math.round((tdee*0.42)/4);
-  setRing('ring-cal',  totCal,  tdee, totCal+'',     '#FFD600');
-  setRing('ring-prot', totProt, prot, totProt+'g',   '#FF2D78');
-  setRing('ring-carb', totCarb, carb, totCarb+'g',   '#0047FF');
-  setRing('ring-fat',  totFat,  fat,  totFat+'g',    '#FF6B00');
-}
-
-function setRing(id,val,max,label,color) {
-  const circ=141.4;
-  const pct =Math.min(1, val/(max||1));
-  const offset=circ-(pct*circ);
-  const el=document.getElementById(id);
-  if (el) el.style.strokeDashoffset=offset;
-  const txt=document.getElementById(id+'-text');
-  if (txt) { txt.textContent=label; txt.style.color=pct>0.9?'var(--red)':pct>0.7?'var(--orange)':color; }
-}
-
-function saveProfile() {
-  const name     = document.getElementById('pf-name').value.trim();
-  const age      = parseFloat(document.getElementById('pf-age').value)||0;
-  const weight   = parseFloat(document.getElementById('pf-weight').value)||0;
-  const height   = parseFloat(document.getElementById('pf-height').value)||0;
-  const gender   = document.getElementById('pf-gender').value;
-  const activity = document.getElementById('pf-activity').value;
-  const goal     = document.querySelector('#goal-row .chip.active')?.dataset.goal||'maintain';
-  const p        = {name,age,weight,height,gender,activity,goal};
-  const tdee     = computeTDEE(p);
-  if (tdee) p.tdee=tdee;
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
-  if (name) { document.getElementById('profile-name-disp').textContent=name; }
-  if (tdee) { showTDEE(tdee,goal); updateProgressRings(tdee,goal); }
-  spawnConfetti(window.innerWidth/2,200);
-  showToast('✓ Profile saved — target: '+(tdee||'?')+' kcal');
-}
-
-/* ═══════════════════════════════════════
-   CONSTELLATION MAP
-═══════════════════════════════════════ */
-function buildConstellationData(data) {
-  const colorMap={natural:'#00C896',seasoning:'#C8A800',additive:'#FF2D78',
-    preservative:'#FF2D78',vitamin:'#C084FC',emulsifier:'#0047FF',flavour:'#FF6B00'};
-  state.conIngredients=(data.ingredients_spotlight||[]).map(ing=>{
-    const type=ing.type?.toLowerCase()||'natural';
-    return {name:ing.name,type,color:colorMap[type]||'#0047FF',
-      size:10+Math.random()*8,x:0.08+Math.random()*0.84,y:0.08+Math.random()*0.84,
-      desc:ing.health_impact||ing.what_it_is||'Ingredient in this product.',
-      what:ing.what_it_is||'',fact:ing.curiosity_fact||''};
-  });
-  if (!state.conIngredients.length) buildDemoConstellation();
-}
-
-function buildDemoConstellation() {
-  state.conIngredients=[
-    {name:'Wheat flour',type:'natural',color:'#00C896',size:14,x:0.18,y:0.22,desc:'Refined wheat, low fibre, high GI.',what:'Refined wheat flour used as the primary structural base.',fact:'A single wheat grain contains 22+ nutrients, almost all removed during refining.'},
-    {name:'Palm oil',type:'natural',color:'#C8A800',size:10,x:0.28,y:0.15,desc:'Vegetable oil, high saturated fats.',what:'Vegetable fat extracted from palm fruit.',fact:'Palm oil is 50% saturated fat — higher than lard.'},
-    {name:'Salt',type:'seasoning',color:'#C8A800',size:9,x:0.22,y:0.38,desc:'Sodium chloride, high sodium.',what:'Sodium chloride used as a preservative and flavour enhancer.',fact:'Excess sodium displaces potassium, raising blood pressure over time.'},
-    {name:'MSG (INS 621)',type:'additive',color:'#FF2D78',size:13,x:0.52,y:0.72,desc:'Flavour enhancer, causes sensitivity in some.',what:'Monosodium glutamate — the sodium salt of glutamic acid.',fact:'MSG occurs naturally in tomatoes and parmesan cheese at much lower levels.'},
-    {name:'INS 211',type:'preservative',color:'#FF2D78',size:10,x:0.62,y:0.80,desc:'Sodium benzoate, hyperactivity link in children.',what:'A preservative that prevents mould and bacteria growth.',fact:'INS 211 can convert to benzene (a carcinogen) in presence of vitamin C.'},
-    {name:'Tartrazine E102',type:'additive',color:'#FF2D78',size:11,x:0.72,y:0.70,desc:'Yellow dye, banned in some countries.',what:'A synthetic yellow azo dye used for colouring.',fact:'Tartrazine is banned in Norway and Austria; triggers reactions in 1 in 10,000 people.'},
-    {name:'Niacin (B3)',type:'vitamin',color:'#C084FC',size:8,x:0.72,y:0.18,desc:'Supports energy metabolism.',what:'Water-soluble vitamin added as flour fortification.',fact:'Niacin was added to flour in 1941 to combat pellagra, eliminating the disease in the US.'},
-    {name:'Thiamine (B1)',type:'vitamin',color:'#C084FC',size:7,x:0.80,y:0.28,desc:'Carbohydrate metabolism vitamin.',what:'B-vitamin essential for converting carbohydrates to energy.',fact:'A severe thiamine deficiency causes beriberi — a disease that killed millions before rice enrichment.'},
-  ];
-}
-
-let conCanvas,conCtx,conW,conH,hoveredIngr=-1;
-
-function initConstellation() {
-  conCanvas=document.getElementById('constellation-canvas');
-  if (!conCanvas) return;
-  conW=conCanvas.offsetWidth; conH=conCanvas.offsetHeight;
-  conCanvas.width=conW; conCanvas.height=conH;
-  conCtx=conCanvas.getContext('2d');
-  if (!state.lastResult) buildDemoConstellation();
-  drawConstellation();
-  conCanvas.onmousemove=e=>{
-    const r=conCanvas.getBoundingClientRect();
-    const idx=nearestIngr(e.clientX-r.left,e.clientY-r.top);
-    if(idx!==hoveredIngr){hoveredIngr=idx;drawConstellation();}
-  };
-  conCanvas.ontouchmove=e=>{
-    e.preventDefault();
-    const r=conCanvas.getBoundingClientRect();
-    const t=e.touches[0];
-    const idx=nearestIngr(t.clientX-r.left,t.clientY-r.top);
-    if(idx!==hoveredIngr){hoveredIngr=idx;drawConstellation();}
-  };
-  conCanvas.onclick=e=>{
-    const r=conCanvas.getBoundingClientRect();
-    const idx=nearestIngr(e.clientX-r.left,e.clientY-r.top);
-    if(idx>=0) { showConTooltip(idx,e.clientX,e.clientY); }
-    else hideConTooltip();
-  };
-  conCanvas.ontouchend=e=>{
-    const r=conCanvas.getBoundingClientRect();
-    const t=e.changedTouches[0];
-    const idx=nearestIngr(t.clientX-r.left,t.clientY-r.top);
-    if(idx>=0) showConTooltip(idx,t.clientX,t.clientY);
-  };
-}
-function ix(i){return state.conIngredients[i].x*conW;}
-function iy(i){return state.conIngredients[i].y*conH;}
-function nearestIngr(px,py){
-  let best=-1,bestD=999;
-  state.conIngredients.forEach((ing,i)=>{
-    const dx=ix(i)-px,dy=iy(i)-py;
-    const d=Math.sqrt(dx*dx+dy*dy);
-    if(d<ing.size*2.8&&d<bestD){bestD=d;best=i;}
-  });
-  return best;
-}
-function drawConstellation(){
-  if(!conCtx) return;
-  conCtx.clearRect(0,0,conW,conH);
-  conCtx.fillStyle='rgba(245,243,238,0.4)';
-  conCtx.fillRect(0,0,conW,conH);
-  // nebulae
-  [{x:0.2,y:0.25,r:0.15,c:'rgba(0,200,150,0.06)'},{x:0.75,y:0.23,r:0.12,c:'rgba(192,132,252,0.06)'},
-   {x:0.55,y:0.76,r:0.17,c:'rgba(255,45,120,0.06)'},{x:0.48,y:0.48,r:0.11,c:'rgba(200,168,0,0.05)'}
-  ].forEach(n=>{
-    const g=conCtx.createRadialGradient(n.x*conW,n.y*conH,0,n.x*conW,n.y*conH,n.r*Math.min(conW,conH));
-    g.addColorStop(0,n.c); g.addColorStop(1,'transparent');
-    conCtx.beginPath(); conCtx.arc(n.x*conW,n.y*conH,n.r*Math.min(conW,conH),0,Math.PI*2);
-    conCtx.fillStyle=g; conCtx.fill();
-  });
-  // connectors
-  state.conIngredients.forEach((a,i)=>{
-    state.conIngredients.forEach((b,j)=>{
-      if(j<=i||a.type!==b.type) return;
-      const dx=ix(i)-ix(j),dy=iy(i)-iy(j);
-      if(Math.sqrt(dx*dx+dy*dy)>conW*0.28) return;
-      conCtx.beginPath(); conCtx.moveTo(ix(i),iy(i)); conCtx.lineTo(ix(j),iy(j));
-      conCtx.strokeStyle=a.color+'22'; conCtx.lineWidth=1; conCtx.stroke();
-    });
-  });
-  // stars
-  state.conIngredients.forEach((ing,i)=>{
-    const x=ix(i),y=iy(i),r=ing.size*(hoveredIngr===i?1.45:1),hov=hoveredIngr===i;
-    const grd=conCtx.createRadialGradient(x,y,0,x,y,r*3.5);
-    grd.addColorStop(0,ing.color+(hov?'28':'14')); grd.addColorStop(1,'transparent');
-    conCtx.beginPath(); conCtx.arc(x,y,r*3.5,0,Math.PI*2); conCtx.fillStyle=grd; conCtx.fill();
-    conCtx.beginPath(); conCtx.arc(x,y,r,0,Math.PI*2);
-    conCtx.fillStyle=ing.color+(hov?'EE':'BB'); conCtx.fill();
-    conCtx.lineWidth=1.5; conCtx.strokeStyle='rgba(10,10,10,0.4)'; conCtx.stroke();
-    if(hov){
-      conCtx.beginPath(); conCtx.arc(x,y,r+8,0,Math.PI*2);
-      conCtx.strokeStyle=ing.color+'55'; conCtx.lineWidth=1.5; conCtx.stroke();
-      conCtx.font=`700 11px 'Nunito',sans-serif`;
-      conCtx.fillStyle='rgba(10,10,10,0.85)';
-      conCtx.textAlign=x<conW*0.6?'left':'right';
-      conCtx.fillText(ing.name,x+(x<conW*0.6?r+12:-r-12),y+4);
-    }
-  });
-}
-function showConTooltip(idx,cx,cy){
-  const ing=state.conIngredients[idx];
-  const tt=document.getElementById('ingr-tooltip');
-  document.getElementById('tt-name').textContent=ing.name;
-  const types={natural:'Natural',seasoning:'Seasoning',additive:'Additive',
-    preservative:'Preservative',vitamin:'Vitamin',emulsifier:'Emulsifier',flavour:'Flavour'};
-  const ttType=document.getElementById('tt-type');
-  ttType.textContent=types[ing.type]||ing.type;
-  ttType.style.color=ing.color;
-  document.getElementById('tt-desc').textContent=ing.desc;
-  let left=cx+14,top=cy-70;
-  if(left+215>window.innerWidth) left=cx-225;
-  if(top<10) top=cy+14;
-  tt.style.left=left+'px'; tt.style.top=top+'px';
-  tt.classList.add('show');
-}
-function hideConTooltip(){document.getElementById('ingr-tooltip').classList.remove('show');}
-
-/* ═══════════════════════════════════════
-   HISTORY (localStorage) — WITH THUMBNAILS
-═══════════════════════════════════════ */
-function getHistory(){try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');}catch{return[];}}
-function saveHistory(result, thumb) {
-  const hist=getHistory();
-  hist.unshift({
-    id:Date.now(), ts:new Date().toISOString(),
-    product_name:result.product_name||'Unknown',
-    score:result.score||0, verdict:result.verdict||'',
-    category:result.product_category||'',
-    language:state.language,
-    thumb:thumb||null,
-    is_voice:result.is_voice_log||false,
-    is_barcode:result.is_barcode_scan||false,
-    data:result,
-  });
-  if(hist.length>50) hist.pop();
-  try{localStorage.setItem(HISTORY_KEY,JSON.stringify(hist));}catch{}
-}
-function clearHistory(){
-  if(!confirm('Clear all history?')) return;
-  localStorage.removeItem(HISTORY_KEY);
-  localStorage.removeItem(STREAK_KEY);
-  renderHistory();
-  showToast('🗑 History cleared');
-}
-
-/* ═══════════════════════════════════════
-   QUOTA + PAYWALL
-═══════════════════════════════════════ */
-async function loadQuota(){
-  try{
-    const res=await fetch(`${API}/scan-quota`);
-    const d=await res.json();
-    state.quotaRemaining=d.remaining??d.scans_remaining??5;
-    state.isPro=d.is_pro??false;
-    updateQuota();
-  }catch{}
-}
-function updateQuota(){
-  const t=document.getElementById('quota-text'),dot=document.getElementById('qdot');
-  if(state.isPro){t.textContent='∞';dot.className='quota-dot';}
-  else{
-    t.textContent=state.quotaRemaining+' left';
-    dot.className=state.quotaRemaining<=1?'quota-dot low':state.quotaRemaining<=3?'quota-dot warn':'quota-dot';
-  }
-}
-function openPaywall(trigger=''){
-  if(trigger==='limit') document.getElementById('pw-sub').textContent="You've used all free scans today. Upgrade to keep going.";
-  document.getElementById('paywall-overlay').classList.add('open');
-}
-function closePaywall(){document.getElementById('paywall-overlay').classList.remove('open');}
-async function activatePro(){
-  try{
-    const fd=new FormData(); fd.append('payment_id','demo_'+Date.now());
-    const res=await fetch(`${API}/activate-pro`,{method:'POST',body:fd});
-    const d=await res.json();
-    if(d.status==='activated'){
-      state.isPro=true;state.quotaRemaining=99999;
-      closePaywall();updateQuota();showToast('🎉 Pro activated!');
-      spawnConfetti(window.innerWidth/2,window.innerHeight/2);
-    }
-  }catch{showToast('❌ Payment failed.');}
-}
-
-/* ═══════════════════════════════════════
-   SHARE
-═══════════════════════════════════════ */
-async function shareResult(){
-  if(!state.lastResult){showToast('⚠️ No result to share');return;}
-  const d=state.lastResult;
-  const text=`Eatlytic — ${d.product_name} — ${d.score}/10\n${d.verdict}\n\n${d.summary}`;
-  try{
-    if(navigator.share) await navigator.share({title:'Eatlytic',text});
-    else{await navigator.clipboard.writeText(text);showToast('📋 Copied!');}
-  }catch{showToast('📋 Share unavailable');}
-}
-
-/* ═══════════════════════════════════════
-   PORTAL RESET
-═══════════════════════════════════════ */
-function resetPortal(){
-  state.blob=null;
-  const img=document.getElementById('preview-img');
-  if(img.src) URL.revokeObjectURL(img.src);
-  img.src='';
-  document.getElementById('portal-preview-wrap').classList.remove('visible');
-  document.getElementById('analyse-cta').classList.remove('visible');
-  document.getElementById('quality-strip').classList.remove('visible');
-}
-
-/* ═══════════════════════════════════════
-   CONFETTI + STICKER POP
-═══════════════════════════════════════ */
-function spawnConfetti(cx,cy){
-  for(let i=0;i<22;i++){
-    const p=document.createElement('div');
-    p.className='confetti-piece';
-    p.style.cssText=`left:${cx+(Math.random()-.5)*80}px;top:${cy-8}px;background:${CONFETTI_COLORS[i%CONFETTI_COLORS.length]};transform:rotate(${Math.random()*360}deg);animation-duration:${0.7+Math.random()*.6}s;animation-delay:${Math.random()*.18}s;border-radius:${Math.random()>.5?'50%':'2px'}`;
-    document.body.appendChild(p);
-    setTimeout(()=>p.remove(),1500);
-  }
-}
-function spawnStickerPop(emoji,cx,cy){
-  const p=document.createElement('div');
-  p.className='sticker-pop';p.textContent=emoji;
-  p.style.cssText=`left:${cx-20}px;top:${cy-30}px`;
-  document.body.appendChild(p);
-  setTimeout(()=>p.remove(),1000);
-}
-
-/* ═══════════════════════════════════════
-   TOAST
-═══════════════════════════════════════ */
-let toastTimer;
-function showToast(msg){
-  const t=document.getElementById('toast');
-  t.textContent=msg;t.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer=setTimeout(()=>t.classList.remove('show'),2800);
-}
-
-/* ═══════════════════════════════════════
-   UTILS
-═══════════════════════════════════════ */
-function esc(s){
-  if(!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-/* ═══════════════════════════════════════
-   INIT
-═══════════════════════════════════════ */
-document.getElementById('bottom-nav').classList.add('visible');
-loadQuota();
-setupVoice();
-setTimeout(updateDailyIntake, 200);
-
-// Preload profile
-setTimeout(()=>{
-  const p=getProfile();
-  if(p.name){
-    document.getElementById('profile-name-disp').textContent=p.name;
-  }
-}, 100);
-
-// Handle back button for camera
-window.addEventListener('popstate',()=>{ if(state.cameraStream) stopCamera(); });
+function esc(s){ return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''; }
+function spawnConfetti(cx,cy){ for(let i=0;i<15;i++){ const p=document.createElement('div'); p.className='confetti-piece'; p.style.cssText=`left:${cx}px;top:${cy}px;background:${CONFETTI_COLORS[i%7]};animation-duration:${.5+Math.random()}s;`; document.body.appendChild(p); setTimeout(()=>p.remove(),1000); } }
+function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
+function buildConstellationData(d){ state.conIngredients=(d.ingredients_spotlight||[]).map(i=>({name:i.name,type:i.type,color:'#0047FF',x:Math.random(),y:Math.random()})); }
+function initConstellation(){ const c=document.getElementById('constellation-canvas'); if(!c)return; const ctx=c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height); state.conIngredients.forEach(i=>{ ctx.beginPath(); ctx.arc(i.x*c.width,i.y*c.height,5,0,Math.PI*2); ctx.fillStyle=i.color; ctx.fill(); }); }
+function resetPortal(){ state.blob=null; document.getElementById('portal-preview-wrap').classList.remove('visible'); document.getElementById('analyse-cta').classList.remove('visible'); }
+function shareResult(){ navigator.clipboard.writeText(`Eatlytic Score: ${state.lastResult.score}/10`).then(()=>showToast('📋 Copied!')); }
+function updateQuota(){ document.getElementById('quota-text').textContent=state.quotaRemaining+' left'; }
+function showWeeklyReport(){ showToast('📊 Weekly Report coming soon!'); }
 
 /* ═══════════════════════════════════════
    DARK MODE
 ═══════════════════════════════════════ */
-function toggleDark(){
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  setDark(!isDark);
-}
-function setDark(on){
-  document.documentElement.setAttribute('data-theme', on ? 'dark' : 'light');
-  // Update toggle button icon
-  const btn = document.getElementById('theme-toggle');
-  if(btn) btn.textContent = on ? '☀️' : '🌙';
-  try{ localStorage.setItem('eatlytic-theme', on ? 'dark' : 'light'); }catch{}
-}
-// Restore saved preference, or auto-detect system preference
-(function initTheme(){
-  let saved = null;
-  try{ saved = localStorage.getItem('eatlytic-theme'); }catch{}
-  if(saved){
-    setDark(saved === 'dark');
-  } else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches){
-    setDark(true);
-  }
-  // Live-follow system preference changes (only if user hasn't manually set it)
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-    let saved = null;
-    try{ saved = localStorage.getItem('eatlytic-theme'); }catch{}
-    if(!saved) setDark(e.matches);
-  });
-})();
+function toggleDark(){ const d=document.documentElement.getAttribute('data-theme')==='dark'; setDark(!d); }
+function setDark(on){ document.documentElement.setAttribute('data-theme',on?'dark':'light'); localStorage.setItem('eatlytic-theme',on?'dark':'light'); }
+(function initTheme(){ const s=localStorage.getItem('eatlytic-theme')||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); setDark(s==='dark'); })();
 
 /* ═══════════════════════════════════════
-   FOOTER / NAV KEYBOARD FIX
-   On mobile, the virtual keyboard shrinks the viewport and pushes
-   the fixed bottom-nav off-screen. We use visualViewport to detect
-   the keyboard and temporarily hide the nav while an input is focused,
-   then restore it when the keyboard dismisses.
+   NAV KEYBOARD FIX
 ═══════════════════════════════════════ */
 (function initNavKeyboardFix(){
-  const nav = document.getElementById('bottom-nav');
-  if(!nav) return;
-
-  function onViewportResize(){
-    // If the visual viewport height is significantly smaller than the
-    // window height, the keyboard is likely open — hide the nav.
-    const keyboardOpen = (window.visualViewport
-      ? window.visualViewport.height < window.innerHeight * 0.75
-      : false);
-    nav.style.transform = keyboardOpen ? 'translateY(110%)' : '';
-    nav.style.transition = 'transform 0.2s ease';
-  }
-
-  if(window.visualViewport){
-    window.visualViewport.addEventListener('resize',  onViewportResize);
-    window.visualViewport.addEventListener('scroll',  onViewportResize);
-  }
-
-  // Fallback: hide nav on input focus, show on blur
-  document.addEventListener('focusin',  e => {
-    if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)){
-      nav.style.transform = 'translateY(110%)';
-      nav.style.transition = 'transform 0.2s ease';
-    }
-  });
-  document.addEventListener('focusout', () => {
-    // Small delay so the keyboard animation finishes first
-    setTimeout(() => {
-      const keyboardOpen = window.visualViewport
-        ? window.visualViewport.height < window.innerHeight * 0.75
-        : false;
-      if(!keyboardOpen){
-        nav.style.transform = '';
-      }
-    }, 150);
-  });
+  const nav=document.getElementById('bottom-nav'); if(!nav)return;
+  function fix(){ const open=window.visualViewport ? window.visualViewport.height < window.innerHeight*0.75 : false; nav.style.transform=open?'translateY(110%)':''; }
+  if(window.visualViewport) window.visualViewport.addEventListener('resize',fix);
+  document.addEventListener('focusin',e=>{ if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) nav.style.transform='translateY(110%)'; });
+  document.addEventListener('focusout',()=>setTimeout(fix,150));
 })();
+
+document.getElementById('bottom-nav').classList.add('visible');
+setupVoice();
 </script>
 </body>
 </html>
