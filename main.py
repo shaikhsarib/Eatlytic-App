@@ -40,7 +40,8 @@ from app.services.image import (
     ocr_quality_score,
 )
 from app.services.llm import unified_analyze_flow
-from app.services.research_engine import get_live_search
+# NOTE: get_live_search is NOT imported here — it is lazy-loaded inside llm.py
+# with a try/except guard to avoid crashing when duckduckgo_search is not installed.
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
