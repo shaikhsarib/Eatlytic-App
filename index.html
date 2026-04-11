@@ -316,7 +316,7 @@ body::after{content:'';position:fixed;inset:0;z-index:9998;pointer-events:none;
 .vt-title{font-weight:900;font-size:13.5px;margin-bottom:3px}
 .vt-desc{font-size:12px;color:#555;line-height:1.7}
 
-/* ── INGREDIENT RISK FLAGS (NEW) */
+/* ── INGREDIENT RISK FLAGS */
 .risk-flags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .risk-flag{display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:var(--r-pill);
   font-size:11px;font-weight:800;border:1.5px solid;cursor:pointer;
@@ -563,9 +563,6 @@ body::after{content:'';position:fixed;inset:0;z-index:9998;pointer-events:none;
 /* ════════════════════════════════════
    BOTTOM NAV
 ════════════════════════════════════ */
-/* FIX: added env(safe-area-inset-bottom) so the bar is never hidden
-   behind iOS home indicator. Height is the visible bar height PLUS the
-   safe area — padding-bottom pushes the content above the indicator. */
 .bottom-nav{
   position:fixed;bottom:0;left:0;right:0;z-index:50;display:none;
   height:calc(var(--nav-h) + var(--nav-bottom));
@@ -573,7 +570,6 @@ body::after{content:'';position:fixed;inset:0;z-index:9998;pointer-events:none;
   background:var(--white);border-top:var(--border);
 }
 .bottom-nav.visible{display:flex}
-/* pad-bottom must account for the full nav height including safe area */
 .pad-bottom{padding-bottom:calc(var(--nav-h) + var(--nav-bottom) + 16px)}
 .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:2px;cursor:pointer;background:transparent;transition:all 0.15s;
@@ -738,35 +734,6 @@ input[type="file"]{display:none}
 [data-theme="dark"] .risk-flag {
   filter:brightness(0.9);
 }
-.risk-flag:hover{transform:scale(1.05)}
-.rf-red{background:rgba(255,23,68,0.1);border-color:var(--red);color:var(--red)}
-.rf-orange{background:rgba(255,107,0,0.1);border-color:var(--orange);color:var(--orange)}
-.rf-yellow{background:rgba(255,214,0,0.2);border-color:#C8A800;color:#665500}
-.rf-green{background:rgba(0,200,150,0.1);border-color:var(--mint);color:var(--green)}
-.rf-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
-
-/* nutrient-pack (reveal) */
-.pack-label{font-size:9px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;
-  color:var(--muted);padding:4px 0 10px}
-.nutrient-pack{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
-.ns-card{border:2px solid var(--ink);border-radius:var(--r);padding:11px 9px;
-  background:white;
-  box-shadow:var(--shadow-sticker);cursor:pointer;text-align:center;position:relative;overflow:hidden;
-  opacity:0;transform:scale(0) rotate(8deg);
-  transition:opacity 0.4s cubic-bezier(0.34,1.56,0.64,1),transform 0.4s cubic-bezier(0.34,1.56,0.64,1)}
-.ns-card.visible{opacity:1;transform:rotate(var(--rot,2deg))}
-.ns-card:hover{transform:translateY(-5px) rotate(0deg) scale(1.06)!important}
-.ns-card:active{transform:translateY(1px)!important;box-shadow:var(--shadow-sm)}
-.ns-rating-badge{position:absolute;top:5px;right:5px;width:16px;height:16px;border-radius:50%;
-  border:1.5px solid var(--ink);background:var(--white);display:flex;align-items:center;
-  justify-content:center;font-size:8px;font-weight:800}
-.ns-icon{font-size:1.2rem;display:block;margin-bottom:4px}
-.ns-name{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:3px}
-.ns-val{font-family:'Fraunces',serif;font-weight:900;font-size:1rem;letter-spacing:-0.5px}
-.ns-bar{height:4px;background:rgba(10,10,10,0.12);border-radius:2px;margin-top:7px;overflow:hidden}
-.ns-fill{height:100%;width:0%;border-radius:2px;transition:width 1.2s cubic-bezier(0.34,1.56,0.64,1);background:var(--ink);opacity:0.35}
-
-/* dark mode toggle icon flip */
 #theme-toggle { transition: transform 0.25s; }
 [data-theme="dark"] #theme-toggle { content:'☀️'; }
 </style>
@@ -855,20 +822,12 @@ input[type="file"]{display:none}
      S-CAMERA — LIVE VIEWFINDER
 ═══════════════════════ -->
 <div class="screen" id="s-camera" style="background:#000">
-  <!-- Camera mode tabs -->
   <div class="camera-mode-row">
     <button class="cam-mode-btn active" id="cam-mode-scan" onclick="setCamMode('scan')">📸 LABEL</button>
   </div>
-
   <div class="camera-viewport">
     <video id="camera-video" autoplay playsinline muted></video>
-    <!-- AR nutrition overlay -->
-    <div class="camera-overlay-pill" id="cam-overlay-pill">📦 Point at the <strong>BACK</strong> of the pack</div>
-    <div id="cam-hint-strip" style="position:absolute;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;font-size:11px;font-weight:700;padding:6px 14px;border-radius:20px;letter-spacing:0.5px;white-space:nowrap;text-align:center;pointer-events:none;opacity:0;transition:opacity 0.4s">
-      Look for: Nutrition Facts / Nutritional Information
-    </div>
-
-    <!-- Reticle (scan mode) -->
+    <div class="camera-overlay-pill" id="cam-overlay-pill">Point at a food label</div>
     <div class="camera-reticle" id="camera-reticle">
       <div class="reticle-corner rc-tl"></div>
       <div class="reticle-corner rc-tr"></div>
@@ -877,14 +836,11 @@ input[type="file"]{display:none}
       <div class="reticle-scan-line"></div>
     </div>
   </div>
-
   <div class="camera-controls">
     <button class="cam-ctrl-btn" id="torch-btn" onclick="toggleTorch()" title="Torch">🔦</button>
     <button class="capture-btn" id="capture-btn" onclick="captureFrame()"></button>
     <button class="cam-ctrl-btn" onclick="flipCamera()" title="Flip">🔄</button>
   </div>
-
-  <!-- Close camera -->
   <div style="position:absolute;top:14px;right:14px;z-index:30">
     <button class="cam-ctrl-btn" onclick="stopCamera()" style="background:rgba(0,0,0,0.5);border-color:rgba(255,255,255,0.3)">✕</button>
   </div>
@@ -945,14 +901,9 @@ input[type="file"]{display:none}
 <div class="screen" id="s-history">
   <div class="app-header">
     <div class="app-logo">Eat<em>l</em>ytic</div>
-    <div style="display:flex;gap:6px">
-      <button class="header-pill" onclick="showWeeklyReport()" style="font-size:10px;background:var(--yellow)">📊 Week</button>
-      <button class="header-pill" onclick="clearHistory()" style="font-size:10px">🗑 Clear</button>
-    </div>
+    <button class="header-pill" onclick="clearHistory()" style="font-size:10px;box-shadow:var(--shadow-sm)">🗑 Clear</button>
   </div>
-  <div class="scroll-inner pad-bottom" style="padding:0 18px" id="history-scroll">
-    <!-- injected -->
-  </div>
+  <div class="scroll-inner pad-bottom" style="padding:0 18px" id="history-scroll"></div>
 </div>
 
 <!-- ═══════════════════════
@@ -999,31 +950,16 @@ input[type="file"]{display:none}
         <div class="profile-plan" id="profile-plan-badge">FREE PLAN</div>
       </div>
     </div>
-
-    <!-- TDEE display -->
     <div class="tdee-card" id="tdee-card" style="display:none">
       <div class="tdee-label">Daily Calorie Target (TDEE)</div>
       <div class="tdee-val" id="tdee-val">—</div>
       <div class="tdee-sub" id="tdee-sub">Based on your profile</div>
     </div>
-
-    <!-- Macro targets -->
     <div class="macro-targets" id="macro-targets" style="display:none">
-      <div class="mt-chip">
-        <div class="mt-val" id="mt-protein">—</div>
-        <div class="mt-label">Protein g</div>
-      </div>
-      <div class="mt-chip">
-        <div class="mt-val" id="mt-carbs">—</div>
-        <div class="mt-label">Carbs g</div>
-      </div>
-      <div class="mt-chip">
-        <div class="mt-val" id="mt-fat">—</div>
-        <div class="mt-label">Fat g</div>
-      </div>
+      <div class="mt-chip"><div class="mt-val" id="mt-protein">—</div><div class="mt-label">Protein g</div></div>
+      <div class="mt-chip"><div class="mt-val" id="mt-carbs">—</div><div class="mt-label">Carbs g</div></div>
+      <div class="mt-chip"><div class="mt-val" id="mt-fat">—</div><div class="mt-label">Fat g</div></div>
     </div>
-
-    <!-- Today's progress rings -->
     <div class="form-section" id="today-progress" style="display:none">
       <div class="form-section-title">Today's Progress</div>
       <div class="macro-rings" id="macro-rings">
@@ -1045,48 +981,19 @@ input[type="file"]{display:none}
         </div>
       </div>
     </div>
-
-    <!-- Profile form -->
     <div class="form-section">
       <div class="form-section-title">Personal Info</div>
       <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Name</label>
-          <input class="form-input" id="pf-name" placeholder="Your name" type="text">
-        </div>
-        <div class="form-group" style="max-width:100px">
-          <label class="form-label">Age</label>
-          <input class="form-input" id="pf-age" placeholder="25" type="number" min="10" max="110">
-        </div>
+        <div class="form-group"><label class="form-label">Name</label><input class="form-input" id="pf-name" placeholder="Your name" type="text"></div>
+        <div class="form-group" style="max-width:100px"><label class="form-label">Age</label><input class="form-input" id="pf-age" placeholder="25" type="number" min="10" max="110"></div>
       </div>
       <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Gender</label>
-          <select class="form-select" id="pf-gender">
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Activity</label>
-          <select class="form-select" id="pf-activity">
-            <option value="1.2">Sedentary</option>
-            <option value="1.375">Light</option>
-            <option value="1.55" selected>Moderate</option>
-            <option value="1.725">Active</option>
-            <option value="1.9">Very Active</option>
-          </select>
-        </div>
+        <div class="form-group"><label class="form-label">Gender</label><select class="form-select" id="pf-gender"><option value="male">Male</option><option value="female">Female</option></select></div>
+        <div class="form-group"><label class="form-label">Activity</label><select class="form-select" id="pf-activity"><option value="1.2">Sedentary</option><option value="1.375">Light</option><option value="1.55" selected>Moderate</option><option value="1.725">Active</option><option value="1.9">Very Active</option></select></div>
       </div>
       <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Weight (kg)</label>
-          <input class="form-input" id="pf-weight" placeholder="70" type="number" min="30" max="300">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Height (cm)</label>
-          <input class="form-input" id="pf-height" placeholder="170" type="number" min="100" max="250">
-        </div>
+        <div class="form-group"><label class="form-label">Weight (kg)</label><input class="form-input" id="pf-weight" placeholder="70" type="number" min="30" max="300"></div>
+        <div class="form-group"><label class="form-label">Height (cm)</label><input class="form-input" id="pf-height" placeholder="170" type="number" min="100" max="250"></div>
       </div>
     </div>
     <div class="form-section" style="margin-bottom:14px">
@@ -1211,7 +1118,7 @@ document.getElementById('goal-row')?.addEventListener('click', e => {
 });
 
 /* ═══════════════════════════════════════
-   CAMERA — LIVE VIEWFINDER (FIXED)
+   CAMERA — LIVE VIEWFINDER
 ═══════════════════════════════════════ */
 async function openCamera() {
   goTo('camera');
@@ -1221,21 +1128,13 @@ async function openCamera() {
 async function startCameraStream() {
   stopCamera();
   try {
-    const constraints = {
-      video: {
-        facingMode: state.cameraFacing,
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-      },
-      audio: false
-    };
+    const constraints = { video: { facingMode: state.cameraFacing, width:{ideal:1920}, height:{ideal:1080} }, audio: false };
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     state.cameraStream = stream;
     const video = document.getElementById('camera-video');
     video.srcObject = stream;
     await video.play();
     showToast('📷 Camera active');
-
   } catch(err) {
     showToast('⚠️ Camera unavailable: ' + (err.message || err.name));
     goTo('scan');
@@ -1267,29 +1166,25 @@ async function toggleTorch() {
 }
 
 function setCamMode(mode) {
-  state.camMode = 'scan';  // always label mode
+  state.camMode = 'scan';
   document.querySelectorAll('.cam-mode-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('cam-mode-scan')?.classList.add('active');
-  const reticle = document.getElementById('camera-reticle');
-  reticle.style.display = '';
+  document.getElementById('camera-reticle').style.display = '';
   document.getElementById('cam-overlay-pill').textContent = 'Point at a food label';
 }
 
-/* capture a frame from the live video */
 function captureFrame() {
   const video  = document.getElementById('camera-video');
   const canvas = document.getElementById('capture-canvas');
   if (!video.readyState || video.readyState < 2) { showToast('Camera not ready'); return; }
   canvas.width  = video.videoWidth  || 1280;
   canvas.height = video.videoHeight || 720;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
   canvas.toBlob(blob => {
     if (!blob) { showToast('Capture failed'); return; }
     stopCamera();
     processFile(blob);
     goTo('scan');
-    // flash
     const fl = document.getElementById('scan-flash');
     fl.classList.add('flash'); setTimeout(() => fl.classList.remove('flash'), 130);
     spawnConfetti(window.innerWidth/2, window.innerHeight/2);
@@ -1297,9 +1192,7 @@ function captureFrame() {
 }
 
 /* ── FILE UPLOAD */
-function handlePortalTap() {
-  if (!state.blob) openCamera();
-}
+function handlePortalTap() { if (!state.blob) openCamera(); }
 function triggerUpload() { document.getElementById('file-input').click(); }
 function handleFile(e) { const f = e.target.files?.[0]; if (f) processFile(f); e.target.value=''; }
 function onDragOver(e)  { e.preventDefault(); document.getElementById('portal-core').style.transform='scale(1.05)'; }
@@ -1311,14 +1204,12 @@ function onDrop(e) {
   else showToast('⚠️ Drop an image file');
 }
 
-/* FIXED: processFile — preview now renders inside portal-preview-wrap */
 function processFile(file) {
   state.blob = file;
   const url  = URL.createObjectURL(file);
   const img  = document.getElementById('preview-img');
-  img.onload = null; // clear any stale handler
+  img.onload = null;
   img.src    = url;
-  // Show preview wrap (z-index:4 sits above portal-core z-index:2)
   const wrap = document.getElementById('portal-preview-wrap');
   wrap.classList.add('visible');
   document.getElementById('preview-badge').textContent = '✓ Ready to analyse';
@@ -1330,8 +1221,7 @@ function processFile(file) {
 }
 
 async function checkQuality(file) {
-  const strip = document.getElementById('quality-strip');
-  strip.classList.add('visible');
+  document.getElementById('quality-strip').classList.add('visible');
   try {
     const fd = new FormData(); fd.append('image', file);
     const res = await fetch(`${API}/check-image`, { method:'POST', body:fd });
@@ -1349,34 +1239,18 @@ async function setQualityLocal(file) {
   ctx.drawImage(bmp, 0, 0, c.width, c.height);
   const px   = ctx.getImageData(0,0,c.width,c.height).data;
   let lap=0;
-  for (let i=4; i<px.length-4; i+=4) {
-    const d = Math.abs(px[i] - px[i+4]) + Math.abs(px[i] - px[i-4]);
-    lap += d;
-  }
-  const score = Math.min(100, Math.round(lap / (c.width*c.height) * 2));
-  const sev   = score>60?'none':score>30?'mild':'blurry';
-  applyQuality(sev, score);
+  for (let i=4; i<px.length-4; i+=4) lap += Math.abs(px[i]-px[i+4])+Math.abs(px[i]-px[i-4]);
+  const score = Math.min(100, Math.round(lap/(c.width*c.height)*2));
+  applyQuality(score>60?'none':score>30?'mild':'blurry', score);
 }
 
 function applyQuality(sev, pct) {
-  const fill  = document.getElementById('qs-fill');
-  const badge = document.getElementById('qs-badge');
-  const label = document.getElementById('qs-label');
-  let displayPct = pct;
-  if (sev === 'none')  displayPct = Math.max(92, pct);
-  else if (sev === 'mild') displayPct = Math.max(60, pct);
-  else displayPct = Math.max(15, pct);
-  fill.style.width = displayPct + '%';
-  if (sev === 'none') {
-    fill.style.background='var(--mint)'; badge.style.color='var(--mint)';
-    badge.textContent='✓ Clear'; label.textContent='Great quality';
-  } else if (sev === 'mild') {
-    fill.style.background='var(--orange)'; badge.style.color='var(--orange)';
-    badge.textContent='~ Fair'; label.textContent='Auto-correct on';
-  } else {
-    fill.style.background='var(--red)'; badge.style.color='var(--red)';
-    badge.textContent='⚠ Blurry'; label.textContent='AI will enhance';
-  }
+  const fill=document.getElementById('qs-fill'), badge=document.getElementById('qs-badge'), label=document.getElementById('qs-label');
+  let d = sev==='none'?Math.max(92,pct):sev==='mild'?Math.max(60,pct):Math.max(15,pct);
+  fill.style.width=d+'%';
+  if (sev==='none'){fill.style.background='var(--mint)';badge.style.color='var(--mint)';badge.textContent='✓ Clear';label.textContent='Great quality';}
+  else if(sev==='mild'){fill.style.background='var(--orange)';badge.style.color='var(--orange)';badge.textContent='~ Fair';label.textContent='Auto-correct on';}
+  else{fill.style.background='var(--red)';badge.style.color='var(--red)';badge.textContent='⚠ Blurry';label.textContent='AI will enhance';}
 }
 
 /* ═══════════════════════════════════════
@@ -1386,123 +1260,88 @@ function setupVoice() {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) { document.getElementById('voice-btn').style.display='none'; return; }
   const recog = new SpeechRec();
-  recog.lang = 'en-US';
-  recog.continuous = false;
-  recog.interimResults = true;
-  recog.maxAlternatives = 1;
+  recog.lang='en-US'; recog.continuous=false; recog.interimResults=true; recog.maxAlternatives=1;
   recog.onresult = e => {
-    let transcript = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      transcript += e.results[i][0].transcript;
-    }
-    document.getElementById('voice-transcript').textContent = transcript;
-    if (e.results[e.resultIndex]?.isFinal) parseVoiceMeal(transcript);
+    let t='';
+    for(let i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript;
+    document.getElementById('voice-transcript').textContent=t;
+    if(e.results[e.resultIndex]?.isFinal) parseVoiceMeal(t);
   };
   recog.onerror = e => { showToast('Voice error: '+e.error); stopVoice(); };
   recog.onend = () => stopVoice();
   state.voiceRecog = recog;
 }
 
-function toggleVoice() {
-  if (state.isListening) stopVoice();
-  else startVoice();
-}
-
+function toggleVoice() { state.isListening ? stopVoice() : startVoice(); }
 function startVoice() {
   if (!state.voiceRecog) { showToast('Voice not supported'); return; }
-  state.isListening = true;
+  state.isListening=true;
   document.getElementById('voice-btn').classList.add('listening');
-  document.getElementById('voice-icon').textContent = '🔴';
-  document.getElementById('voice-transcript').textContent = 'Listening…';
+  document.getElementById('voice-icon').textContent='🔴';
+  document.getElementById('voice-transcript').textContent='Listening…';
   try { state.voiceRecog.start(); } catch {}
 }
-
 function stopVoice() {
-  state.isListening = false;
+  state.isListening=false;
   document.getElementById('voice-btn').classList.remove('listening');
-  document.getElementById('voice-icon').textContent = '🎤';
+  document.getElementById('voice-icon').textContent='🎤';
   try { state.voiceRecog?.stop(); } catch {}
 }
 
 async function parseVoiceMeal(transcript) {
   stopVoice();
-  document.getElementById('voice-transcript').textContent = '🧠 Parsing "' + transcript + '"…';
+  document.getElementById('voice-transcript').textContent='🧠 Parsing "'+transcript+'"…';
   try {
-    const fd = new FormData();
-    fd.append('text', transcript);
-    fd.append('persona', state.persona);
-    fd.append('language', state.language);
-    const res = await fetch(`${API}/parse-voice-meal`, { method:'POST', body:fd });
-    if (!res.ok) throw new Error('API unavailable');
-    const d = await res.json();
-    if (d.error) throw new Error(d.message||d.error);
-    state.lastResult = d;
-    saveHistory(d, null);
-    buildConstellationData(d);
-    renderReveal(d);
-    goTo('reveal');
-    spawnConfetti(window.innerWidth/2, window.innerHeight/2);
-    document.getElementById('voice-transcript').textContent = 'Say what you ate…';
+    const fd=new FormData(); fd.append('text',transcript); fd.append('persona',state.persona); fd.append('language',state.language);
+    const res=await fetch(`${API}/parse-voice-meal`,{method:'POST',body:fd});
+    if(!res.ok) throw new Error('API unavailable');
+    const d=await res.json();
+    if(d.error) throw new Error(d.message||d.error);
+    state.lastResult=d; saveHistory(d,null); buildConstellationData(d); renderReveal(d); goTo('reveal');
+    spawnConfetti(window.innerWidth/2,window.innerHeight/2);
+    document.getElementById('voice-transcript').textContent='Say what you ate…';
   } catch {
-    const fakeResult = {
-      product_name: transcript,
-      score: 5, verdict: 'Voice logged',
-      summary: 'Logged via voice: "' + transcript + '". Analysis requires image scan.',
-      nutrient_breakdown: [],
-      pros:[], cons:[], ingredients_spotlight:[], is_voice_log:true,
-    };
-    state.lastResult = fakeResult;
-    saveHistory(fakeResult, null);
-    renderReveal(fakeResult);
-    goTo('reveal');
-    document.getElementById('voice-transcript').textContent = '✓ Logged: ' + transcript;
-    showToast('✓ Voice meal logged!');
-    spawnStickerPop('🎤', window.innerWidth/2, window.innerHeight/2);
+    const fakeResult={product_name:transcript,score:5,verdict:'Voice logged',
+      summary:'Logged via voice: "'+transcript+'". Analysis requires image scan.',
+      nutrient_breakdown:[],pros:[],cons:[],ingredients_spotlight:[],is_voice_log:true};
+    state.lastResult=fakeResult; saveHistory(fakeResult,null); renderReveal(fakeResult); goTo('reveal');
+    document.getElementById('voice-transcript').textContent='✓ Logged: '+transcript;
+    showToast('✓ Voice meal logged!'); spawnStickerPop('🎤',window.innerWidth/2,window.innerHeight/2);
   }
 }
 
 /* ═══════════════════════════════════════
    VINE LOADER
 ═══════════════════════════════════════ */
-const VINE_STEPS = [
-  {label:'Clarity Scan', pct:20},
-  {label:'OCR Extraction', pct:40},
-  {label:'Lie Detection', pct:60},
-  {label:'Scoring Engine', pct:85},
-  {label:'Final Verdict', pct:100},
+const VINE_STEPS=[
+  {label:'Clarity Scan',pct:20},{label:'OCR Extraction',pct:40},
+  {label:'Lie Detection',pct:60},{label:'Scoring Engine',pct:85},{label:'Final Verdict',pct:100}
 ];
 
 function startVine() {
-  const fill  = document.getElementById('vine-fill');
-  const nodes = document.getElementById('vine-nodes');
-  const txt   = document.getElementById('reading-text');
+  const fill=document.getElementById('vine-fill'),nodes=document.getElementById('vine-nodes'),txt=document.getElementById('reading-text');
   fill.style.height='0%'; nodes.innerHTML=''; txt.innerHTML='';
-  VINE_STEPS.forEach((step, i) => {
-    const top = (1 - step.pct/100)*100;
-    const nd  = document.createElement('div');
-    nd.className='vine-node'; nd.id='vn-'+i; nd.style.top=top+'%';
-    const lbl = document.createElement('div');
-    lbl.className='vine-node-label'; lbl.textContent=step.label;
+  VINE_STEPS.forEach((step,i)=>{
+    const top=(1-step.pct/100)*100;
+    const nd=document.createElement('div'); nd.className='vine-node'; nd.id='vn-'+i; nd.style.top=top+'%';
+    const lbl=document.createElement('div'); lbl.className='vine-node-label'; lbl.textContent=step.label;
     nd.appendChild(lbl); nodes.appendChild(nd);
   });
   let step=0;
-  function advance() {
-    if (step>=VINE_STEPS.length) return;
+  function advance(){
+    if(step>=VINE_STEPS.length) return;
     fill.style.height=VINE_STEPS[step].pct+'%';
     document.getElementById('vn-'+step)?.classList.add('lit');
-    step++; setTimeout(advance, step>=VINE_STEPS.length?400:500);
+    step++; setTimeout(advance,step>=VINE_STEPS.length?400:500);
   }
   setTimeout(advance,300);
 }
 
 function crystallizeText(text) {
-  const el=document.getElementById('reading-text');
-  el.innerHTML='';
+  const el=document.getElementById('reading-text'); el.innerHTML='';
   [...text].forEach((ch,i)=>{
-    const s=document.createElement('span');
-    s.className='char'; s.textContent=ch;
-    s.style.animationDelay=(i*18)+'ms';
-    el.appendChild(s);
+    const s=document.createElement('span'); s.className='char'; s.textContent=ch;
+    s.style.animationDelay=(i*18)+'ms'; el.appendChild(s);
   });
 }
 
@@ -1512,124 +1351,76 @@ function crystallizeText(text) {
 async function runAnalysis() {
   if (!state.blob) return;
   if (state.quotaRemaining<=0 && !state.isPro) { openPaywall('limit'); return; }
-  goTo('reading');
-  startVine();
-  state.abortCtrl = new AbortController();
-  const tid = setTimeout(()=>state.abortCtrl?.abort(), 90000);
+  goTo('reading'); startVine();
+  state.abortCtrl=new AbortController();
+  const tid=setTimeout(()=>state.abortCtrl?.abort(),90000);
 
-  let thumbData = null;
+  let thumbData=null;
   try {
-    const bmp = await createImageBitmap(state.blob);
-    const tc  = document.createElement('canvas');
-    tc.width=80; tc.height=80;
-    const tctx=tc.getContext('2d');
-    const ar=bmp.width/bmp.height;
-    if(ar>1){tctx.drawImage(bmp,(bmp.width-bmp.height)/2,0,bmp.height,bmp.height,0,0,80,80);}
-    else{tctx.drawImage(bmp,0,(bmp.height-bmp.width)/2,bmp.width,bmp.width,0,0,80,80);}
-    thumbData = tc.toDataURL('image/jpeg',0.6);
-  } catch{}
+    const bmp=await createImageBitmap(state.blob);
+    const tc=document.createElement('canvas'); tc.width=80; tc.height=80;
+    const tctx=tc.getContext('2d'), ar=bmp.width/bmp.height;
+    if(ar>1) tctx.drawImage(bmp,(bmp.width-bmp.height)/2,0,bmp.height,bmp.height,0,0,80,80);
+    else tctx.drawImage(bmp,0,(bmp.height-bmp.width)/2,bmp.width,bmp.width,0,0,80,80);
+    thumbData=tc.toDataURL('image/jpeg',0.6);
+  } catch {}
 
-  const fd = new FormData();
-  fd.append('image',state.blob);
-  fd.append('persona',state.persona);
-  fd.append('language',state.language);
-  fd.append('age_group','adult');
-  fd.append('product_category','general');
+  const fd=new FormData();
+  fd.append('image',state.blob); fd.append('persona',state.persona);
+  fd.append('language',state.language); fd.append('age_group','adult'); fd.append('product_category','general');
 
   try {
-    const res  = await fetch(`${API}/analyze`, {method:'POST',body:fd,signal:state.abortCtrl.signal});
+    const res=await fetch(`${API}/analyze`,{method:'POST',body:fd,signal:state.abortCtrl.signal});
     clearTimeout(tid);
-    const data = await res.json();
-    if (res.status===429 || data.error==='quota_exceeded') { goTo('scan'); openPaywall('limit'); return; }
-    if (data.error) {
-      const errType = data.error === 'no_label' && data.tip === 'wrong_side'
-        ? 'wrong_side' : data.error;
-      goTo('scan');
-      showError(errType, data.message || 'Analysis failed.');
-      return;
+    const data=await res.json();
+    if(res.status===429||data.error==='quota_exceeded'){ goTo('scan'); openPaywall('limit'); return; }
+    if(data.error){
+      const errType=data.error==='no_label'&&data.tip==='wrong_side'?'wrong_side':data.error;
+      goTo('scan'); showError(errType,data.message||'Analysis failed.'); return;
     }
-    if (data.quota) { state.quotaRemaining=data.quota.remaining??state.quotaRemaining; updateQuota(); }
-
-    const sampleText = data.extracted_text
-      ? data.extracted_text.substring(0,80)+'…'
-      : 'Ingredients: '+(data.ingredients_spotlight?.map(i=>i.name)||[]).slice(0,5).join(', ')+'…';
+    if(data.quota){ state.quotaRemaining=data.quota.remaining??state.quotaRemaining; updateQuota(); }
+    const sampleText=data.extracted_text
+      ?data.extracted_text.substring(0,80)+'…'
+      :'Ingredients: '+(data.ingredients_spotlight?.map(i=>i.name)||[]).slice(0,5).join(', ')+'…';
     crystallizeText(sampleText);
-
-    if (!data.risk_flags) buildRiskFlagsFromAnalysis(data);
-    state.lastResult = data;
-    saveHistory(data, thumbData);
-    buildConstellationData(data);
-    updateStreak();
-
-    setTimeout(() => {
-      renderReveal(data); goTo('reveal'); resetPortal();
-    }, 2200);
+    if(!data.risk_flags) buildRiskFlagsFromAnalysis(data);
+    state.lastResult=data; saveHistory(data,thumbData); buildConstellationData(data); updateStreak();
+    setTimeout(()=>{ renderReveal(data); goTo('reveal'); resetPortal(); },2200);
   } catch(e) {
     clearTimeout(tid); goTo('scan');
-    if (e.name==='AbortError') showToast('⏱ Analysis cancelled');
-    else showError('error', e.message||'Network error.');
+    if(e.name==='AbortError') showToast('⏱ Analysis cancelled');
+    else showError('error',e.message||'Network error.');
   }
 }
 
 function buildRiskFlagsFromAnalysis(data) {
-  const flags = [];
-  const nutr  = data.nutrient_breakdown || [];
-  const ingrs = data.ingredients_spotlight || [];
-  const sodium= nutr.find(n=>n.name?.toLowerCase().includes('sodium'))?.value||0;
-  const sugar = nutr.find(n=>n.name?.toLowerCase().includes('sugar'))?.value||0;
-  const addrs = ingrs.filter(i=>i.type==='additive'||i.type==='preservative');
-  if (addrs.length>0)  flags.push({label:'Additives ('+addrs.length+')',level:'orange',icon:'⚗️'});
-  if (sugar>15)        flags.push({label:'High sugar',level:'red',icon:'🍬'});
-  if (sodium>700)      flags.push({label:'High sodium',level:'orange',icon:'🧂'});
-  if (ingrs.some(i=>['e102','e110','e122','tartrazine'].some(k=>i.name?.toLowerCase().includes(k))))
+  const flags=[],nutr=data.nutrient_breakdown||[],ingrs=data.ingredients_spotlight||[];
+  const sodium=nutr.find(n=>n.name?.toLowerCase().includes('sodium'))?.value||0;
+  const sugar=nutr.find(n=>n.name?.toLowerCase().includes('sugar'))?.value||0;
+  const addrs=ingrs.filter(i=>i.type==='additive'||i.type==='preservative');
+  if(addrs.length>0) flags.push({label:'Additives ('+addrs.length+')',level:'orange',icon:'⚗️'});
+  if(sugar>15)       flags.push({label:'High sugar',level:'red',icon:'🍬'});
+  if(sodium>700)     flags.push({label:'High sodium',level:'orange',icon:'🧂'});
+  if(ingrs.some(i=>['e102','e110','e122','tartrazine'].some(k=>i.name?.toLowerCase().includes(k))))
     flags.push({label:'Artificial dye',level:'red',icon:'🎨'});
-  if (data.score>=8)   flags.push({label:'Clean label',level:'green',icon:'✓'});
-  data.risk_flags = flags;
+  if(data.score>=8)  flags.push({label:'Clean label',level:'green',icon:'✓'});
+  data.risk_flags=flags;
 }
 
 function cancelAnalysis() { state.abortCtrl?.abort(); goTo('scan'); }
 
 function showError(type, message) {
-  const icon  = type==='no_label'  ? '🔄'
-              : type==='wrong_side'? '🔄'
-              : type==='no_text'   ? '🔍'
-              : type==='blurry_image' ? '📐'
-              : type==='invalid_image'?'🖼': '❌';
-  const title = type==='no_label'   ? 'No Nutrition Label Found'
-              : type==='wrong_side' ? "That's the Front — Flip It Over!"
-              : type==='no_text'    ? 'No Text Detected'
-              : type==='blurry_image'? 'Move Closer to the Label'
-              : type==='invalid_image'?'Invalid Image'
-              : 'Analysis Failed';
-  const extra = (type==='no_label' || type==='wrong_side' || type==='no_text')
-    ? `<div style="margin:20px auto;max-width:250px;display:flex;align-items:center;justify-content:center;gap:15px;background:rgba(255,45,120,0.05);padding:15px;border-radius:12px;border:1.5px dashed var(--pink)">
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-          <div style="width:40px;height:55px;background:var(--pink);border:2px solid var(--ink);border-radius:4px;display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:10px">FRONT</div>
-          <span style="font-size:12px">❌</span>
-        </div>
+  const icon=type==='no_label'?'🔄':type==='wrong_side'?'🔄':type==='no_text'?'🔍':type==='blurry_image'?'📐':type==='invalid_image'?'🖼':'❌';
+  const title=type==='no_label'?'No Nutrition Label Found':type==='wrong_side'?"That's the Front — Flip It Over!":type==='no_text'?'No Text Detected':type==='blurry_image'?'Move Closer to the Label':type==='invalid_image'?'Invalid Image':'Analysis Failed';
+  const extra=(type==='no_label'||type==='wrong_side'||type==='no_text')
+    ?`<div style="margin:20px auto;max-width:250px;display:flex;align-items:center;justify-content:center;gap:15px;background:rgba(255,45,120,0.05);padding:15px;border-radius:12px;border:1.5px dashed var(--pink)">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:40px;height:55px;background:var(--pink);border:2px solid var(--ink);border-radius:4px;display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:10px">FRONT</div><span style="font-size:12px">❌</span></div>
         <div style="font-size:1.5rem;animation:portal-breath 2s infinite">🔄</div>
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-          <div style="width:40px;height:55px;background:var(--mint);border:2px solid var(--ink);border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-items:center;padding:4px;gap:2px">
-            <div style="width:100%;height:3px;background:white"></div>
-            <div style="width:100%;height:3px;background:white"></div>
-            <div style="width:100%;height:3px;background:white"></div>
-            <div style="width:100%;height:8px;background:rgba(0,0,0,0.1)"></div>
-          </div>
-          <span style="font-size:12px">✅</span>
-        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:40px;height:55px;background:var(--mint);border:2px solid var(--ink);border-radius:4px;display:flex;flex-direction:column;align-items:center;padding:4px;gap:2px"><div style="width:100%;height:3px;background:white"></div><div style="width:100%;height:3px;background:white"></div><div style="width:100%;height:3px;background:white"></div><div style="width:100%;height:8px;background:rgba(0,0,0,0.1)"></div></div><span style="font-size:12px">✅</span></div>
        </div>
-       <div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:8px">
-         Flip the product! We need the <span style="color:var(--mint)">Back Label</span> (showing ingredients & nutrients) to analyze it.
-       </div>`
-    : '';
-  document.getElementById('reveal-scroll').innerHTML=`
-    <div class="result-empty">
-      <div class="result-empty-icon">${icon}</div>
-      <div class="result-empty-title">${title}</div>
-      ${extra}
-      <div class="result-empty-sub">${esc(message)}</div>
-      <button class="result-empty-btn" onclick="goTo('scan')">Try Again →</button>
-    </div>`;
+       <div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:8px">Flip the product! We need the <span style="color:var(--mint)">Back Label</span> (showing ingredients &amp; nutrients) to analyze it.</div>`
+    :'';
+  document.getElementById('reveal-scroll').innerHTML=`<div class="result-empty"><div class="result-empty-icon">${icon}</div><div class="result-empty-title">${title}</div>${extra}<div class="result-empty-sub">${esc(message)}</div><button class="result-empty-btn" onclick="goTo('scan')">Try Again →</button></div>`;
   goTo('reveal');
 }
 
@@ -1637,427 +1428,223 @@ function showError(type, message) {
    RENDER REVEAL
 ═══════════════════════════════════════ */
 function renderReveal(d) {
-  const score      = d.score??0;
-  const scoreColor = score>=7?'var(--mint)':score>=4?'var(--orange)':'var(--red)';
-  const glyph      = score>=7?'✅':score>=4?'⚠️':'❌';
+  const score=d.score??0;
+  const scoreColor=score>=7?'var(--mint)':score>=4?'var(--orange)':'var(--red)';
+  const glyph=score>=7?'✅':score>=4?'⚠️':'❌';
   let html='';
-  html+=`<div class="reveal-top">
-    <div class="reveal-product">${esc(d.product_name||'Unknown Product')}</div>
-    <div class="reveal-score-group">
-      <span class="reveal-score" style="color:${scoreColor}">${score}</span>
-      <span class="reveal-verdict-label" style="color:${scoreColor}">${esc(d.verdict||'')}</span>
-    </div>
-  </div>`;
-  const meta = [
-    d.product_category && esc(d.product_category),
-    d.nutriscore && 'Nutri-Score: '+esc(d.nutriscore),
-    d.nova_group  && 'NOVA: '+d.nova_group,
-    d.is_barcode_scan && 'Barcode scan',
-    d.is_voice_log    && 'Voice logged',
-  ].filter(Boolean);
-  if (meta.length) {
-    html+=`<div class="confidence-strip">
-      <div class="conf-dot"></div>
-      <span style="font-size:9px;letter-spacing:1.5px">${meta.join(' · ')}</span>
-    </div>`;
-  }
-  html+=`<div class="result-actions">
-    <button class="rac-btn" onclick="shareResult()">📤 Share</button>
-    <button class="rac-btn" onclick="goTo('map')">✦ Map</button>
-    <button class="rac-btn" onclick="goTo('history')">📋 History</button>
-    <button class="rac-btn" onclick="goTo('scan')">🔄 Rescan</button>
-  </div>`;
-  if (d.risk_flags?.length) {
+
+  html+=`<div class="reveal-top"><div class="reveal-product">${esc(d.product_name||'Unknown Product')}</div><div class="reveal-score-group"><span class="reveal-score" style="color:${scoreColor}">${score}</span><span class="reveal-verdict-label" style="color:${scoreColor}">${esc(d.verdict||'')}</span></div></div>`;
+
+  const meta=[d.product_category&&esc(d.product_category),d.nutriscore&&'Nutri-Score: '+esc(d.nutriscore),d.nova_group&&'NOVA: '+d.nova_group,d.is_barcode_scan&&'Barcode scan',d.is_voice_log&&'Voice logged'].filter(Boolean);
+  if(meta.length) html+=`<div class="confidence-strip"><div class="conf-dot"></div><span style="font-size:9px;letter-spacing:1.5px">${meta.join(' · ')}</span></div>`;
+
+  html+=`<div class="result-actions"><button class="rac-btn" onclick="shareResult()">📤 Share</button><button class="rac-btn" onclick="goTo('map')">✦ Map</button><button class="rac-btn" onclick="goTo('history')">📋 History</button><button class="rac-btn" onclick="goTo('scan')">🔄 Rescan</button></div>`;
+
+  if(d.risk_flags?.length){
     html+=`<div class="risk-flags">`;
-    d.risk_flags.forEach(f => {
-      const cls='rf-'+f.level;
-      html+=`<div class="risk-flag ${cls}"><div class="rf-dot"></div>${esc(f.icon)} ${esc(f.label)}</div>`;
-    });
+    d.risk_flags.forEach(f=>{ html+=`<div class="risk-flag rf-${f.level}"><div class="rf-dot"></div>${esc(f.icon)} ${esc(f.label)}</div>`; });
     html+=`</div>`;
   }
-  html+=`<div class="orb-stage">
-    <div class="score-orb-wrap" id="sorb-wrap">
-      <div class="orb-pulse-ring" style="border-color:${scoreColor}"></div>
-      <div class="score-orb" onclick="expandSatellite('summary')">
-        <div class="orb-num" style="color:${scoreColor}">${score}</div>
-        <div class="orb-denom">/10</div>
-      </div>
-    </div>
-  </div>`;
-  if (d.blur_info?.detected) {
-    html+=`<div class="blur-notice visible">
-      ${d.blur_info.deblurred
-        ?`<strong>🔧 Enhanced</strong> — ${d.blur_info.method_log||'AI deblur'}.`
-        :`<strong>📷 Blur detected</strong> (${d.blur_info.severity}) — results may vary.`}
-    </div>`;
-  }
-  if (d.nutrient_breakdown?.length) {
-    html+=`<div class="pack-label">Your Nutrient Pack — ${d.nutrient_breakdown.length} cards</div>
-    <div class="nutrient-pack" id="nutrient-pack">`;
+
+  html+=`<div class="orb-stage"><div class="score-orb-wrap" id="sorb-wrap"><div class="orb-pulse-ring" style="border-color:${scoreColor}"></div><div class="score-orb" onclick="expandSatellite('summary')"><div class="orb-num" style="color:${scoreColor}">${score}</div><div class="orb-denom">/10</div></div></div></div>`;
+
+  if(d.blur_info?.detected) html+=`<div class="blur-notice visible">${d.blur_info.deblurred?`<strong>🔧 Enhanced</strong> — ${d.blur_info.method_log||'AI deblur'}.`:`<strong>📷 Blur detected</strong> (${d.blur_info.severity}) — results may vary.`}</div>`;
+
+  if(d.nutrient_breakdown?.length){
+    html+=`<div class="pack-label">Your Nutrient Pack — ${d.nutrient_breakdown.length} cards</div><div class="nutrient-pack" id="nutrient-pack">`;
     d.nutrient_breakdown.forEach((n,i)=>{
-      const bg  = SAT_BG[i%SAT_BG.length];
-      const rot = ((i%2===0?1:-1)*(i%3+1))+'deg';
+      const bg=SAT_BG[i%SAT_BG.length],rot=((i%2===0?1:-1)*(i%3+1))+'deg';
       const rIcon={good:'✓',moderate:'~',caution:'~',bad:'!'}[n.rating]||'?';
-      html+=`<div class="ns-card" id="nsc-${i}" style="background:${bg};--rot:${rot};outline:${n.rating==='bad'?'2px solid #FF2D7888':'none'}" onclick="flipNutrientCard(${i})">
-        <div class="ns-rating-badge" style="background:${{good:'#00A878',moderate:'#F59E0B',caution:'#FF6B00',bad:'#FF2D78'}[n.rating]||'#888'}">${rIcon}</div>
-        <span class="ns-icon">${getNutrientIcon(n.name)}</span>
-        <div class="ns-name">${esc(n.name)}</div>
-        <div class="ns-val">${n.value}<small style="font-size:0.55em;font-weight:700"> ${n.unit||''}</small></div>
-        <div class="ns-bar"><div class="ns-fill" id="nsf-${i}" style="background:${{good:'#00A878',moderate:'#F59E0B',caution:'#FF6B00',bad:'#FF2D78'}[n.rating]||'var(--ink)'}"></div></div>
-      </div>`;
+      html+=`<div class="ns-card" id="nsc-${i}" style="background:${bg};--rot:${rot}" onclick="flipNutrientCard(${i})"><div class="ns-rating-badge">${rIcon}</div><span class="ns-icon">${getNutrientIcon(n.name)}</span><div class="ns-name">${esc(n.name)}</div><div class="ns-val">${n.value}<small style="font-size:0.55em;font-weight:700"> ${n.unit||''}</small></div><div class="ns-bar"><div class="ns-fill" id="nsf-${i}"></div></div></div>`;
     });
     html+=`</div>`;
   }
-  if (d.summary) {
-    html+=`<div class="verdict-tape">
-      <div class="vt-stamp" style="background:${score>=7?'var(--mint)':score>=4?'var(--yellow)':'var(--pink)'}">${glyph}</div>
-      <div><div class="vt-title">${esc(d.verdict||'')}</div><div class="vt-desc">${esc(d.summary||'')}</div></div>
-    </div>`;
-  }
-  if (d.ingredients_spotlight?.length) {
-    html+=`<div class="pack-label" style="margin-top:24px">Ingredient Spotlight — ${d.ingredients_spotlight.length} cards</div>
-    <div class="nutrient-pack" id="ing-pack">`;
-    d.ingredients_spotlight.forEach((ing,i)=>{
-      const t = ing.type?.toLowerCase();
-      const bg = SAT_BG[(i+3)%SAT_BG.length]; // Offset to vary colors
-      const rot = ((i%2===0?-1:1)*(i%3+1.5))+'deg';
-      const icon = {additive:'🧪',preservative:'🛡️',natural:'🌿',vitamin:'💊',sweetener:'🍯',protein:'💪',fat:'🥑'}[t]||'✨';
-      const rating = ing.safety_rating?.toLowerCase();
-      const rIcon = rating==='safe'?'✓':rating==='caution'?'~':'!';
-      const rColor = {safe:'#00A878',caution:'#FF6B00',avoid:'#FF2D78'}[rating]||'#888';
-      
-      html+=`<div class="ns-card ing-card" id="inc-${i}" style="background:${bg};--rot:${rot}" onclick="showIngDetail(${JSON.stringify(ing).replace(/"/g,'&quot;')})">
-        <div class="ns-rating-badge" style="background:${rColor}">${rIcon}</div>
-        <span class="ns-icon">${icon}</span>
-        <div class="ns-name" style="font-size:10px">${esc(ing.name)}</div>
-        <div class="ns-val" style="font-size:11px;opacity:0.7">${esc(ing.type||'Ingredient')}</div>
-        <div class="ns-bar"><div class="ns-fill" style="background:${rColor};width:${rating==='safe'?'100%':rating==='caution'?'60%':'30%'}"></div></div>
-      </div>`;
+
+  if(d.summary) html+=`<div class="verdict-tape"><div class="vt-stamp" style="background:${score>=7?'var(--mint)':score>=4?'var(--yellow)':'var(--pink)'}">${glyph}</div><div><div class="vt-title">${esc(d.verdict||'')}</div><div class="vt-desc">${esc(d.summary)}</div></div></div>`;
+
+  if(d.ingredients_spotlight?.length){
+    html+=`<div class="ingr-section"><div class="section-label" style="margin-bottom:8px">Ingredients spotted</div><div class="ingr-tags">`;
+    d.ingredients_spotlight.forEach(ing=>{
+      const t=ing.type?.toLowerCase();
+      const cls=(t==='additive'||t==='preservative')?'itag-warn':(ing.safety_rating?.toLowerCase()==='safe'||t==='natural'||t==='vitamin')?'itag-good':'itag-ok';
+      html+=`<div class="ingr-tag ${cls}" onclick="showIngDetail(${JSON.stringify(ing).replace(/"/g,'&quot;')})">${esc(ing.name)}</div>`;
     });
-    html+=`</div>`;
+    html+=`</div></div>`;
   }
-  if (d.pros?.length||d.cons?.length) {
+
+  if(d.pros?.length||d.cons?.length){
     html+=`<div class="pro-con-grid">`;
-    if (d.pros?.length) {
-      html+=`<div class="pc-card"><div class="pc-head pros">Benefits</div>`;
-      d.pros.forEach(p=>{html+=`<div class="pc-item">${esc(p)}</div>`;});
-      html+=`</div>`;
-    }
-    if (d.cons?.length) {
-      html+=`<div class="pc-card"><div class="pc-head cons">Concerns</div>`;
-      d.cons.forEach(c=>{html+=`<div class="pc-item">${esc(c)}</div>`;});
-      html+=`</div>`;
-    }
+    if(d.pros?.length){ html+=`<div class="pc-card"><div class="pc-head pros">Benefits</div>`; d.pros.forEach(p=>{html+=`<div class="pc-item">${esc(p)}</div>`;}); html+=`</div>`; }
+    if(d.cons?.length){ html+=`<div class="pc-card"><div class="pc-head cons">Concerns</div>`; d.cons.forEach(c=>{html+=`<div class="pc-item">${esc(c)}</div>`;}); html+=`</div>`; }
     html+=`</div>`;
   }
-  if (d.age_warnings?.length) {
-    html+=`<div class="section-label" style="padding:4px 0 8px">Who should be cautious?</div>
-    <div class="age-grid">`;
-    d.age_warnings.forEach(w=>{
-      html+=`<div class="age-card ${w.status||'caution'}">
-        <div class="ac-group">${w.emoji||''} ${esc(w.group)}</div>
-        <div class="ac-msg">${esc(w.message)}</div>
-      </div>`;
-    });
+
+  if(d.age_warnings?.length){
+    html+=`<div class="section-label" style="padding:4px 0 8px">Who should be cautious?</div><div class="age-grid">`;
+    d.age_warnings.forEach(w=>{ html+=`<div class="age-card ${w.status||'caution'}"><div class="ac-group">${w.emoji||''} ${esc(w.group)}</div><div class="ac-msg">${esc(w.message)}</div></div>`; });
     html+=`</div>`;
   }
-  if (d.summary&&(d.eli5_explanation||d.molecular_insight)) {
-    html+=`<div class="insight-tabs">
-      ${d.summary?`<button class="itab active" onclick="switchInsight(event,'is0')">Summary</button>`:''}
-      ${d.eli5_explanation?`<button class="itab" onclick="switchInsight(event,'is1')">Simple</button>`:''}
-      ${d.molecular_insight?`<button class="itab" onclick="switchInsight(event,'is2')">Science</button>`:''}
-    </div>
+
+  if(d.summary&&(d.eli5_explanation||d.molecular_insight)){
+    html+=`<div class="insight-tabs">${d.summary?`<button class="itab active" onclick="switchInsight(event,'is0')">Summary</button>`:''} ${d.eli5_explanation?`<button class="itab" onclick="switchInsight(event,'is1')">Simple</button>`:''} ${d.molecular_insight?`<button class="itab" onclick="switchInsight(event,'is2')">Science</button>`:''}</div>
     ${d.summary?`<div class="insight-panel active" id="is0"><div class="insight-text">${esc(d.summary)}</div></div>`:''}
     ${d.eli5_explanation?`<div class="insight-panel" id="is1"><div class="insight-text">${esc(d.eli5_explanation)}</div></div>`:''}
     ${d.molecular_insight?`<div class="insight-panel" id="is2"><div class="insight-text">${esc(d.molecular_insight)}</div></div>`:''}`;
   }
-  if (d.better_alternative) {
-    html+=`<div class="alt-card">
-      <div style="font-size:1.2rem">💡</div>
-      <div><div class="alt-label">Better Alternative</div><div class="alt-text">${esc(d.better_alternative)}</div></div>
-    </div>`;
-  }
-  document.getElementById('reveal-scroll').innerHTML = html;
+
+  if(d.better_alternative) html+=`<div class="alt-card"><div style="font-size:1.2rem">💡</div><div><div class="alt-label">Better Alternative</div><div class="alt-text">${esc(d.better_alternative)}</div></div></div>`;
+
+  document.getElementById('reveal-scroll').innerHTML=html;
   buildSatellites(d);
+
   requestAnimationFrame(()=>{
     document.querySelectorAll('.ns-card').forEach((card,i)=>{
       setTimeout(()=>{
         card.classList.add('visible');
-        if(card.id.startsWith('nsc-')) {
-          const fill=document.getElementById('nsf-'+card.id.split('-')[1]);
-          if (!fill) return;
-          const n=d.nutrient_breakdown?.[parseInt(card.id.split('-')[1])];
-          if (n) {
-            const DV_G  = {energy:2000,calorie:2000,protein:50,carb:300,carbohydrate:300,fat:65,sugar:25,fiber:28,fibre:28,'saturated fat':20,'trans fat':2};
-            const DV_MG = {sodium:2000,iron:18,calcium:1000,potassium:3500,cholesterol:300};
-            const nm = n.name.toLowerCase();
-            let dv = 50;
-            if (n.unit==='kcal'||n.unit==='kJ') { dv=2000; }
-            else if (n.unit==='g') {
-              for (const [k,v] of Object.entries(DV_G)) { if (nm.includes(k)) { dv=v; break; } }
-            } else if (n.unit==='mg') {
-              for (const [k,v] of Object.entries(DV_MG)) { if (nm.includes(k)) { dv=v; break; } }
-            }
-            const pct=Math.min(100,Math.round(((n.value||0)/dv)*100));
-            setTimeout(()=>{fill.style.width=pct+'%';},500);
-          }
-        }
-      }, i*100);
+        const fill=document.getElementById('nsf-'+i);
+        if(!fill) return;
+        const n=d.nutrient_breakdown?.[i];
+        if(n){ const pct=Math.min(100,Math.round(((n.value||0)/(n.unit==='g'?50:n.unit==='mg'?2400:100))*100)); setTimeout(()=>{fill.style.width=pct+'%';},500); }
+      },i*130);
     });
   });
 }
 
 function showIngDetail(ing) {
-  if (typeof ing === 'string') { try { ing = JSON.parse(ing); } catch { return; } }
-  const risk = ing.type?.toLowerCase();
-  const riskColor = {additive:'#FF2D78',preservative:'#FF2D78',natural:'#00A878',vitamin:'#C084FC'}[risk]||'#FF6B00';
-  const riskLabel = {additive:'Additive',preservative:'Preservative',natural:'Natural',vitamin:'Vitamin',emulsifier:'Emulsifier',seasoning:'Seasoning'}[risk]||(risk||'Ingredient');
-  document.getElementById('ing-detail-name').textContent = ing.name||'Ingredient';
-  const riskEl = document.getElementById('ing-detail-risk');
-  riskEl.style.cssText = `background:${riskColor}18;border-color:${riskColor};color:${riskColor}`;
-  riskEl.textContent = riskLabel;
-  document.getElementById('ing-detail-what').textContent = ing.what_it_is||'An ingredient found in this product.';
-  document.getElementById('ing-detail-impact').textContent = ing.health_impact||'Effects vary based on quantity consumed.';
-  document.getElementById('ing-detail-fact').textContent = ing.curiosity_fact||ing.health_impact||'Tap the Constellation Map for more details.';
+  if(typeof ing==='string'){ try{ing=JSON.parse(ing);}catch{return;} }
+  const risk=ing.type?.toLowerCase();
+  const rc={additive:'#FF2D78',preservative:'#FF2D78',natural:'#00A878',vitamin:'#C084FC'}[risk]||'#FF6B00';
+  const rl={additive:'Additive',preservative:'Preservative',natural:'Natural',vitamin:'Vitamin',emulsifier:'Emulsifier',seasoning:'Seasoning'}[risk]||(risk||'Ingredient');
+  document.getElementById('ing-detail-name').textContent=ing.name||'Ingredient';
+  const riskEl=document.getElementById('ing-detail-risk');
+  riskEl.style.cssText=`background:${rc}18;border-color:${rc};color:${rc}`;
+  riskEl.textContent=rl;
+  document.getElementById('ing-detail-what').textContent=ing.what_it_is||'An ingredient found in this product.';
+  document.getElementById('ing-detail-impact').textContent=ing.health_impact||'Effects vary based on quantity consumed.';
+  document.getElementById('ing-detail-fact').textContent=ing.curiosity_fact||ing.health_impact||'Tap the Constellation Map for more details.';
   document.getElementById('ing-detail-overlay').classList.add('open');
 }
-function closeIngDetail() { document.getElementById('ing-detail-overlay').classList.remove('open'); }
+function closeIngDetail(){ document.getElementById('ing-detail-overlay').classList.remove('open'); }
 
 function buildSatellites(d) {
-  const wrap=document.getElementById('sorb-wrap');
-  if (!wrap) return;
+  const wrap=document.getElementById('sorb-wrap'); if(!wrap) return;
   wrap.querySelectorAll('.orb-satellite').forEach(e=>e.remove());
   const sats=(d.nutrient_breakdown||[]).slice(0,6).map((n,i)=>({
-    label:n.name.split(' ')[0], val:n.value+(n.unit||''),
-    color:SAT_COLORS[i%SAT_COLORS.length], bg:SAT_BG[i%SAT_BG.length],
-    desc:n.impact||`${n.name}: ${n.value}${n.unit||''} in this product.`, full:n,
+    label:n.name.split(' ')[0],val:n.value+(n.unit||''),
+    color:SAT_COLORS[i%SAT_COLORS.length],bg:SAT_BG[i%SAT_BG.length],
+    desc:n.impact||`${n.name}: ${n.value}${n.unit||''} in this product.`,full:n,
   }));
   sats.forEach((sat,i)=>{
-    const el=document.createElement('div');
-    el.className='orb-satellite sat-'+i;
+    const el=document.createElement('div'); el.className='orb-satellite sat-'+i;
     el.innerHTML=`<div class="sat-dot" style="background:${sat.bg}"><span style="font-size:9px;font-weight:800;color:var(--ink)">${sat.val}</span></div><div class="sat-label">${esc(sat.label)}</div>`;
-    el.onclick=()=>expandSatelliteData(sat);
-    wrap.appendChild(el);
+    el.onclick=()=>expandSatelliteData(sat); wrap.appendChild(el);
   });
 }
-function expandSatelliteData(sat) {
+
+function expandSatelliteData(sat){
   document.getElementById('se-name').textContent=sat.full?.name||sat.label;
-  document.getElementById('se-val').textContent=sat.val;
-  document.getElementById('se-val').style.color=sat.color;
+  document.getElementById('se-val').textContent=sat.val; document.getElementById('se-val').style.color=sat.color;
   document.getElementById('se-desc').textContent=sat.desc;
   document.getElementById('sat-expand').classList.add('open');
 }
-function expandSatellite(key) {
-  if (key==='summary'&&state.lastResult) {
+function expandSatellite(key){
+  if(key==='summary'&&state.lastResult){
     document.getElementById('se-name').textContent=state.lastResult.product_name||'Product';
-    document.getElementById('se-val').textContent=state.lastResult.score+'/10';
-    document.getElementById('se-val').style.color='var(--ink)';
+    document.getElementById('se-val').textContent=state.lastResult.score+'/10'; document.getElementById('se-val').style.color='var(--ink)';
     document.getElementById('se-desc').textContent=state.lastResult.summary||'';
     document.getElementById('sat-expand').classList.add('open');
   }
 }
-function closeSatellite() { document.getElementById('sat-expand').classList.remove('open'); }
-function flipNutrientCard(i) {
-  const card=document.getElementById('nsc-'+i);
-  const n=state.lastResult?.nutrient_breakdown?.[i];
-  if (!card||!n) return;
+function closeSatellite(){ document.getElementById('sat-expand').classList.remove('open'); }
+
+function flipNutrientCard(i){
+  const card=document.getElementById('nsc-'+i),n=state.lastResult?.nutrient_breakdown?.[i];
+  if(!card||!n) return;
   spawnStickerPop(getNutrientIcon(n.name),card.getBoundingClientRect().left+20,card.getBoundingClientRect().top);
+  showToast(getNutrientIcon(n.name)+' '+n.name+': '+(n.impact||n.value+(n.unit||'')));
   card.style.transform='scale(1.18) rotate(0deg)';
-  setTimeout(()=>{if(card.classList.contains('visible'))card.style.transform='';},500);
-  showNutrientDetail(n);
+  setTimeout(()=>{ if(card.classList.contains('visible')) card.style.transform=''; },500);
 }
-function showNutrientDetail(n) {
-  const ratingColor = {good:'#00A878',moderate:'#F59E0B',caution:'#FF6B00',bad:'#FF2D78'}[n.rating]||'#888';
-  const ratingLabel = {good:'✓ Good level',moderate:'~ Moderate',caution:'⚠ High',bad:'✗ Concerning'}[n.rating]||(n.rating||'?');
-  const impact = n.impact || getNutrientDefaultInfo(n.name);
-  let el = document.getElementById('nutrient-detail-overlay');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'nutrient-detail-overlay';
-    el.style.cssText='position:fixed;inset:0;z-index:200;display:flex;align-items:flex-end;background:rgba(0,0,0,0.5);opacity:0;transition:opacity 0.2s';
-    el.onclick=function(e){if(e.target===el)closeNutrientDetail();};
-    document.body.appendChild(el);
-  }
-  el.innerHTML=`<div style="width:100%;background:var(--white);border-radius:20px 20px 0 0;border:2px solid var(--ink);padding:20px;max-height:55vh;overflow-y:auto">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-      <span style="font-size:2rem">${getNutrientIcon(n.name)}</span>
-      <div style="flex:1">
-        <div style="font-family:'Fraunces',serif;font-size:1.2rem;font-weight:900">${esc(n.name)}</div>
-        <div style="font-size:0.85rem;color:var(--muted)">Per 100g of this product</div>
-      </div>
-      <button onclick="closeNutrientDetail()" style="background:none;border:none;font-size:1.4rem;cursor:pointer">✕</button>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <div style="font-family:'Fraunces',serif;font-size:2.2rem;font-weight:900">${n.value}</div>
-      <div style="font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">${n.unit||''}</div>
-      <div style="margin-left:auto;background:${ratingColor}20;border:1.5px solid ${ratingColor};color:${ratingColor};padding:4px 10px;border-radius:20px;font-size:0.75rem;font-weight:800">${ratingLabel}</div>
-    </div>
-    <div style="background:var(--bg);border-radius:10px;padding:12px;font-size:0.88rem;line-height:1.5;color:var(--ink)">${esc(impact)}</div>
-  </div>`;
-  el.style.display='flex';
-  requestAnimationFrame(()=>{ el.style.opacity='1'; });
-}
-function closeNutrientDetail() {
-  const el=document.getElementById('nutrient-detail-overlay');
-  if (!el) return;
-  el.style.opacity='0';
-  setTimeout(()=>{ el.style.display='none'; },200);
-}
-function getNutrientDefaultInfo(name) {
-  const n=(name||'').toLowerCase();
-  if (n.includes('sodium')) return 'Sodium controls fluid balance. Indians consume ~11g of salt/day vs the 5g limit. High sodium raises blood pressure — a leading risk for heart disease and stroke.';
-  if (n.includes('trans fat')) return 'Trans fat raises bad cholesterol (LDL) and lowers good cholesterol (HDL) at the same time. Even 0.5g/day increases heart disease risk. WHO calls for global elimination.';
-  if (n.includes('saturated fat')) return 'Saturated fat raises LDL cholesterol. Indian diets are often already high in saturated fat from ghee, coconut oil, and dairy. Keep total daily intake under 20g.';
-  if (n.includes('sugar')||n.includes('sucrose')) return 'Added sugar provides empty calories with no nutrients. Linked to obesity, type 2 diabetes, fatty liver, and dental decay. WHO recommends less than 25g/day.';
-  if (n.includes('calorie')||n.includes('energy')) return 'Calories measure total food energy. An average Indian adult needs ~2000 kcal/day. Consistently exceeding this leads to weight gain over time.';
-  if (n.includes('protein')) return 'Protein builds and repairs muscles, organs, and immune cells. Most Indians are protein-deficient — average intake is 47g vs the 54g recommended daily for adults.';
-  if (n.includes('fiber')||n.includes('fibre')) return 'Dietary fiber feeds good gut bacteria, regulates blood sugar, and prevents constipation. Aim for 28g/day — most Indians get less than 15g.';
-  if (n.includes('carb')) return 'Carbohydrates are the body\'s main fuel source. Quality matters: complex carbs (whole grains, legumes) are far better than refined carbs (maida, white rice) which spike blood sugar.';
-  if (n.includes('fat') && !n.includes('saturated') && !n.includes('trans')) return 'Total fat includes both healthy unsaturated fats (nuts, seeds, olive oil) and unhealthy saturated/trans fats. The type of fat matters more than the total amount.';
-  if (n.includes('iron')) return 'Iron carries oxygen in red blood cells. India has the highest anaemia burden in the world — about 50% of women are iron-deficient. Look for ≥15% RDA per serving.';
-  if (n.includes('calcium')) return 'Calcium builds bones and teeth. Indians typically get less than 50% of their daily requirement (1000mg). Deficiency causes osteoporosis later in life.';
-  if (n.includes('potassium')) return 'Potassium balances sodium\'s blood pressure effects. Most processed foods are low in potassium — another reason to eat whole fruits and vegetables daily.';
-  if (n.includes('cholesterol')) return 'Dietary cholesterol has less impact than saturated/trans fat on blood cholesterol. Still, limit to under 300mg/day as part of a heart-healthy diet.';
-  return `${name} is a nutrient found in this product. Check how it contributes to your daily nutrition goals.`;
-}
-function switchInsight(e,panel) {
+function switchInsight(e,panel){
   document.querySelectorAll('.itab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.insight-panel').forEach(p=>p.classList.remove('active'));
-  e.target.classList.add('active');
-  document.getElementById(panel)?.classList.add('active');
+  e.target.classList.add('active'); document.getElementById(panel)?.classList.add('active');
 }
-function getNutrientIcon(name) {
+function getNutrientIcon(name){
   const n=name?.toLowerCase()||'';
-  if(n.includes('sodium')||n.includes('salt'))return'🧂';
-  if(n.includes('trans fat'))return'🚫';
-  if(n.includes('saturated fat'))return'🥩';
-  if(n.includes('protein'))return'💪';
-  if(n.includes('calorie')||n.includes('energy'))return'⚡';
-  if(n.includes('added sugar'))return'🍭';
-  if(n.includes('sugar'))return'🍬';
-  if(n.includes('fiber')||n.includes('fibre'))return'🌱';
-  if(n.includes('carb'))return'🌾';
-  if(n.includes('fat'))return'🫒';
-  if(n.includes('cholesterol'))return'🫀';
-  if(n.includes('iron'))return'💊';
-  if(n.includes('calcium'))return'🦴';
-  if(n.includes('potassium'))return'🍌';
-  if(n.includes('vitamin'))return'✨';
+  if(n.includes('sodium')||n.includes('salt')) return'🧂';
+  if(n.includes('protein')) return'💪';
+  if(n.includes('calorie')||n.includes('energy')) return'⚡';
+  if(n.includes('carb')||n.includes('sugar')) return'🌾';
+  if(n.includes('fat')) return'🫒';
+  if(n.includes('fibre')||n.includes('fiber')) return'🌱';
+  if(n.includes('vitamin')||n.includes('calcium')||n.includes('iron')) return'💊';
   return'🔬';
 }
 
 /* ═══════════════════════════════════════
-   HISTORY SCREEN (FULL)
+   HISTORY SCREEN
 ═══════════════════════════════════════ */
-function renderHistory() {
-  const allHist = getHistory();
-  const filter  = state.histFilter;
-  const now     = new Date();
-  const filtered = allHist.filter(h => {
-    const ts = new Date(h.ts);
-    if (filter==='today') return ts.toDateString()===now.toDateString();
-    if (filter==='week') {
-      const weekAgo=new Date(now); weekAgo.setDate(now.getDate()-7);
-      return ts>=weekAgo;
-    }
-    if (filter==='month') {
-      return ts.getMonth()===now.getMonth()&&ts.getFullYear()===now.getFullYear();
-    }
+function renderHistory(){
+  const allHist=getHistory(),filter=state.histFilter,now=new Date();
+  const filtered=allHist.filter(h=>{
+    const ts=new Date(h.ts);
+    if(filter==='today') return ts.toDateString()===now.toDateString();
+    if(filter==='week'){ const w=new Date(now); w.setDate(now.getDate()-7); return ts>=w; }
+    if(filter==='month') return ts.getMonth()===now.getMonth()&&ts.getFullYear()===now.getFullYear();
     return true;
   });
-  const streak = getStreak();
-  const todayCals = allHist.filter(h=>new Date(h.ts).toDateString()===now.toDateString())
-    .reduce((s,h)=>{
-      const cal=(h.data?.nutrient_breakdown||[]).find(n=>n.name?.toLowerCase().includes('calorie'));
-      return s+(cal?.value||0);
-    },0);
-  const profile=getProfile();
-  const tdee=computeTDEE(profile)||2000;
+  const streak=getStreak();
+  const todayCals=allHist.filter(h=>new Date(h.ts).toDateString()===now.toDateString()).reduce((s,h)=>{
+    const cal=(h.data?.nutrient_breakdown||[]).find(n=>n.name?.toLowerCase().includes('calorie')); return s+(cal?.value||0);
+  },0);
+  const profile=getProfile(),tdee=computeTDEE(profile)||2000;
   let html='';
-  html+=`<div class="streak-card">
-    <div><div class="streak-num">🔥${streak.count}</div></div>
-    <div><div class="streak-text">Day Streak</div><div class="streak-label">${streak.count===1?'Keep it up!':streak.count>=7?'On fire!':'Stay consistent'}</div></div>
-    <div style="margin-left:auto;text-align:right">
-      <div style="font-family:'Fraunces',serif;font-weight:900;font-size:1.1rem">${allHist.length}</div>
-      <div style="font-size:8px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Total Scans</div>
-    </div>
-  </div>`;
-  if (todayCals>0) {
+
+  html+=`<div class="streak-card"><div><div class="streak-num">🔥${streak.count}</div></div><div><div class="streak-text">Day Streak</div><div class="streak-label">${streak.count===1?'Keep it up!':streak.count>=7?'On fire!':'Stay consistent'}</div></div><div style="margin-left:auto;text-align:right"><div style="font-family:'Fraunces',serif;font-weight:900;font-size:1.1rem">${allHist.length}</div><div style="font-size:8px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Total Scans</div></div></div>`;
+
+  if(todayCals>0){
     const calPct=Math.min(100,Math.round(todayCals/tdee*100));
-    html+=`<div class="daily-banner">
-      <div class="db-title">Today — ${todayCals} kcal logged</div>
-      <div class="db-macros">
-        <div class="db-macro"><div class="db-macro-val">${todayCals}</div><div class="db-macro-label">Calories</div></div>
-        <div class="db-macro"><div class="db-macro-val">${tdee}</div><div class="db-macro-label">Target</div></div>
-        <div class="db-macro"><div class="db-macro-val">${Math.max(0,tdee-todayCals)}</div><div class="db-macro-label">Remaining</div></div>
-      </div>
-      <div class="db-progress-bar"><div class="db-progress-fill" style="width:${calPct}%;background:${calPct>100?'var(--red)':calPct>75?'var(--orange)':'var(--yellow)'}"></div></div>
-    </div>`;
+    html+=`<div class="daily-banner"><div class="db-title">Today — ${todayCals} kcal logged</div><div class="db-macros"><div class="db-macro"><div class="db-macro-val">${todayCals}</div><div class="db-macro-label">Calories</div></div><div class="db-macro"><div class="db-macro-val">${tdee}</div><div class="db-macro-label">Target</div></div><div class="db-macro"><div class="db-macro-val">${Math.max(0,tdee-todayCals)}</div><div class="db-macro-label">Remaining</div></div></div><div class="db-progress-bar"><div class="db-progress-fill" style="width:${calPct}%;background:${calPct>100?'var(--red)':calPct>75?'var(--orange)':'var(--yellow)'}"></div></div></div>`;
   }
-  const badges = computeBadges(allHist, streak);
-  if (badges.length) {
-    html+=`<div class="section-label">Achievements</div>
-    <div class="badges-row">`;
-    badges.forEach(b=>{
-      html+=`<div class="badge" onclick="showToast('${b.locked?'🔒 '+b.cond:'🎉 '+b.name+' unlocked!'}')" title="${b.cond}">
-        <div class="badge-icon${b.locked?' locked':''}" style="${b.locked?'':'background:'+b.color}">${b.icon}</div>
-        <div class="badge-name">${b.name}</div>
-      </div>`;
-    });
+
+  const badges=computeBadges(allHist,streak);
+  if(badges.length){
+    html+=`<div class="section-label">Achievements</div><div class="badges-row">`;
+    badges.forEach(b=>{ html+=`<div class="badge" onclick="showToast('${b.locked?'🔒 '+b.cond:'🎉 '+b.name+' unlocked!'}')" title="${b.cond}"><div class="badge-icon${b.locked?' locked':''}" style="${b.locked?'':'background:'+b.color}">${b.icon}</div><div class="badge-name">${b.name}</div></div>`; });
     html+=`</div>`;
   }
-  html+=`<div class="hist-filter-row">
-    ${['today','week','month','all'].map(f=>`<button class="hf-btn${state.histFilter===f?' active':''}" onclick="setHistFilter('${f}')">${{today:'Today',week:'Week',month:'Month',all:'All'}[f]}</button>`).join('')}
-  </div>`;
-  if (!filtered.length) {
-    html+=`<div class="hist-empty">
-      <div class="hist-empty-icon">${filter==='today'?'🌱':'📋'}</div>
-      ${filter==='today'?'No scans today.<br>Use the Portal to log your first meal!':'No scans in this period.'}
-    </div>`;
+
+  html+=`<div class="hist-filter-row">${['today','week','month','all'].map(f=>`<button class="hf-btn${state.histFilter===f?' active':''}" onclick="setHistFilter('${f}')">${{today:'Today',week:'Week',month:'Month',all:'All'}[f]}</button>`).join('')}</div>`;
+
+  if(!filtered.length){
+    html+=`<div class="hist-empty"><div class="hist-empty-icon">${filter==='today'?'🌱':'📋'}</div>${filter==='today'?'No scans today.<br>Use the Portal to log your first meal!':'No scans in this period.'}</div>`;
   } else {
     const grouped={};
-    filtered.forEach(h=>{
-      const key=new Date(h.ts).toDateString();
-      if(!grouped[key]) grouped[key]=[];
-      grouped[key].push(h);
-    });
+    filtered.forEach(h=>{ const k=new Date(h.ts).toDateString(); if(!grouped[k]) grouped[k]=[]; grouped[k].push(h); });
     Object.entries(grouped).forEach(([dateStr,items])=>{
       const label=dateStr===now.toDateString()?'Today':new Date(dateStr).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
       html+=`<div class="hist-date-header">${label}</div>`;
       items.forEach(h=>{
         const score=h.score||0;
-        const scoreColor=score>=7?'var(--mint)':score>=4?'var(--orange)':'var(--red)';
-        const scoreBg=score>=7?'#C0FFE8':score>=4?'#FFE8C0':'#FFE0EC';
+        const sc=score>=7?'var(--mint)':score>=4?'var(--orange)':'var(--red)';
+        const sb=score>=7?'#C0FFE8':score>=4?'#FFE8C0':'#FFE0EC';
         const time=new Date(h.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
         const cal=(h.data?.nutrient_breakdown||[]).find(n=>n.name?.toLowerCase().includes('calorie'));
-        const calStr=cal?cal.value+'kcal':'—';
-        html+=`<div class="hist-item" onclick="replayHistoryItem('${h.id}')">
-          ${h.thumb
-            ?`<img class="hist-thumb" src="${h.thumb}" alt="">`
-            :`<div class="hist-thumb-placeholder">${h.is_voice?'🎤':h.is_barcode?'▦':'🌿'}</div>`}
-          <div class="hist-info">
-            <div class="hist-name">${esc(h.product_name)}</div>
-            <div class="hist-meta">${time} · ${esc(h.category)||'Food'} · ${calStr}</div>
-            <div class="hist-verdict">${esc(h.verdict)}</div>
-          </div>
-          <div class="hist-score-badge" style="background:${scoreBg};border-color:${scoreColor};color:${scoreColor}">${score}</div>
-        </div>`;
+        html+=`<div class="hist-item" onclick="replayHistoryItem('${h.id}')">${h.thumb?`<img class="hist-thumb" src="${h.thumb}" alt="">`:`<div class="hist-thumb-placeholder">${h.is_voice?'🎤':h.is_barcode?'▦':'🌿'}</div>`}<div class="hist-info"><div class="hist-name">${esc(h.product_name)}</div><div class="hist-meta">${time} · ${esc(h.category)||'Food'} · ${cal?cal.value+'kcal':'—'}</div><div class="hist-verdict">${esc(h.verdict)}</div></div><div class="hist-score-badge" style="background:${sb};border-color:${sc};color:${sc}">${score}</div></div>`;
       });
     });
   }
   document.getElementById('history-scroll').innerHTML=html;
 }
-function setHistFilter(f) { state.histFilter=f; renderHistory(); }
-function replayHistoryItem(id) {
-  const item=getHistory().find(h=>String(h.id)===String(id));
-  if (!item) return;
-  state.lastResult=item.data;
-  buildConstellationData(item.data);
-  renderReveal(item.data);
-  goTo('reveal');
+
+function setHistFilter(f){ state.histFilter=f; renderHistory(); }
+function replayHistoryItem(id){
+  const item=getHistory().find(h=>String(h.id)===String(id)); if(!item) return;
+  state.lastResult=item.data; buildConstellationData(item.data); renderReveal(item.data); goTo('reveal');
 }
-function computeBadges(hist, streak) {
-  return [
+function computeBadges(hist,streak){
+  return[
     {icon:'🌱',name:'First Scan',color:'#C0FFE8',cond:'Complete your first scan',locked:hist.length<1},
     {icon:'🔥',name:'3-Day Streak',color:'#FFE8C0',cond:'Scan 3 days in a row',locked:streak.count<3},
     {icon:'🏆',name:'10 Scans',color:'#FFF8C0',cond:'Complete 10 total scans',locked:hist.length<10},
@@ -2068,130 +1655,104 @@ function computeBadges(hist, streak) {
   ];
 }
 
-/* ═══════════════════════════════════════
-   STREAK ENGINE
-═══════════════════════════════════════ */
-function getStreak() {
-  try { return JSON.parse(localStorage.getItem(STREAK_KEY)||'{"count":0,"lastDate":""}'); } catch { return {count:0,lastDate:''}; }
-}
-function updateStreak() {
-  const streak=getStreak();
-  const today=new Date().toDateString();
-  if (streak.lastDate===today) return;
+function getStreak(){ try{return JSON.parse(localStorage.getItem(STREAK_KEY)||'{"count":0,"lastDate":""}');}catch{return{count:0,lastDate:''};} }
+function updateStreak(){
+  const streak=getStreak(),today=new Date().toDateString();
+  if(streak.lastDate===today) return;
   const yesterday=new Date(); yesterday.setDate(yesterday.getDate()-1);
-  if (streak.lastDate===yesterday.toDateString()) { streak.count++; } else { streak.count=1; }
-  streak.lastDate=today;
-  localStorage.setItem(STREAK_KEY, JSON.stringify(streak));
-  if (streak.count===3||streak.count===7||streak.count===14||streak.count===30) {
-    spawnConfetti(window.innerWidth/2, window.innerHeight/2);
-    showToast('🔥 '+streak.count+'-day streak! Keep it up!');
-  }
+  streak.count=streak.lastDate===yesterday.toDateString()?streak.count+1:1;
+  streak.lastDate=today; localStorage.setItem(STREAK_KEY,JSON.stringify(streak));
+  if([3,7,14,30].includes(streak.count)){ spawnConfetti(window.innerWidth/2,window.innerHeight/2); showToast('🔥 '+streak.count+'-day streak! Keep it up!'); }
 }
 
 /* ═══════════════════════════════════════
    PROFILE SCREEN
 ═══════════════════════════════════════ */
-function getProfile() { try { return JSON.parse(localStorage.getItem(PROFILE_KEY)||'{}'); } catch { return {}; } }
-function renderProfile() {
+function getProfile(){ try{return JSON.parse(localStorage.getItem(PROFILE_KEY)||'{}');}catch{return{};} }
+function renderProfile(){
   const p=getProfile();
-  if (p.name) {
-    document.getElementById('pf-name').value=p.name;
-    document.getElementById('profile-name-disp').textContent=p.name;
-    const avatars=['🌿','🥦','🍎','🥗','💪','🌱','🥑','🍊'];
-    document.getElementById('profile-avatar').textContent=avatars[p.name.charCodeAt(0)%avatars.length];
-  }
-  if (p.age)    document.getElementById('pf-age').value=p.age;
-  if (p.weight) document.getElementById('pf-weight').value=p.weight;
-  if (p.height) document.getElementById('pf-height').value=p.height;
-  if (p.gender) document.getElementById('pf-gender').value=p.gender;
-  if (p.activity) document.getElementById('pf-activity').value=p.activity;
-  if (p.goal) {
-    document.querySelectorAll('#goal-row .chip').forEach(c=>c.classList.toggle('active',c.dataset.goal===p.goal));
-  }
-  if (p.tdee) { showTDEE(p.tdee, p.goal); updateProgressRings(p.tdee, p.goal); }
+  if(p.name){ document.getElementById('pf-name').value=p.name; document.getElementById('profile-name-disp').textContent=p.name; const avs=['🌿','🥦','🍎','🥗','💪','🌱','🥑','🍊']; document.getElementById('profile-avatar').textContent=avs[p.name.charCodeAt(0)%avs.length]; }
+  if(p.age)    document.getElementById('pf-age').value=p.age;
+  if(p.weight) document.getElementById('pf-weight').value=p.weight;
+  if(p.height) document.getElementById('pf-height').value=p.height;
+  if(p.gender) document.getElementById('pf-gender').value=p.gender;
+  if(p.activity) document.getElementById('pf-activity').value=p.activity;
+  if(p.goal) document.querySelectorAll('#goal-row .chip').forEach(c=>c.classList.toggle('active',c.dataset.goal===p.goal));
+  if(p.tdee){ showTDEE(p.tdee,p.goal); updateProgressRings(p.tdee,p.goal); }
 }
-function computeTDEE(p) {
-  if (!p.weight||!p.height||!p.age||!p.gender) return null;
-  let bmr;
-  if (p.gender==='male') bmr=10*p.weight+6.25*p.height-5*p.age+5;
-  else bmr=10*p.weight+6.25*p.height-5*p.age-161;
-  const pal=parseFloat(p.activity||1.55);
-  const tdee=Math.round(bmr*pal);
-  const adj={lose:-500,maintain:0,gain:+300};
-  return tdee+(adj[p.goal||'maintain']||0);
+function computeTDEE(p){
+  if(!p.weight||!p.height||!p.age||!p.gender) return null;
+  let bmr=p.gender==='male'?10*p.weight+6.25*p.height-5*p.age+5:10*p.weight+6.25*p.height-5*p.age-161;
+  const tdee=Math.round(bmr*parseFloat(p.activity||1.55));
+  return tdee+({lose:-500,maintain:0,gain:300}[p.goal||'maintain']||0);
 }
-function showTDEE(tdee, goal) {
-  document.getElementById('tdee-card').style.display='';
-  document.getElementById('macro-targets').style.display='';
-  document.getElementById('today-progress').style.display='';
+function showTDEE(tdee,goal){
+  document.getElementById('tdee-card').style.display=''; document.getElementById('macro-targets').style.display=''; document.getElementById('today-progress').style.display='';
   document.getElementById('tdee-val').textContent=tdee+' kcal';
   document.getElementById('tdee-sub').textContent={lose:'Weight loss target',maintain:'Maintenance target',gain:'Muscle building target'}[goal]||'Daily target';
-  const prot=Math.round((tdee*0.30)/4), fat=Math.round((tdee*0.28)/9), carb=Math.round((tdee*0.42)/4);
-  document.getElementById('mt-protein').textContent=prot+'g';
-  document.getElementById('mt-carbs').textContent=carb+'g';
-  document.getElementById('mt-fat').textContent=fat+'g';
+  const prot=Math.round((tdee*0.30)/4),fat=Math.round((tdee*0.28)/9),carb=Math.round((tdee*0.42)/4);
+  document.getElementById('mt-protein').textContent=prot+'g'; document.getElementById('mt-carbs').textContent=carb+'g'; document.getElementById('mt-fat').textContent=fat+'g';
 }
-function updateProgressRings(tdee, goal) {
-  const today = new Date().toDateString(), hist = getHistory().filter(h=>new Date(h.ts).toDateString()===today);
+function updateProgressRings(tdee,goal){
+  const today=new Date().toDateString(),hist=getHistory().filter(h=>new Date(h.ts).toDateString()===today);
   let totCal=0,totProt=0,totCarb=0,totFat=0;
-  hist.forEach(h=>{
-    const n=h.data?.nutrient_breakdown||[];
-    totCal +=(n.find(x=>x.name?.toLowerCase().includes('calorie'))?.value||0);
-    totProt+=(n.find(x=>x.name?.toLowerCase().includes('protein'))?.value||0);
-    totCarb+=(n.find(x=>x.name?.toLowerCase().includes('carb'))?.value||0);
-    totFat +=(n.find(x=>x.name?.toLowerCase().includes('fat'))?.value||0);
-  });
-  const prot=Math.round((tdee*0.30)/4), fat=Math.round((tdee*0.28)/9), carb=Math.round((tdee*0.42)/4);
-  setRing('ring-cal',  totCal,  tdee, totCal+'',     '#FFD600');
-  setRing('ring-prot', totProt, prot, totProt+'g',   '#FF2D78');
-  setRing('ring-carb', totCarb, carb, totCarb+'g',   '#0047FF');
-  setRing('ring-fat',  totFat,  fat,  totFat+'g',    '#FF6B00');
+  hist.forEach(h=>{ const n=h.data?.nutrient_breakdown||[]; totCal+=(n.find(x=>x.name?.toLowerCase().includes('calorie'))?.value||0); totProt+=(n.find(x=>x.name?.toLowerCase().includes('protein'))?.value||0); totCarb+=(n.find(x=>x.name?.toLowerCase().includes('carb'))?.value||0); totFat+=(n.find(x=>x.name?.toLowerCase().includes('fat'))?.value||0); });
+  const prot=Math.round((tdee*0.30)/4),fat=Math.round((tdee*0.28)/9),carb=Math.round((tdee*0.42)/4);
+  setRing('ring-cal',totCal,tdee,totCal+'','#FFD600'); setRing('ring-prot',totProt,prot,totProt+'g','#FF2D78'); setRing('ring-carb',totCarb,carb,totCarb+'g','#0047FF'); setRing('ring-fat',totFat,fat,totFat+'g','#FF6B00');
 }
-function setRing(id,val,max,label,color) {
-  const circ=141.4, pct=Math.min(1, val/(max||1)), offset=circ-(pct*circ), el=document.getElementById(id);
-  if (el) el.style.strokeDashoffset=offset;
-  const txt=document.getElementById(id+'-text');
-  if (txt) { txt.textContent=label; txt.style.color=pct>0.9?'var(--red)':pct>0.7?'var(--orange)':color; }
+function setRing(id,val,max,label,color){
+  const circ=141.4,pct=Math.min(1,val/(max||1)),offset=circ-(pct*circ);
+  const el=document.getElementById(id); if(el) el.style.strokeDashoffset=offset;
+  const txt=document.getElementById(id+'-text'); if(txt){ txt.textContent=label; txt.style.color=pct>0.9?'var(--red)':pct>0.7?'var(--orange)':color; }
 }
-function saveProfile() {
-  const name=document.getElementById('pf-name').value.trim(), age=parseFloat(document.getElementById('pf-age').value)||0, weight=parseFloat(document.getElementById('pf-weight').value)||0, height=parseFloat(document.getElementById('pf-height').value)||0, gender=document.getElementById('pf-gender').value, activity=document.getElementById('pf-activity').value, goal=document.querySelector('#goal-row .chip.active')?.dataset.goal||'maintain';
-  const p={name,age,weight,height,gender,activity,goal}, tdee=computeTDEE(p);
-  if (tdee) p.tdee=tdee;
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
-  if (name) { document.getElementById('profile-name-disp').textContent=name; }
-  if (tdee) { showTDEE(tdee,goal); updateProgressRings(tdee,goal); }
-  spawnConfetti(window.innerWidth/2,200);
-  showToast('✓ Profile saved — target: '+(tdee||'?')+' kcal');
+function saveProfile(){
+  const name=document.getElementById('pf-name').value.trim(),age=parseFloat(document.getElementById('pf-age').value)||0,weight=parseFloat(document.getElementById('pf-weight').value)||0,height=parseFloat(document.getElementById('pf-height').value)||0,gender=document.getElementById('pf-gender').value,activity=document.getElementById('pf-activity').value,goal=document.querySelector('#goal-row .chip.active')?.dataset.goal||'maintain';
+  const p={name,age,weight,height,gender,activity,goal},tdee=computeTDEE(p);
+  if(tdee) p.tdee=tdee;
+  localStorage.setItem(PROFILE_KEY,JSON.stringify(p));
+  if(name) document.getElementById('profile-name-disp').textContent=name;
+  if(tdee){ showTDEE(tdee,goal); updateProgressRings(tdee,goal); }
+  spawnConfetti(window.innerWidth/2,200); showToast('✓ Profile saved — target: '+(tdee||'?')+' kcal');
 }
 
 /* ═══════════════════════════════════════
    CONSTELLATION MAP
 ═══════════════════════════════════════ */
-function buildConstellationData(data) {
+function buildConstellationData(data){
   const colorMap={natural:'#00C896',seasoning:'#C8A800',additive:'#FF2D78',preservative:'#FF2D78',vitamin:'#C084FC',emulsifier:'#0047FF',flavour:'#FF6B00'};
   state.conIngredients=(data.ingredients_spotlight||[]).map(ing=>{
     const type=ing.type?.toLowerCase()||'natural';
-    return {name:ing.name,type,color:colorMap[type]||'#0047FF',size:10+Math.random()*8,x:0.08+Math.random()*0.84,y:0.08+Math.random()*0.84,desc:ing.health_impact||ing.what_it_is||'Ingredient in this product.',what:ing.what_it_is||'',fact:ing.curiosity_fact||''};
+    return{name:ing.name,type,color:colorMap[type]||'#0047FF',size:10+Math.random()*8,x:0.08+Math.random()*0.84,y:0.08+Math.random()*0.84,desc:ing.health_impact||ing.what_it_is||'Ingredient in this product.',what:ing.what_it_is||'',fact:ing.curiosity_fact||''};
   });
-  if (!state.conIngredients.length) buildDemoConstellation();
+  if(!state.conIngredients.length) buildDemoConstellation();
 }
-function buildDemoConstellation() {
+
+function buildDemoConstellation(){
   state.conIngredients=[
     {name:'Wheat flour',type:'natural',color:'#00C896',size:14,x:0.18,y:0.22,desc:'Refined wheat, low fibre, high GI.',what:'Refined wheat flour used as the primary structural base.',fact:'A single wheat grain contains 22+ nutrients, almost all removed during refining.'},
-    {name:'Palm oil',type:'natural',color:'#C8A800',size:10,x:0.28,y:0.15,desc:'Vegetable oil, high saturated fats.',what:'Vegetable fat extracted from palm fruit.',fact:'Palm oil is 50% saturated fat.'},
-    {name:'Salt',type:'seasoning',color:'#C8A800',size:9,x:0.22,y:0.38,desc:'Sodium chloride, high sodium.',what:'Sodium chloride used as a preservative and flavour enhancer.',fact:'Excess sodium displaces potassium.'},
-    {name:'MSG (INS 621)',type:'additive',color:'#FF2D78',size:13,x:0.52,y:0.72,desc:'Flavour enhancer.',what:'Monosodium glutamate.',fact:'MSG occurs naturally in tomatoes.'},
-    {name:'INS 211',type:'preservative',color:'#FF2D78',size:10,x:0.62,y:0.80,desc:'Sodium benzoate.',what:'A preservative.',fact:'INS 211 can convert to benzene.'},
+    {name:'Palm oil',type:'natural',color:'#C8A800',size:10,x:0.28,y:0.15,desc:'Vegetable oil, high saturated fats.',what:'Vegetable fat extracted from palm fruit.',fact:'Palm oil is 50% saturated fat — higher than lard.'},
+    {name:'Salt',type:'seasoning',color:'#C8A800',size:9,x:0.22,y:0.38,desc:'Sodium chloride, high sodium.',what:'Sodium chloride used as a preservative and flavour enhancer.',fact:'Excess sodium displaces potassium, raising blood pressure over time.'},
+    {name:'MSG (INS 621)',type:'additive',color:'#FF2D78',size:13,x:0.52,y:0.72,desc:'Flavour enhancer, causes sensitivity in some.',what:'Monosodium glutamate — the sodium salt of glutamic acid.',fact:'MSG occurs naturally in tomatoes and parmesan cheese at much lower levels.'},
+    {name:'INS 211',type:'preservative',color:'#FF2D78',size:10,x:0.62,y:0.80,desc:'Sodium benzoate, hyperactivity link in children.',what:'A preservative that prevents mould and bacteria growth.',fact:'INS 211 can convert to benzene (a carcinogen) in presence of vitamin C.'},
+    {name:'Tartrazine E102',type:'additive',color:'#FF2D78',size:11,x:0.72,y:0.70,desc:'Yellow dye, banned in some countries.',what:'A synthetic yellow azo dye used for colouring.',fact:'Tartrazine is banned in Norway and Austria; triggers reactions in 1 in 10,000 people.'},
+    {name:'Niacin (B3)',type:'vitamin',color:'#C084FC',size:8,x:0.72,y:0.18,desc:'Supports energy metabolism.',what:'Water-soluble vitamin added as flour fortification.',fact:'Niacin was added to flour in 1941 to combat pellagra, eliminating the disease in the US.'},
+    {name:'Thiamine (B1)',type:'vitamin',color:'#C084FC',size:7,x:0.80,y:0.28,desc:'Carbohydrate metabolism vitamin.',what:'B-vitamin essential for converting carbohydrates to energy.',fact:'A severe thiamine deficiency causes beriberi — a disease that killed millions before rice enrichment.'},
   ];
 }
+
 let conCanvas,conCtx,conW,conH,hoveredIngr=-1;
-function initConstellation() {
-  conCanvas=document.getElementById('constellation-canvas'); if (!conCanvas) return;
-  conW=conCanvas.offsetWidth; conH=conCanvas.offsetHeight; conCanvas.width=conW; conCanvas.height=conH; conCtx=conCanvas.getContext('2d');
-  if (!state.lastResult) buildDemoConstellation();
+
+function initConstellation(){
+  conCanvas=document.getElementById('constellation-canvas'); if(!conCanvas) return;
+  conW=conCanvas.offsetWidth; conH=conCanvas.offsetHeight;
+  conCanvas.width=conW; conCanvas.height=conH;
+  conCtx=conCanvas.getContext('2d');
+  if(!state.lastResult) buildDemoConstellation();
   drawConstellation();
-  conCanvas.onmousemove=e=>{ const r=conCanvas.getBoundingClientRect(), idx=nearestIngr(e.clientX-r.left,e.clientY-r.top); if(idx!==hoveredIngr){hoveredIngr=idx;drawConstellation();} };
-  conCanvas.onclick=e=>{ const r=conCanvas.getBoundingClientRect(), idx=nearestIngr(e.clientX-r.left,e.clientY-r.top); if(idx>=0) { showConTooltip(idx,e.clientX,e.clientY); } else hideConTooltip(); };
+  conCanvas.onmousemove=e=>{ const r=conCanvas.getBoundingClientRect(),idx=nearestIngr(e.clientX-r.left,e.clientY-r.top); if(idx!==hoveredIngr){hoveredIngr=idx;drawConstellation();} };
+  conCanvas.ontouchmove=e=>{ e.preventDefault(); const r=conCanvas.getBoundingClientRect(),t=e.touches[0],idx=nearestIngr(t.clientX-r.left,t.clientY-r.top); if(idx!==hoveredIngr){hoveredIngr=idx;drawConstellation();} };
+  conCanvas.onclick=e=>{ const r=conCanvas.getBoundingClientRect(),idx=nearestIngr(e.clientX-r.left,e.clientY-r.top); if(idx>=0) showConTooltip(idx,e.clientX,e.clientY); else hideConTooltip(); };
+  conCanvas.ontouchend=e=>{ const r=conCanvas.getBoundingClientRect(),t=e.changedTouches[0],idx=nearestIngr(t.clientX-r.left,t.clientY-r.top); if(idx>=0) showConTooltip(idx,t.clientX,t.clientY); };
 }
 function ix(i){return state.conIngredients[i].x*conW;}
 function iy(i){return state.conIngredients[i].y*conH;}
@@ -2201,13 +1762,25 @@ function nearestIngr(px,py){
   return best;
 }
 function drawConstellation(){
-  if(!conCtx) return; conCtx.clearRect(0,0,conW,conH); conCtx.fillStyle='rgba(245,243,238,0.4)'; conCtx.fillRect(0,0,conW,conH);
-  [{x:0.2,y:0.25,r:0.15,c:'rgba(0,200,150,0.06)'},{x:0.75,y:0.23,r:0.12,c:'rgba(192,132,252,0.06)'},{x:0.55,y:0.76,r:0.17,c:'rgba(255,45,120,0.06)'}].forEach(n=>{ const g=conCtx.createRadialGradient(n.x*conW,n.y*conH,0,n.x*conW,n.y*conH,n.r*Math.min(conW,conH)); g.addColorStop(0,n.c); g.addColorStop(1,'transparent'); conCtx.beginPath(); conCtx.arc(n.x*conW,n.y*conH,n.r*Math.min(conW,conH),0,Math.PI*2); conCtx.fillStyle=g; conCtx.fill(); });
+  if(!conCtx) return;
+  conCtx.clearRect(0,0,conW,conH); conCtx.fillStyle='rgba(245,243,238,0.4)'; conCtx.fillRect(0,0,conW,conH);
+  [{x:0.2,y:0.25,r:0.15,c:'rgba(0,200,150,0.06)'},{x:0.75,y:0.23,r:0.12,c:'rgba(192,132,252,0.06)'},{x:0.55,y:0.76,r:0.17,c:'rgba(255,45,120,0.06)'},{x:0.48,y:0.48,r:0.11,c:'rgba(200,168,0,0.05)'}].forEach(n=>{
+    const g=conCtx.createRadialGradient(n.x*conW,n.y*conH,0,n.x*conW,n.y*conH,n.r*Math.min(conW,conH));
+    g.addColorStop(0,n.c); g.addColorStop(1,'transparent');
+    conCtx.beginPath(); conCtx.arc(n.x*conW,n.y*conH,n.r*Math.min(conW,conH),0,Math.PI*2); conCtx.fillStyle=g; conCtx.fill();
+  });
   state.conIngredients.forEach((a,i)=>{ state.conIngredients.forEach((b,j)=>{ if(j<=i||a.type!==b.type) return; const dx=ix(i)-ix(j),dy=iy(i)-iy(j); if(Math.sqrt(dx*dx+dy*dy)>conW*0.28) return; conCtx.beginPath(); conCtx.moveTo(ix(i),iy(i)); conCtx.lineTo(ix(j),iy(j)); conCtx.strokeStyle=a.color+'22'; conCtx.lineWidth=1; conCtx.stroke(); }); });
-  state.conIngredients.forEach((ing,i)=>{ const x=ix(i),y=iy(i),r=ing.size*(hoveredIngr===i?1.45:1),hov=hoveredIngr===i,grd=conCtx.createRadialGradient(x,y,0,x,y,r*3.5); grd.addColorStop(0,ing.color+(hov?'28':'14')); grd.addColorStop(1,'transparent'); conCtx.beginPath(); conCtx.arc(x,y,r*3.5,0,Math.PI*2); conCtx.fillStyle=grd; conCtx.fill(); conCtx.beginPath(); conCtx.arc(x,y,r,0,Math.PI*2); conCtx.fillStyle=ing.color+(hov?'EE':'BB'); conCtx.fill(); conCtx.lineWidth=1.5; conCtx.strokeStyle='rgba(10,10,10,0.4)'; conCtx.stroke(); if(hov){ conCtx.beginPath(); conCtx.arc(x,y,r+8,0,Math.PI*2); conCtx.strokeStyle=ing.color+'55'; conCtx.lineWidth=1.5; conCtx.stroke(); conCtx.font=`700 11px 'Nunito',sans-serif`; conCtx.fillStyle='rgba(10,10,10,0.85)'; conCtx.textAlign=x<conW*0.6?'left':'right'; conCtx.fillText(ing.name,x+(x<conW*0.6?r+12:-r-12),y+4); } });
+  state.conIngredients.forEach((ing,i)=>{
+    const x=ix(i),y=iy(i),r=ing.size*(hoveredIngr===i?1.45:1),hov=hoveredIngr===i;
+    const grd=conCtx.createRadialGradient(x,y,0,x,y,r*3.5); grd.addColorStop(0,ing.color+(hov?'28':'14')); grd.addColorStop(1,'transparent');
+    conCtx.beginPath(); conCtx.arc(x,y,r*3.5,0,Math.PI*2); conCtx.fillStyle=grd; conCtx.fill();
+    conCtx.beginPath(); conCtx.arc(x,y,r,0,Math.PI*2); conCtx.fillStyle=ing.color+(hov?'EE':'BB'); conCtx.fill();
+    conCtx.lineWidth=1.5; conCtx.strokeStyle='rgba(10,10,10,0.4)'; conCtx.stroke();
+    if(hov){ conCtx.beginPath(); conCtx.arc(x,y,r+8,0,Math.PI*2); conCtx.strokeStyle=ing.color+'55'; conCtx.lineWidth=1.5; conCtx.stroke(); conCtx.font=`700 11px 'Nunito',sans-serif`; conCtx.fillStyle='rgba(10,10,10,0.85)'; conCtx.textAlign=x<conW*0.6?'left':'right'; conCtx.fillText(ing.name,x+(x<conW*0.6?r+12:-r-12),y+4); }
+  });
 }
 function showConTooltip(idx,cx,cy){
-  const ing=state.conIngredients[idx], tt=document.getElementById('ingr-tooltip');
+  const ing=state.conIngredients[idx],tt=document.getElementById('ingr-tooltip');
   document.getElementById('tt-name').textContent=ing.name;
   const types={natural:'Natural',seasoning:'Seasoning',additive:'Additive',preservative:'Preservative',vitamin:'Vitamin',emulsifier:'Emulsifier',flavour:'Flavour'};
   const ttType=document.getElementById('tt-type'); ttType.textContent=types[ing.type]||ing.type; ttType.style.color=ing.color;
@@ -2215,52 +1788,123 @@ function showConTooltip(idx,cx,cy){
   let left=cx+14,top=cy-70; if(left+215>window.innerWidth) left=cx-225; if(top<10) top=cy+14;
   tt.style.left=left+'px'; tt.style.top=top+'px'; tt.classList.add('show');
 }
-function hideConTooltip(){document.getElementById('ingr-tooltip').classList.remove('show');}
+function hideConTooltip(){ document.getElementById('ingr-tooltip').classList.remove('show'); }
 
 /* ═══════════════════════════════════════
-   UTILS
+   HISTORY (localStorage)
 ═══════════════════════════════════════ */
-function getHistory(){try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');}catch{return[];}}
-function saveHistory(result, thumb) {
+function getHistory(){ try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');}catch{return[];} }
+function saveHistory(result,thumb){
   const hist=getHistory();
-  hist.unshift({id:Date.now(), ts:new Date().toISOString(), product_name:result.product_name||'Unknown', score:result.score||0, verdict:result.verdict||'', category:result.product_category||'', language:state.language, thumb:thumb||null, is_voice:result.is_voice_log||false, data:result});
+  hist.unshift({id:Date.now(),ts:new Date().toISOString(),product_name:result.product_name||'Unknown',score:result.score||0,verdict:result.verdict||'',category:result.product_category||'',language:state.language,thumb:thumb||null,is_voice:result.is_voice_log||false,is_barcode:result.is_barcode_scan||false,data:result});
   if(hist.length>50) hist.pop();
   try{localStorage.setItem(HISTORY_KEY,JSON.stringify(hist));}catch{}
 }
-async function loadQuota(){ try{ const res=await fetch(`${API}/scan-quota`); const d=await res.json(); state.quotaRemaining=d.remaining??5; state.isPro=d.is_pro??false; updateQuota(); }catch{} }
-function updateQuota(){ const t=document.getElementById('quota-text'),dot=document.getElementById('qdot'); if(state.isPro){t.textContent='∞';dot.className='quota-dot';} else{ t.textContent=state.quotaRemaining+' left'; dot.className=state.quotaRemaining<=1?'quota-dot low':state.quotaRemaining<=3?'quota-dot warn':'quota-dot'; } }
-function openPaywall(trigger=''){ if(trigger==='limit') document.getElementById('pw-sub').textContent="You've used all free scans today."; document.getElementById('paywall-overlay').classList.add('open'); }
-function closePaywall(){document.getElementById('paywall-overlay').classList.remove('open');}
-async function shareResult(){ if(!state.lastResult)return; const d=state.lastResult, text=`Eatlytic — ${d.product_name} — ${d.score}/10`; try{ if(navigator.share) await navigator.share({title:'Eatlytic',text}); else{await navigator.clipboard.writeText(text);showToast('📋 Copied!');} }catch{} }
-function resetPortal(){ state.blob=null; const img=document.getElementById('preview-img'); if(img.src) URL.revokeObjectURL(img.src); img.src=''; document.getElementById('portal-preview-wrap').classList.remove('visible'); document.getElementById('analyse-cta').classList.remove('visible'); document.getElementById('quality-strip').classList.remove('visible'); }
-function spawnConfetti(cx,cy){ for(let i=0;i<22;i++){ const p=document.createElement('div'); p.className='confetti-piece'; p.style.cssText=`left:${cx+(Math.random()-.5)*80}px;top:${cy-8}px;background:${CONFETTI_COLORS[i%CONFETTI_COLORS.length]};transform:rotate(${Math.random()*360}deg);animation-duration:0.8s;`; document.body.appendChild(p); setTimeout(()=>p.remove(),1500); } }
-function spawnStickerPop(emoji,cx,cy){ const p=document.createElement('div'); p.className='sticker-pop';p.textContent=emoji; p.style.cssText=`left:${cx-20}px;top:${cy-30}px`; document.body.appendChild(p); setTimeout(()=>p.remove(),1000); }
-let toastTimer; function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg;t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2800); }
+function clearHistory(){
+  if(!confirm('Clear all history?')) return;
+  localStorage.removeItem(HISTORY_KEY); localStorage.removeItem(STREAK_KEY);
+  renderHistory(); showToast('🗑 History cleared');
+}
+
+/* ═══════════════════════════════════════
+   QUOTA + PAYWALL
+═══════════════════════════════════════ */
+async function loadQuota(){
+  try{ const res=await fetch(`${API}/scan-quota`),d=await res.json(); state.quotaRemaining=d.remaining??d.scans_remaining??5; state.isPro=d.is_pro??false; updateQuota(); }catch{}
+}
+function updateQuota(){
+  const t=document.getElementById('quota-text'),dot=document.getElementById('qdot');
+  if(state.isPro){t.textContent='∞';dot.className='quota-dot';}
+  else{ t.textContent=state.quotaRemaining+' left'; dot.className=state.quotaRemaining<=1?'quota-dot low':state.quotaRemaining<=3?'quota-dot warn':'quota-dot'; }
+}
+function openPaywall(trigger=''){
+  if(trigger==='limit') document.getElementById('pw-sub').textContent="You've used all free scans today. Upgrade to keep going.";
+  document.getElementById('paywall-overlay').classList.add('open');
+}
+function closePaywall(){ document.getElementById('paywall-overlay').classList.remove('open'); }
+async function activatePro(){
+  try{
+    const fd=new FormData(); fd.append('payment_id','demo_'+Date.now());
+    const res=await fetch(`${API}/activate-pro`,{method:'POST',body:fd}),d=await res.json();
+    if(d.status==='activated'){ state.isPro=true; state.quotaRemaining=99999; closePaywall(); updateQuota(); showToast('🎉 Pro activated!'); spawnConfetti(window.innerWidth/2,window.innerHeight/2); }
+  }catch{ showToast('❌ Payment failed.'); }
+}
+
+/* ═══════════════════════════════════════
+   SHARE + PORTAL RESET
+═══════════════════════════════════════ */
+async function shareResult(){
+  if(!state.lastResult){showToast('⚠️ No result to share');return;}
+  const d=state.lastResult,text=`Eatlytic — ${d.product_name} — ${d.score}/10\n${d.verdict}\n\n${d.summary}`;
+  try{ if(navigator.share) await navigator.share({title:'Eatlytic',text}); else{await navigator.clipboard.writeText(text);showToast('📋 Copied!');} }catch{showToast('📋 Share unavailable');}
+}
+function resetPortal(){
+  state.blob=null;
+  const img=document.getElementById('preview-img'); if(img.src) URL.revokeObjectURL(img.src); img.src='';
+  document.getElementById('portal-preview-wrap').classList.remove('visible');
+  document.getElementById('analyse-cta').classList.remove('visible');
+  document.getElementById('quality-strip').classList.remove('visible');
+}
+
+/* ═══════════════════════════════════════
+   CONFETTI + STICKER POP + TOAST
+═══════════════════════════════════════ */
+function spawnConfetti(cx,cy){
+  for(let i=0;i<22;i++){
+    const p=document.createElement('div'); p.className='confetti-piece';
+    p.style.cssText=`left:${cx+(Math.random()-.5)*80}px;top:${cy-8}px;background:${CONFETTI_COLORS[i%CONFETTI_COLORS.length]};transform:rotate(${Math.random()*360}deg);animation-duration:${0.7+Math.random()*.6}s;animation-delay:${Math.random()*.18}s;border-radius:${Math.random()>.5?'50%':'2px'}`;
+    document.body.appendChild(p); setTimeout(()=>p.remove(),1500);
+  }
+}
+function spawnStickerPop(emoji,cx,cy){
+  const p=document.createElement('div'); p.className='sticker-pop'; p.textContent=emoji;
+  p.style.cssText=`left:${cx-20}px;top:${cy-30}px`; document.body.appendChild(p); setTimeout(()=>p.remove(),1000);
+}
+let toastTimer;
+function showToast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2800);
+}
+
 function esc(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 /* ═══════════════════════════════════════
-   INIT & THEME
+   INIT
 ═══════════════════════════════════════ */
 document.getElementById('bottom-nav').classList.add('visible');
 loadQuota();
 setupVoice();
-function toggleDark(){ const isDark = document.documentElement.getAttribute('data-theme') === 'dark'; setDark(!isDark); }
+setTimeout(()=>{ const p=getProfile(); if(p.name) document.getElementById('profile-name-disp').textContent=p.name; },100);
+window.addEventListener('popstate',()=>{ if(state.cameraStream) stopCamera(); });
+
+/* ═══════════════════════════════════════
+   DARK MODE
+═══════════════════════════════════════ */
+function toggleDark(){ setDark(document.documentElement.getAttribute('data-theme')!=='dark'); }
 function setDark(on){
-  document.documentElement.setAttribute('data-theme', on ? 'dark' : 'light');
-  const btn = document.getElementById('theme-toggle'); if(btn) btn.textContent = on ? '☀️' : '🌙';
-  try{ localStorage.setItem('eatlytic-theme', on ? 'dark' : 'light'); }catch{}
+  document.documentElement.setAttribute('data-theme',on?'dark':'light');
+  const btn=document.getElementById('theme-toggle'); if(btn) btn.textContent=on?'☀️':'🌙';
+  try{localStorage.setItem('eatlytic-theme',on?'dark':'light');}catch{}
 }
 (function initTheme(){
-  let saved = localStorage.getItem('eatlytic-theme');
-  if(saved) setDark(saved === 'dark');
-  else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) setDark(true);
+  let saved=null; try{saved=localStorage.getItem('eatlytic-theme');}catch{}
+  if(saved) setDark(saved==='dark');
+  else if(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches) setDark(true);
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',e=>{ let s=null; try{s=localStorage.getItem('eatlytic-theme');}catch{} if(!s) setDark(e.matches); });
 })();
+
+/* ═══════════════════════════════════════
+   KEYBOARD / NAV FIX FOR MOBILE
+═══════════════════════════════════════ */
 (function initNavKeyboardFix(){
-  const nav = document.getElementById('bottom-nav'); if(!nav) return;
-  function onViewportResize(){ const keyboardOpen = (window.visualViewport ? window.visualViewport.height < window.innerHeight * 0.75 : false); nav.style.transform = keyboardOpen ? 'translateY(110%)' : ''; }
-  if(window.visualViewport) window.visualViewport.addEventListener('resize', onViewportResize);
-  document.addEventListener('focusin', e => { if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) nav.style.transform = 'translateY(110%)'; });
-  document.addEventListener('focusout', () => { setTimeout(() => { if(!(window.visualViewport && window.visualViewport.height < window.innerHeight * 0.75)) nav.style.transform = ''; }, 150); });
+  const nav=document.getElementById('bottom-nav'); if(!nav) return;
+  function onViewportResize(){
+    const keyboardOpen=window.visualViewport?window.visualViewport.height<window.innerHeight*0.75:false;
+    nav.style.transform=keyboardOpen?'translateY(110%)':''; nav.style.transition='transform 0.2s ease';
+  }
+  if(window.visualViewport){ window.visualViewport.addEventListener('resize',onViewportResize); window.visualViewport.addEventListener('scroll',onViewportResize); }
+  document.addEventListener('focusin',e=>{ if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)){nav.style.transform='translateY(110%)';nav.style.transition='transform 0.2s ease';} });
+  document.addEventListener('focusout',()=>{ setTimeout(()=>{ const ko=window.visualViewport?window.visualViewport.height<window.innerHeight*0.75:false; if(!ko) nav.style.transform=''; },150); });
 })();
 </script>
 </body>
