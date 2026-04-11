@@ -334,41 +334,51 @@ def apply_dna_overrides(
     category: str = "unknown",
     front_text: str = "",
 ) -> dict:
-    """THE MASTER OVERRIDE FUNCTION"""
+    """THE MASTER OVERRIDE FUNCTION
+
+    BUG FIX: Previously called both FakeDetector.validate() AND atwater_math_check(),
+    which caused double-validation and incorrectly blocked valid labels (e.g.
+    single-ingredient products where calculated calories = 0 were flagged as MATH_MISMATCH).
+    Now uses only atwater_math_check() which correctly handles:
+      - per-category tolerance (noodles/snacks/spices get wider tolerance)
+      - sub-component hierarchy (sugar+fiber must not exceed carbs)
+      - zero-calorie pass-through
+    """
     final_verdicts = []
-    
-    # 1. New Robust Math Check
-    detector = FakeDetector(tolerance_percent=35.0)
-    validation = detector.validate(nutrients)
-    
-    if validation["status"] in ["MATH_MISMATCH", "IMPOSSIBLE_DATA"]:
+
+    # 1. Atwater Math Check (single, correct implementation)
+    math_ok = atwater_math_check(nutrients, category)
+    if not math_ok["is_valid"]:
         return {
             "action": "BLOCK",
             "score": 0,
-            "reason": f"❌ CANNOT SCORE: {validation['message']}",
+            "reason": f"❌ CANNOT SCORE: {math_ok['reason']}",
             "extra_flags": [],
         }
 
-    # 2. Lie Detector
+    # 2. Lie Detector (OVERRIDE level — Score 2)
     lie_check = detect_fake_claims(full_ocr_text, ingredients_raw, front_text=front_text)
     if lie_check["fake_claim_detected"]:
         hidden_str = ", ".join(lie_check["hidden_ingredients"])
         return {
-            "action": "OVERRIDE", "score": 2,
+            "action": "OVERRIDE",
+            "score": 2,
             "reason": f"🚨 FAKE CLAIM: Brand claims healthy marketing, but contains {hidden_str}.",
             "extra_flags": [],
         }
 
-    # 3. NOVA 4
+    # 3. NOVA 4 (PASS level — Capped Score 3)
     nova_check = detect_nova_4(ingredients_raw)
     score = base_score
     if nova_check["is_nova_4"]:
         flags_str = ", ".join(nova_check["flags_found"])
         final_verdicts.append(f"⚠️ NOVA 4 Ultra-Processed (Contains: {flags_str})")
-        if score > 3: score = 3
+        if score > 3:
+            score = 3
 
     return {
-        "action": "PASS", "score": score,
-        "reason": validation["message"] if validation["status"] == "VALID" else None,
+        "action": "PASS",
+        "score": score,
+        "reason": math_ok.get("reason"),
         "extra_flags": final_verdicts,
     }

@@ -19,7 +19,6 @@ from app.services.alternatives import get_healthy_alternative
 from app.services.label_detector import process_image_for_ocr
 from app.services.explanation_engine import get_explanation_report
 from app.services.formatter import get_whatsapp_tiered_content
-from app.services.research_engine import get_live_search
 
 logger = logging.getLogger(__name__)
 
@@ -281,11 +280,11 @@ async def unified_analyze_flow(
     age_group: str,
     product_category_hint: str,
     language: str,
-    web_context: str, # Deprecated in favor of internal search, but kept for signature parity
+    web_context: str,  # kept for API signature parity
     blur_info: dict,
     label_confidence: str,
     front_text: str = "",
-    image_content: bytes = None,
+    image_content: bytes = None,  # DEPRECATED: OCR is done in main.py before this call
 ) -> dict:
     """
     Full pipeline:
@@ -299,10 +298,11 @@ async def unified_analyze_flow(
       8. Assemble rich final output
     """
 
-    # Step 1: Image pipeline (optional) ──────────────────────────────
-    if image_content:
+    # Step 1: LAST-RESORT fallback OCR - only fires when caller did not pre-extract text.
+    # Normal flow: main.py runs OCR first then passes extracted_text here.
+    if image_content and not extracted_text:
         from app.services.ocr import run_ocr
-        logger.info("Running intelligent image pipeline...")
+        logger.warning("image_content passed to unified_analyze_flow - OCR should be done in caller.")
         cropped = process_image_for_ocr(image_content)
         ocr_res = run_ocr(cropped, language)
         extracted_text = ocr_res["text"]
@@ -412,17 +412,18 @@ async def unified_analyze_flow(
     }
     ingredients_raw = extracted.get("ingredients_raw", "") or ""
 
-    # P0 FIX: Perform Live Research AFTER extraction to use the clean product name
+    # BUG FIX: Removed duckduckgo-search (causes deployment failures on HuggingFace/Docker).
+    # Web research is now optional. If a working search module is present in the env, use it.
+    # Otherwise skip silently to keep the service stable.
     internal_web_context = ""
     try:
         p_name = extracted.get("product_name", "Unknown")
         if p_name and p_name != "Unknown":
-            # Avoid redundant search if we already have context (e.g. from B2B)
-            # but usually we want fresh search on the specific product.
+            from app.services.research_engine import get_live_search
             internal_web_context = get_live_search(f"health analysis ingredients {p_name} {category}")
             logger.info("Internal Live Research succeeded for: %s", p_name)
     except Exception as e:
-        logger.warning("Internal research failed: %s", e)
+        logger.warning("Internal research skipped (module unavailable or search failed): %s", e)
 
     # Step 7: DNA overrides ───────────────────────────────────────────
     rich = _primary(extracted)

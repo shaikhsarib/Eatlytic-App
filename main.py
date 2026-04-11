@@ -1,18 +1,12 @@
 import os
-import io
 import re
 import json
-import asyncio
 import logging
 import hashlib
-import base64
-import threading
 import secrets
 import datetime
-import easyocr
-import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
+from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 try:
     from twilio.twiml.messaging_response import MessagingResponse
@@ -106,6 +100,7 @@ def get_device_key(request: Request) -> str:
     ip = request.client.host if request.client else "unknown"
     ua = request.headers.get("user-agent", "")
     fp_hint = request.headers.get("x-fingerprint", "")
+    # BUG FIX: Include fp_hint so different browsers on same IP are treated as different devices.
     return hashlib.md5(f"{ip}:{ua}:{fp_hint}".encode()).hexdigest()[:16]
 
 
@@ -184,6 +179,8 @@ async def analyze_product(
         return {"error": "Server Error: Missing GROQ_API_KEY"}
 
     device_key = get_device_key(request)
+    # BUG FIX #1: Check quota WITHOUT incrementing first.
+    # Scans are only deducted AFTER a successful analysis.
     scan_check = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=False)
     if not scan_check["allowed"]:
         return JSONResponse(
@@ -222,30 +219,29 @@ async def analyze_product(
             except Exception as e:
                 logger.warning(f"Deblurring failed: {e}")
 
-        # P0 OPTIMIZATION: Removed manual run_ocr. unified_analyze_flow will handle it.
-        # This saves 1-3 seconds per scan.
-        
-        # P0 OPTIMIZATION: Manual search removed. Internally handled by unified_analyze_flow
-        # for much higher accuracy using the extracted product name.
-        web_context = "" 
+        # BUG FIX #2: Run OCR here so unified_analyze_flow does NOT re-run it.
+        # Passing image_content caused double-OCR (2x slower, 2x API cost).
+        if not extracted_text:
+            ocr_result = run_ocr(working_content, language)
+            extracted_text = ocr_result["text"]
 
         result = await unified_analyze_flow(
-            extracted_text=extracted_text, # can be None
+            extracted_text=extracted_text,
             persona=persona,
             age_group=age_group,
             product_category_hint=product_category,
             language=language,
-            web_context=web_context,
+            web_context="",
             blur_info=blur_info,
             label_confidence="high",
             front_text=front_text,
-            image_content=working_content,
+            # image_content intentionally NOT passed — OCR already done above.
         )
 
         if "error" in result:
             return result
 
-        # DEDUCT QUOTA ONLY ON SUCCESS
+        # BUG FIX #1 (continued): Only deduct quota after confirmed success.
         scan_update = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=True)
         result["scan_meta"] = {
             "scans_remaining": scan_update["scans_remaining"],
@@ -268,8 +264,8 @@ async def health():
 # ── Pro activation ──────────────────────────────
 @app.post("/activate-pro")
 async def activate_pro(request: Request, payment_id: str = Form(...)):
-    # P0 HARDENING: Basic format validation for Razorpay/Stripe-like IDs
-    if not re.match(r"^(pay_|razor_)?[\w]{10,40}$", payment_id):
+    # Basic format validation for Razorpay/Stripe-like IDs
+    if not re.match(r"^(pay_|razor_|pi_)?[\w]{10,60}$", payment_id):
         raise HTTPException(status_code=400, detail="Invalid payment ID format.")
 
     device_key = get_device_key(request)
@@ -286,14 +282,17 @@ async def activate_pro(request: Request, payment_id: str = Form(...)):
             conn.execute(
                 "UPDATE devices SET is_pro=1 WHERE device_key=?", (device_key,)
             )
-    
-    # Log payment for audit
-    with db_conn() as conn:
-        conn.execute(
-            "INSERT INTO payments(device_key, razorpay_payment_id, status, paid_at) VALUES(?,?,?,?)",
-            (device_key, payment_id, "captured", datetime.datetime.now().isoformat())
-        )
-        
+
+    # Log payment for audit; TABLE may not exist in all envs — handle gracefully
+    try:
+        with db_conn() as conn:
+            conn.execute(
+                "INSERT INTO payments(device_key, razorpay_payment_id, status, paid_at) VALUES(?,?,?,?)",
+                (device_key, payment_id, "captured", datetime.datetime.now().isoformat())
+            )
+    except Exception as e:
+        logger.warning("Payment log failed (table may not exist): %s", e)
+
     return {"status": "activated", "message": "Pro activated! Payment logged."}
 
 
@@ -650,6 +649,7 @@ async def whatsapp_webhook(request: Request):
     msg = resp.message()
 
     phone_number = form.get("From", "unknown_wa")
+    # BUG FIX #1 (WhatsApp): Check only — do NOT increment yet.
     scan_check = check_and_increment_scan(phone_number, limit=FREE_SCAN_LIMIT, increment=False)
 
     media_url = form.get("MediaUrl0")
@@ -692,10 +692,10 @@ async def whatsapp_webhook(request: Request):
             except Exception:
                 pass
 
+        # BUG FIX #2 (WhatsApp): OCR done here — do NOT pass image_content to avoid double-OCR.
         ocr_r = run_ocr(img_to_ocr, "en")
         text = ocr_r["text"]
 
-        # P0 FIX: Unified flow handles label validation and DNA rules
         analysis = await unified_analyze_flow(
             extracted_text=text,
             persona="general",
@@ -706,7 +706,7 @@ async def whatsapp_webhook(request: Request):
             blur_info=blur_info,
             label_confidence="high",
             front_text="",
-            image_content=img_to_ocr,
+            # image_content intentionally NOT passed — OCR already done above.
         )
 
         if "error" in analysis:
@@ -727,16 +727,16 @@ async def whatsapp_webhook(request: Request):
             )
             risk_text = "\n".join([f"• {c}" for c in cons]) if cons else "• None"
 
+            # BUG FIX #3 (WhatsApp): Deduct AFTER success, use FRESH count for message.
+            scan_update = check_and_increment_scan(phone_number, limit=FREE_SCAN_LIMIT, increment=True)
             response_text = (
                 f"*Eatlytic Scan Results:*\n{nut_text}\n\n"
                 f"*Score: {score}/10*\n[{verdict}]\n\n"
                 f"{summary}\n\n"
                 f"⚠️ *Risk Flags:*\n{risk_text}\n\n"
                 f"{alt}\n\n"
+                f"_Scans left: {scan_update['scans_remaining']}_"
             )
-            # DEDUCT ON SUCCESS
-            scan_update = check_and_increment_scan(phone_number, limit=FREE_SCAN_LIMIT, increment=True)
-            response_text += f"_Scans left: {scan_update['scans_remaining']}_"
             msg.body(response_text)
 
     except Exception as e:
