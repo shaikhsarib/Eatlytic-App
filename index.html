@@ -1715,15 +1715,26 @@ function renderReveal(d) {
     </div>`;
   }
   if (d.ingredients_spotlight?.length) {
-    html+=`<div class="ingr-section">
-      <div class="section-label" style="margin-bottom:8px">Ingredients spotted</div>
-      <div class="ingr-tags">`;
-    d.ingredients_spotlight.forEach(ing=>{
+    html+=`<div class="pack-label" style="margin-top:24px">Ingredient Spotlight — ${d.ingredients_spotlight.length} cards</div>
+    <div class="nutrient-pack" id="ing-pack">`;
+    d.ingredients_spotlight.forEach((ing,i)=>{
       const t = ing.type?.toLowerCase();
-      const cls = (t==='additive'||t==='preservative') ? 'itag-warn' : (ing.safety_rating?.toLowerCase()==='safe'||t==='natural'||t==='vitamin') ? 'itag-good' : 'itag-ok';
-      html+=`<div class="ingr-tag ${cls}" onclick="showIngDetail(${JSON.stringify(ing).replace(/"/g,'&quot;')})">${esc(ing.name)}</div>`;
+      const bg = SAT_BG[(i+3)%SAT_BG.length]; // Offset to vary colors
+      const rot = ((i%2===0?-1:1)*(i%3+1.5))+'deg';
+      const icon = {additive:'🧪',preservative:'🛡️',natural:'🌿',vitamin:'💊',sweetener:'🍯',protein:'💪',fat:'🥑'}[t]||'✨';
+      const rating = ing.safety_rating?.toLowerCase();
+      const rIcon = rating==='safe'?'✓':rating==='caution'?'~':'!';
+      const rColor = {safe:'#00A878',caution:'#FF6B00',avoid:'#FF2D78'}[rating]||'#888';
+      
+      html+=`<div class="ns-card ing-card" id="inc-${i}" style="background:${bg};--rot:${rot}" onclick="showIngDetail(${JSON.stringify(ing).replace(/"/g,'&quot;')})">
+        <div class="ns-rating-badge" style="background:${rColor}">${rIcon}</div>
+        <span class="ns-icon">${icon}</span>
+        <div class="ns-name" style="font-size:10px">${esc(ing.name)}</div>
+        <div class="ns-val" style="font-size:11px;opacity:0.7">${esc(ing.type||'Ingredient')}</div>
+        <div class="ns-bar"><div class="ns-fill" style="background:${rColor};width:${rating==='safe'?'100%':rating==='caution'?'60%':'30%'}"></div></div>
+      </div>`;
     });
-    html+=`</div></div>`;
+    html+=`</div>`;
   }
   if (d.pros?.length||d.cons?.length) {
     html+=`<div class="pro-con-grid">`;
@@ -1772,24 +1783,26 @@ function renderReveal(d) {
     document.querySelectorAll('.ns-card').forEach((card,i)=>{
       setTimeout(()=>{
         card.classList.add('visible');
-        const fill=document.getElementById('nsf-'+i);
-        if (!fill) return;
-        const n=d.nutrient_breakdown?.[i];
-        if (n) {
-          const DV_G  = {energy:2000,calorie:2000,protein:50,carb:300,carbohydrate:300,fat:65,sugar:25,fiber:28,fibre:28,'saturated fat':20,'trans fat':2};
-          const DV_MG = {sodium:2000,iron:18,calcium:1000,potassium:3500,cholesterol:300};
-          const nm = n.name.toLowerCase();
-          let dv = 50;
-          if (n.unit==='kcal'||n.unit==='kJ') { dv=2000; }
-          else if (n.unit==='g') {
-            for (const [k,v] of Object.entries(DV_G)) { if (nm.includes(k)) { dv=v; break; } }
-          } else if (n.unit==='mg') {
-            for (const [k,v] of Object.entries(DV_MG)) { if (nm.includes(k)) { dv=v; break; } }
+        if(card.id.startsWith('nsc-')) {
+          const fill=document.getElementById('nsf-'+card.id.split('-')[1]);
+          if (!fill) return;
+          const n=d.nutrient_breakdown?.[parseInt(card.id.split('-')[1])];
+          if (n) {
+            const DV_G  = {energy:2000,calorie:2000,protein:50,carb:300,carbohydrate:300,fat:65,sugar:25,fiber:28,fibre:28,'saturated fat':20,'trans fat':2};
+            const DV_MG = {sodium:2000,iron:18,calcium:1000,potassium:3500,cholesterol:300};
+            const nm = n.name.toLowerCase();
+            let dv = 50;
+            if (n.unit==='kcal'||n.unit==='kJ') { dv=2000; }
+            else if (n.unit==='g') {
+              for (const [k,v] of Object.entries(DV_G)) { if (nm.includes(k)) { dv=v; break; } }
+            } else if (n.unit==='mg') {
+              for (const [k,v] of Object.entries(DV_MG)) { if (nm.includes(k)) { dv=v; break; } }
+            }
+            const pct=Math.min(100,Math.round(((n.value||0)/dv)*100));
+            setTimeout(()=>{fill.style.width=pct+'%';},500);
           }
-          const pct=Math.min(100,Math.round(((n.value||0)/dv)*100));
-          setTimeout(()=>{fill.style.width=pct+'%';},500);
         }
-      }, i*130);
+      }, i*100);
     });
   });
 }
