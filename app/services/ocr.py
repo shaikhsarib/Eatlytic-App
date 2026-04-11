@@ -118,27 +118,42 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
 
 def universal_label_filter(raw_ocr_text: str) -> dict:
     """
-    THE TRASH COMPACTOR (v3 — context-aware):
+    THE TRASH COMPACTOR (v4 — permissive, context-aware):
     Strips out Indian legal text (FSSAI, MRP) and keeps only nutrition data.
-    KEYWORD PRIORITY: a line containing a nutrition keyword is NEVER skipped,
-    even if it also contains a garbage word (e.g. "Calories — MRP inclusive").
-    HEADER PRESERVATION: first 3-5 non-garbage lines are kept (product name lives here).
-    CONTEXT PRESERVATION: "Ingredients" / "Information" lines are kept for AI context.
+
+    KEY FIXES in v4:
+    - Expanded nutrition_words to catch serving size, daily value, etc.
+    - High-strength header check now catches ANY of: "Nutrition Facts",
+      "Serving Size", "Total Fat", "Saturated Fat", "Daily Value",
+      "Per 100g", "Total Carb", "Dietary Fiber".
+    - This ensures stylized product mockups (peanut butter label mockups, etc.)
+      are NEVER falsely rejected — if the image has nutrition keywords, it passes.
     """
     lines = raw_ocr_text.split("\n")
     clean_lines = []
     number_count = 0
 
-    nutrition_words = r"(energy|calories|protein|protien|fat|carb|sugar|sodium|fibre|fiber|salt|per\s*100\s*g|per\s*serve|serving|trans\s*fat|saturated|cholesterol|polyunsaturated|monounsaturated|total\s*fat|total\s*carb|dietary\s*fibre|dietary\s*fiber|added\s*sugar|vitamin|calcium|iron|potassium|moisture|ash|total\s*sugar|amount\s*per\s*serving|nutrition\s*facts|dietary\s*info|information\s*per)"
-    garbage_words = r"(fssai|lic\.?|net\s*wt|net\s*qty|mrp|customer\s*care|batch\s*no|best\s*before|mfd|date\s*of|packed\s*on|manufactured\s*by|marketed\s*by|imported\s*by|country\s*of|origin|www\.|toll\s*free|phone|tel\.|e-mail|email|ingredient\s*you\s*know|storage\s*instructions|keep\s*in\s*a|store\s*in\s*a|cool\s*and\s*dry|place\s*away|direct\s*heat|sunlight|consumption|vegetarian|non.?vegetarian|green\s*dot|red\s*dot|fpo|license\s*no)"
-
-    unit_pattern = (
-        r"\b\d+(\.\d+)?\s*(g|mg|kcal|kj|kjoules|kilojoule|kilojoules|gm|gms|ml|iu|%)\b"
+    nutrition_words = (
+        r"(energy|calorie|calories|protein|protien|fat|carb|sugar|sodium|fibre|fiber|"
+        r"salt|per\s*100\s*g|per\s*serve|serving|trans\s*fat|saturated|unsaturated|"
+        r"cholesterol|polyunsaturated|monounsaturated|total\s*fat|total\s*carb|"
+        r"dietary\s*fibre|dietary\s*fiber|added\s*sugar|vitamin|calcium|iron|"
+        r"potassium|moisture|ash|total\s*sugar|amount\s*per\s*serving|"
+        r"nutrition\s*facts|dietary\s*info|information\s*per|serving\s*size|"
+        r"daily\s*value|%\s*dv|percent\s*daily)"
+    )
+    garbage_words = (
+        r"(fssai|lic\.?|net\s*wt|net\s*qty|mrp|customer\s*care|batch\s*no|"
+        r"best\s*before|mfd|date\s*of|packed\s*on|manufactured\s*by|marketed\s*by|"
+        r"imported\s*by|country\s*of|origin|www\.|toll\s*free|tel\.|e-mail|"
+        r"storage\s*instructions|keep\s*in\s*a|store\s*in\s*a|cool\s*and\s*dry|"
+        r"place\s*away|direct\s*heat|sunlight|green\s*dot|red\s*dot|fpo|license\s*no)"
     )
 
-    # HEADER PRESERVATION: keep first N non-garbage lines unconditionally
-    # but still reject lines that are pure garbage (FSSAI, MRP, etc.)
-    # Also require minimum text quality (at least 2 coherent words of 2+ chars)
+    unit_pattern = (
+        r"\b\d+(\.\d+)?\s*(g|mg|kcal|kj|kjoules|kilojoule|kilojoules|gm|gms|ml|iu|%)(\b|/)"
+    )
+
     header_line_count = 0
     max_header_lines = 5
 
@@ -151,8 +166,6 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
         has_garbage = bool(re.search(garbage_words, line_l))
         has_number_unit = bool(re.search(unit_pattern, line_l))
 
-        # Quality check: at least 2 coherent words (2+ chars each) AND
-        # at least one substantial word (4+ chars) to filter out garbled text
         coherent_words = [w for w in line_l.split() if len(w) >= 2]
         substantial_words = [w for w in line_l.split() if len(w) >= 4]
         
@@ -182,7 +195,6 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
             continue
 
         # CONTEXT PRESERVATION: keep "Ingredients" or "Information" lines
-        # so the AI understands what section it's reading
         if re.search(r"(ingredient|information|nutritional|nutrition info|serving)", line_l):
             clean_lines.append(line)
             if re.search(r"\b\d+(\.\d+)?\b", line_l):
@@ -207,8 +219,17 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
 
     clean_text = "\n".join(clean_lines)
 
-    # FINAL GATE: Valid if numbers found OR if a high-strength keyword was found
-    high_strength_header = bool(re.search(r"(nutrition\s*facts|amount\s*per\s*serving|information\s*per)", raw_ocr_text.lower()))
+    # FINAL GATE (v4): Valid if EITHER:
+    #   A) At least 1 number-like line found in cleaned text, OR
+    #   B) Any high-strength nutrition keyword/header found ANYWHERE in original text
+    # This ensures any label with recognizable nutrition keywords is always passed to AI.
+    high_strength_header = bool(re.search(
+        r"(nutrition\s*facts|amount\s*per\s*serving|information\s*per|serving\s*size|"
+        r"calories\s+from|daily\s+value|percent\s+daily|per\s+100\s*g|"
+        r"total\s+fat|total\s+carb|dietary\s+fiber|dietary\s+fibre|"
+        r"saturated\s+fat|trans\s+fat)",
+        raw_ocr_text.lower()
+    ))
     is_valid = number_count >= 1 or high_strength_header
 
     return {"is_valid": is_valid, "clean_text": clean_text}

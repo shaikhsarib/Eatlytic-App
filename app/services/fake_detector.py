@@ -160,8 +160,11 @@ CATEGORY_TOLERANCES: dict[str, float] = {
     "noodle": 35.0,  "noodles": 35.0, "instant noodles": 35.0,
     "snack":  35.0,  "chips":   35.0, "biscuit": 35.0, "cracker": 35.0,
     "spice":  40.0,  "condiment": 40.0, "sauce": 40.0,
+    "salt":   99.0,  # Salt has no macros/calories — Atwater not applicable
+    "oil":    35.0,  # Pure fat product — slight variance allowed
+    "other":  35.0,  # Generic catch-all for unclassified products
 }
-DEFAULT_TOLERANCE = 25.0   # stricter for unknown / general products
+DEFAULT_TOLERANCE = 30.0   # More permissive to reduce false blocks on valid labels
 
 
 def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
@@ -219,6 +222,12 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
         fd.get("calories") or fd.get("energy") or fd.get("kcal") or 0
     )
 
+    # FIX: Single-ingredient whole foods (salt, water, pure spices) have 0 calories
+    # AND 0 macros — this is VALID data, not a fake label. Never block such products.
+    macro_sum_check = protein + carbs + fat
+    if label_calories == 0 and macro_sum_check == 0:
+        return {"is_valid": True, "reason": "Valid zero-calorie, zero-macro product (e.g. salt, water, pure spice)."}
+
     if label_calories == 0:
         # Nothing to validate
         return {"is_valid": True, "reason": "No calorie data to validate."}
@@ -232,7 +241,14 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
 
     # ── 4. % diff relative to label (not calculated) ──────────────────────────
     diff_pct = abs(label_calories - calculated) / label_calories * 100
-    tolerance = CATEGORY_TOLERANCES.get(category.lower().strip(), DEFAULT_TOLERANCE)
+    cat_lower = category.lower().strip()
+    tolerance = CATEGORY_TOLERANCES.get(cat_lower, DEFAULT_TOLERANCE)
+    # Also check partial matches for composite category names (e.g. "instant spice")
+    if tolerance == DEFAULT_TOLERANCE:
+        for cat_key, cat_tol in CATEGORY_TOLERANCES.items():
+            if cat_key in cat_lower:
+                tolerance = cat_tol
+                break
 
     if diff_pct <= tolerance:
         return {

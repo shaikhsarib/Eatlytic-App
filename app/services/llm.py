@@ -33,6 +33,125 @@ MEDICAL_DISCLAIMER = (
     "Consult a qualified nutritionist or physician before making dietary decisions."
 )
 
+# ─── Rule-based nutrient rating (guaranteed ratings, no LLM needed) ────────
+def _rule_rate(name: str, value: float, unit: str) -> dict:
+    """
+    Returns {rating, impact} for a single nutrient using Indian health standards.
+    Works on ANY product worldwide — rates purely from the value+unit+name.
+    """
+    n = name.lower().replace("of which", "").replace("total", "").strip()
+
+    # ── Beneficial nutrients (more = better) ──────────────────────────
+    if "protein" in n:
+        if value >= 15: return {"rating": "good",     "impact": f"High protein ({value}g/100g) — great for muscle repair and satiety."}
+        if value >= 8:  return {"rating": "moderate", "impact": f"Decent protein ({value}g/100g)."}
+        if value >= 3:  return {"rating": "caution",  "impact": f"Low protein ({value}g/100g) — won't keep you full."}
+        return             {"rating": "bad",      "impact": f"Very low protein ({value}g/100g) — mainly empty calories."}
+
+    if "fiber" in n or "fibre" in n:
+        if value >= 6:  return {"rating": "good",     "impact": f"High dietary fiber ({value}g/100g) — great for gut health."}
+        if value >= 3:  return {"rating": "moderate", "impact": f"Moderate fiber ({value}g/100g)."}
+        return             {"rating": "caution",  "impact": f"Low fiber ({value}g/100g) — may cause blood sugar spikes."}
+
+    if "calcium" in n:
+        if value >= 300: return {"rating": "good",    "impact": f"Rich in calcium ({value}mg/100g) — good for bones."}
+        if value >= 100: return {"rating": "moderate","impact": f"Some calcium ({value}mg/100g)."}
+        return              {"rating": "caution", "impact": f"Low calcium ({value}mg/100g)."}
+
+    if "iron" in n:
+        if value >= 5:  return {"rating": "good",     "impact": f"Good iron source ({value}mg/100g) — helps prevent anaemia."}
+        if value >= 2:  return {"rating": "moderate", "impact": f"Some iron ({value}mg/100g)."}
+        return             {"rating": "caution",  "impact": f"Low iron ({value}mg/100g)."}
+
+    if "potassium" in n:
+        if value >= 500: return {"rating": "good",    "impact": f"Good potassium ({value}mg/100g) — counters sodium effects."}
+        if value >= 200: return {"rating": "moderate","impact": f"Some potassium ({value}mg/100g)."}
+        return              {"rating": "caution", "impact": f"Low potassium ({value}mg/100g)."}
+
+    if "vitamin" in n:
+        return {"rating": "good", "impact": f"{name}: {value}{unit}/100g — contributes to daily vitamin intake."}
+
+    # ── Energy ────────────────────────────────────────────────────────
+    if "energy" in n or "calorie" in n or "kcal" in unit.lower():
+        if value > 500: return {"rating": "bad",      "impact": f"Very high energy density ({value} kcal/100g)."}
+        if value > 400: return {"rating": "caution",  "impact": f"High energy ({value} kcal/100g) — watch portion size."}
+        if value > 250: return {"rating": "moderate", "impact": f"Moderate energy ({value} kcal/100g)."}
+        return             {"rating": "good",     "impact": f"Lower-calorie product ({value} kcal/100g)."}
+
+    # ── Harmful nutrients (less = better) ────────────────────────────
+    if "trans" in n and "fat" in n:
+        if value >= 0.5: return {"rating": "bad",     "impact": f"Trans fat present ({value}g/100g) — NO safe level. Raises heart disease risk."}
+        if value > 0:    return {"rating": "caution", "impact": f"Trace trans fat ({value}g/100g) — ideally 0."}
+        return              {"rating": "good",    "impact": "No trans fat detected."}
+
+    if "saturated" in n and "fat" in n:
+        if value >= 10: return {"rating": "bad",      "impact": f"Very high saturated fat ({value}g/100g) — raises LDL cholesterol."}
+        if value >= 5:  return {"rating": "caution",  "impact": f"High saturated fat ({value}g/100g)."}
+        if value >= 2:  return {"rating": "moderate", "impact": f"Moderate saturated fat ({value}g/100g)."}
+        return             {"rating": "good",     "impact": f"Low saturated fat ({value}g/100g)."}
+
+    if "fat" in n:  # catches 'fat', 'total fat'
+        if value >= 30: return {"rating": "bad",      "impact": f"Very high fat ({value}g/100g)."}
+        if value >= 17: return {"rating": "caution",  "impact": f"High fat ({value}g/100g)."}
+        if value >= 8:  return {"rating": "moderate", "impact": f"Moderate fat ({value}g/100g)."}
+        return             {"rating": "good",     "impact": f"Low fat ({value}g/100g)."}
+
+    if "added sugar" in n:
+        if value >= 15: return {"rating": "bad",      "impact": f"Very high added sugar ({value}g/100g) — no nutrition, pure calories."}
+        if value >= 5:  return {"rating": "caution",  "impact": f"High added sugar ({value}g/100g)."}
+        if value >= 2:  return {"rating": "moderate", "impact": f"Some added sugar ({value}g/100g)."}
+        return             {"rating": "good",     "impact": f"Low added sugar ({value}g/100g)."}
+
+    if "sugar" in n:
+        if value >= 22.5: return {"rating": "bad",    "impact": f"Very high sugar ({value}g/100g) — WHO daily limit is 25g."}
+        if value >= 15:   return {"rating": "caution","impact": f"High sugar ({value}g/100g)."}
+        if value >= 5:    return {"rating": "moderate","impact": f"Moderate sugar ({value}g/100g)."}
+        return               {"rating": "good",   "impact": f"Low sugar ({value}g/100g)."}
+
+    if "sodium" in n or "salt" in n:
+        if value >= 1000: return {"rating": "bad",    "impact": f"Dangerously high sodium ({value}mg/100g) — over 50% of Indian daily limit."}
+        if value >= 700:  return {"rating": "caution","impact": f"High sodium ({value}mg/100g) — raises blood pressure."}
+        if value >= 200:  return {"rating": "moderate","impact": f"Moderate sodium ({value}mg/100g)."}
+        return               {"rating": "good",   "impact": f"Low sodium ({value}mg/100g)."}
+
+    if "cholesterol" in n:
+        if value >= 100: return {"rating": "bad",     "impact": f"High cholesterol ({value}mg/100g)."}
+        if value >= 60:  return {"rating": "caution", "impact": f"Moderate cholesterol ({value}mg/100g)."}
+        return              {"rating": "good",    "impact": f"Low cholesterol ({value}mg/100g)."}
+
+    if "carb" in n:
+        if value >= 65: return {"rating": "caution",  "impact": f"High carbohydrates ({value}g/100g) — check sugar/fiber breakdown."}
+        if value >= 35: return {"rating": "moderate", "impact": f"Moderate carbohydrates ({value}g/100g)."}
+        return             {"rating": "good",     "impact": f"Lower carbohydrates ({value}g/100g)."}
+
+    # Default — unknown nutrient, no opinion
+    return {"rating": "moderate", "impact": f"{name}: {value}{unit} per 100g."}
+
+
+def _fuzzy_rating(nutrient_name: str, rating_map: dict, value: float, unit: str) -> dict:
+    """
+    Try LLM-provided rating first (exact → lowercase → keyword fuzzy).
+    Fall back to rule_rate if nothing matches.
+    """
+    # 1. Exact
+    if nutrient_name in rating_map:
+        return rating_map[nutrient_name]
+    # 2. Lowercase exact
+    nm_l = nutrient_name.lower().strip()
+    for k, v in rating_map.items():
+        if k.lower().strip() == nm_l:
+            return v
+    # 3. Keyword fuzzy — strip noise words and check overlap
+    stop = {"of", "which", "total", "added", "dietary", "per", "100g", "the"}
+    nm_words = set(nm_l.split()) - stop
+    for k, v in rating_map.items():
+        k_words = set(k.lower().split()) - stop
+        if nm_words and nm_words & k_words:
+            return v
+    # 4. Rule-based fallback — guaranteed result
+    return _rule_rate(nutrient_name, value, unit)
+
+
 LANGUAGE_MAP = {
     "en": "English", "zh": "Simplified Chinese", "es": "Spanish",
     "ar": "Arabic",  "fr": "French",             "hi": "Hindi (हिन्दी)",
@@ -72,22 +191,31 @@ def parse_llm_response(s: str) -> dict:
 
 # ── Prompt 1: Extract EVERY nutrient on the label ──────────────────────
 EXTRACTION_PROMPT = """\
-You are a precise nutrition label reader. Scan the label text and extract
-EVERY single nutrient listed — not just the common ones.
+You are a precise nutrition label reader for ANY food product worldwide.
+Extract EVERY single nutrient row exactly as printed on the label.
 
 STRICT RULES:
-1. Extract the "Per 100g" column only. Skip "Per Serve" and "% RDA" columns.
-2. Include ALL rows: Protein, Carbohydrate, Sugar, Added Sugar, Fiber,
-   Fat, Saturated Fat, Trans Fat, Cholesterol, Sodium, Potassium,
-   Calcium, Iron, Vitamins A/C/D/B12, Moisture, Ash — EVERYTHING on the label.
-3. Output EXACT numbers from the label. No guessing or inventing.
-4. If a nutrient is missing from the label, omit it from "nutrients" array.
-5. Sub-components get an indent prefix "  of which" in their name.
+1. Prefer "Per 100g" values. If only "Per Serve" exists, use those and note the serving size.
+2. Extract ALL rows — not just common ones. Include EVERY line in the nutrition table:
+   Energy, Protein, Carbohydrate, Sugars, Added Sugars, Dietary Fiber, Total Fat,
+   Saturated Fat, Mono/Polyunsaturated Fat, Trans Fat, Cholesterol, Sodium, Salt,
+   Potassium, Calcium, Iron, Magnesium, Zinc, Phosphorus, Selenium,
+   Vitamin A/B1/B2/B6/B12/C/D/E/K, Folate, Niacin, Biotin, Pantothenic Acid,
+   Moisture, Ash, Starch, Maltodextrin — WHATEVER IS PRINTED.
+3. Output EXACT numbers from the label. Never invent or estimate values.
+4. Omit nutrients NOT present on the label.
+5. Sub-components use prefix "  of which " (e.g., "  of which Sugar").
+6. If the label is in another language, translate nutrient names to English.
+7. If OCR text is messy, use context to reconstruct numbers (e.g., "13.5g fat" → 13.5).
+8. PRODUCT NAME: Read the product name from the label. If not obvious from nutrition label,
+   infer it from brand names, packaging words, or ingredients context.
+   e.g. "Tata Salt", "Peanut Butter", "Maggi Noodles", etc. NEVER output "Unknown Product".
+9. INGREDIENTS: Transcribe the full ingredients list if present.
 
 Return ONLY this JSON (no markdown, no extra text):
 {
-  "product_name": "string",
-  "product_category": "Snack|Dairy|Beverage|Cereal|Noodle|Biscuit|Supplement|Spice|Oil|Sauce|Other",
+  "product_name": "string — REQUIRED, infer from context if not explicit",
+  "product_category": "Snack|Dairy|Beverage|Cereal|Noodle|Biscuit|Supplement|Spice|Oil|Sauce|Salt|Other",
   "serving_size": "string or null",
   "calories": <number or null>,
   "protein": <number or null>,
@@ -198,6 +326,7 @@ RULES:
 - chart_data must be [Safe%, Moderate%, Risky%] summing to exactly 100%.
 - nutrient_ratings: rate EVERY nutrient from the list above as good/moderate/caution/bad based on Indian health standards.
 - ingredients_spotlight: list the TOP 8 most noteworthy ingredients (additives, preservatives, major ingredients).
+  If fewer than 8 exist, list ALL of them. NEVER return an empty list if ingredients are present.
 - Extract ACTUAL values from the label text.
 {blur_context}
 """
@@ -252,8 +381,11 @@ async def recover_label_with_ai(raw_text: str) -> dict:
     {sample}
     
     RULES:
-    1. If you see words like 'Fat', 'Energy', 'Calories', 'Sugar', 'Protein', OR a list of chemicals/ingredients, respond with "VALID".
-    2. If it is only marketing text (e.g. "Tasty", "Natural", "Best in India") with no numbers or nutrient names, respond with "INVALID".
+    1. If you see words like 'Fat', 'Energy', 'Calories', 'Sugar', 'Protein', 'Serving', 'Saturated',
+       OR a list of ingredients / chemical names, respond with "VALID".
+    2. If it is ONLY marketing text (e.g. "Tasty", "Natural", "Best in India") with absolutely no
+       numbers or nutrient names, respond with "INVALID".
+    3. When in doubt, respond VALID — it is better to analyze than to reject.
     
     Return ONLY this JSON:
     {{
@@ -309,7 +441,7 @@ async def unified_analyze_flow(
 
     # Step 2: Cache check ─────────────────────────────────────────────
     cache_key = hashlib.md5(
-        f"v5:{extracted_text[:120]}:{persona}:{language}".encode()
+        f"v6:{extracted_text[:120]}:{persona}:{language}".encode()
     ).hexdigest()
     cached = get_ai_cache(cache_key)
     if cached:
@@ -317,7 +449,7 @@ async def unified_analyze_flow(
         return cached
 
     # Step 3: Label filter & Fallback ──────────────────────────────────
-    from app.services.ocr import universal_label_filter
+    from app.services.ocr import universal_label_filter, run_ocr
     filter_result = universal_label_filter(extracted_text)
     
     # SMART FALLBACK: If crop failed to find a label, try the FULL image
@@ -340,6 +472,14 @@ async def unified_analyze_flow(
                 extracted_text = ai_recovery["clean_text"]
             else:
                 logger.error("AI Recovery also failed. Rejecting image.")
+    
+    # ADDITIONAL FALLBACK: Even without image_content, try AI recovery on the text we have
+    if not filter_result["is_valid"] and extracted_text and len(extracted_text) > 30:
+        logger.warning("Filter failed on pre-extracted text. Trying AI Recovery on extracted text...")
+        ai_recovery = await recover_label_with_ai(extracted_text)
+        if ai_recovery["is_valid"]:
+            logger.info("AI Recovery on extracted text SUCCEEDED!")
+            filter_result = {"is_valid": True, "clean_text": ai_recovery["clean_text"] or extracted_text}
 
     if not filter_result["is_valid"]:
         return {
@@ -360,6 +500,17 @@ async def unified_analyze_flow(
     except Exception as e:
         logger.error("Extraction LLM failed: %s", e)
         return {"error": "server_busy", "message": "⚠️ Analysis failed. Please try again."}
+
+    # FIX: If product_name came back as unknown, try to infer from original text
+    if not extracted.get("product_name") or extracted.get("product_name", "").lower() in ("unknown", "unknown product", ""):
+        logger.warning("Product name extraction failed. Retrying with hint...")
+        hint = f"\n\nIMPORTANT: The product name is visible in the image. Please infer it from brand names, packaging words, or product type visible in the text. Do NOT return 'Unknown'. Even a generic name like 'Table Salt' or 'Peanut Butter' is acceptable."
+        try:
+            extracted2 = await _extract(clean_text, hint)
+            if extracted2.get("product_name") and extracted2["product_name"].lower() not in ("unknown", "unknown product", ""):
+                extracted["product_name"] = extracted2["product_name"]
+        except Exception:
+            pass
 
     category = extracted.get("product_category") or product_category_hint or "unknown"
 
@@ -395,21 +546,6 @@ async def unified_analyze_flow(
             break
 
     # Step 6: Build rich nutrients dict ───────────────────────────────
-    rich = {
-        "calories":      float(extracted.get("calories")      or 0),
-        "protein":       float(extracted.get("protein")       or 0),
-        "carbs":         float(extracted.get("carbs")          or 0),
-        "fat":           float(extracted.get("fat")            or 0),
-        "sugar":         float(extracted.get("sugar")          or 0),
-        "fiber":         float(extracted.get("fiber")          or 0),
-        "sodium":        float(extracted.get("sodium_mg")      or 0),
-        "saturated_fat": float(extracted.get("saturated_fat") or 0),
-        "trans_fat":     float(extracted.get("trans_fat")     or 0),
-        "cholesterol":   float(extracted.get("cholesterol_mg")or 0),
-        "potassium":     float(extracted.get("potassium_mg")  or 0),
-        "calcium":       float(extracted.get("calcium_mg")    or 0),
-        "iron":          float(extracted.get("iron_mg")       or 0),
-    }
     ingredients_raw = extracted.get("ingredients_raw", "") or ""
 
     # BUG FIX: Removed duckduckgo-search (causes deployment failures on HuggingFace/Docker).
@@ -417,8 +553,8 @@ async def unified_analyze_flow(
     # Otherwise skip silently to keep the service stable.
     internal_web_context = ""
     try:
-        p_name = extracted.get("product_name", "Unknown")
-        if p_name and p_name != "Unknown":
+        p_name = extracted.get("product_name", "")
+        if p_name and p_name.lower() not in ("unknown", "unknown product"):
             from app.services.research_engine import get_live_search
             internal_web_context = get_live_search(f"health analysis ingredients {p_name} {category}")
             logger.info("Internal Live Research succeeded for: %s", p_name)
@@ -514,7 +650,7 @@ async def unified_analyze_flow(
 
     analysis = {}
     try:
-        raw_analysis = await asyncio.to_thread(call_llm, analysis_prompt, 2000)
+        raw_analysis = await asyncio.to_thread(call_llm, analysis_prompt, 3000)
         analysis = parse_llm_response(raw_analysis)
         
         # Validate chart_data (sums to 100)
@@ -540,7 +676,11 @@ async def unified_analyze_flow(
         final_score = compute_rule_based_score(rich, nova_level)
 
     # Step 12: Merge AI Insights with Physics-based Logic ──────────────
-    product_name = extracted.get("product_name", "Unknown Product")
+    product_name = extracted.get("product_name") or "Unknown Product"
+    # Clean up common bad values
+    if product_name.lower() in ("unknown", "unknown product", "", "n/a"):
+        product_name = "Unknown Product"
+    
     verdict      = analysis.get("verdict") or dna_res.get("reason") or "Analyzed"
     summary      = analysis.get("summary") or dna_res.get("reason") or ""
     pros         = analysis.get("pros", [])
@@ -568,15 +708,30 @@ async def unified_analyze_flow(
     mol_insight  = analysis.get("molecular_insight", "")
     score_color  = "#22c55e" if final_score >= 7 else "#f59e0b" if final_score >= 4 else "#ef4444"
 
-    # BUG FIX: merge nutrient_ratings back onto each nutrient_breakdown item
+    # FIX: Merge nutrient ratings using fuzzy matching + guaranteed rule-based fallback
     rating_map = {r["name"]: r for r in analysis.get("nutrient_ratings", [])}
     for n in nutrient_breakdown:
-        r = rating_map.get(n["name"], {})
+        r = _fuzzy_rating(n["name"], rating_map, float(n.get("value") or 0), n.get("unit", ""))
         n["rating"] = r.get("rating", "moderate")
-        n["impact"] = r.get("impact", "")
+        n["impact"] = r.get("impact") or f"{n['name']}: {n['value']}{n.get('unit', '')} per 100g."
 
     # BUG FIX: ingredients_spotlight was never populated from LLM
     ingredients_spotlight = analysis.get("ingredients_spotlight", [])
+    
+    # FIX: If spotlight is empty but ingredients exist, generate rule-based fallback cards
+    if not ingredients_spotlight and ingredients_raw:
+        # Parse top ingredients from raw text and create simple cards
+        ing_list = [i.strip() for i in re.split(r'[,;]', ingredients_raw) if i.strip()][:8]
+        for ing in ing_list:
+            if len(ing) > 2:
+                ingredients_spotlight.append({
+                    "name": ing.title(),
+                    "type": "natural",
+                    "safety_rating": "safe",
+                    "what_it_is": f"{ing.title()} is a food ingredient.",
+                    "health_impact": "Part of the product formulation.",
+                    "curiosity_fact": "Check the full ingredients list for details."
+                })
 
     # BUG FIX: merged_warnings was built but never converted back to list
     age_warnings_final = list(merged_warnings.values())
