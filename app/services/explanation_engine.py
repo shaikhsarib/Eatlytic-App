@@ -32,6 +32,11 @@ INS_DATABASE = {
     "621": "MSG (Monosodium Glutamate). Potential trigger for headaches or sensitivity in some people.",
     "951": "Aspartame (Artificial sweetener). Flagged for long-term health monitoring.",
     "211": "Sodium Benzoate (Preservative). Common in beverages; best avoided in high quantities.",
+    "102": "Tartrazine (Yellow 5). Synthetic food color linked to hyperactivity in children.",
+    "110": "Sunset Yellow (Yellow 6). Can cause allergic reactions and is avoided in many health-focused foods.",
+    "122": "Carmoisine (Red 3). Synthetic red dye; restricted in several countries due to health concerns.",
+    "127": "Erythrosine (Red 14). Iodine-based red dye often used in cherries and sweets.",
+    "129": "Allura Red (Red 40). One of the most common synthetic dyes; linked to sensitivity in some kids.",
 }
 
 from app.services.fake_detector import detect_nova_4

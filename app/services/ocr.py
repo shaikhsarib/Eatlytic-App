@@ -27,6 +27,7 @@ _EASYOCR_LANG_MAP = {
     "ta": INDIAN_LANG_SET,
     "te": ["en", "te"],
     "bn": ["en", "bn"],
+    "mr": ["en", "mr"],
     "zh": ["en", "ch_sim"],
 }
 

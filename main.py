@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import json
 import asyncio
 import logging
@@ -224,14 +225,9 @@ async def analyze_product(
         # P0 OPTIMIZATION: Removed manual run_ocr. unified_analyze_flow will handle it.
         # This saves 1-3 seconds per scan.
         
-        # P0 RESEARCH: Fetch live context for the product/ingredients
-        web_context = ""
-        try:
-            # Only search if we have a product name or some text
-            search_query = extracted_text[:100] if extracted_text else "food nutrition info"
-            web_context = get_live_search(f"health analysis ingredients {search_query}")
-        except Exception as e:
-            logger.warning(f"Web research failed: {e}")
+        # P0 OPTIMIZATION: Manual search removed. Internally handled by unified_analyze_flow
+        # for much higher accuracy using the extracted product name.
+        web_context = "" 
 
         result = await unified_analyze_flow(
             extracted_text=extracted_text, # can be None
@@ -272,6 +268,10 @@ async def health():
 # ── Pro activation ──────────────────────────────
 @app.post("/activate-pro")
 async def activate_pro(request: Request, payment_id: str = Form(...)):
+    # P0 HARDENING: Basic format validation for Razorpay/Stripe-like IDs
+    if not re.match(r"^(pay_|razor_)?[\w]{10,40}$", payment_id):
+        raise HTTPException(status_code=400, detail="Invalid payment ID format.")
+
     device_key = get_device_key(request)
     with db_conn() as conn:
         row = conn.execute(
@@ -286,7 +286,15 @@ async def activate_pro(request: Request, payment_id: str = Form(...)):
             conn.execute(
                 "UPDATE devices SET is_pro=1 WHERE device_key=?", (device_key,)
             )
-    return {"status": "activated", "message": "Pro activated!"}
+    
+    # Log payment for audit
+    with db_conn() as conn:
+        conn.execute(
+            "INSERT INTO payments(device_key, razorpay_payment_id, status, paid_at) VALUES(?,?,?,?)",
+            (device_key, payment_id, "captured", datetime.datetime.now().isoformat())
+        )
+        
+    return {"status": "activated", "message": "Pro activated! Payment logged."}
 
 
 # ── Scan status ────────────────────────────────
@@ -446,13 +454,9 @@ async def api_analyze(
     ocr = run_ocr(working, language)
     text = ocr["text"]
 
-    # P0 FIX: B2B now uses the exact same unified flow as the web. No manual LLM calls.
-    # Research context for B2B
+    # P0 FIX: B2B research is now internally handled by unified_analyze_flow
+    # No manual LLM or search calls needed here.
     web_ctx = ""
-    try:
-        web_ctx = get_live_search(f"health analysis ingredients {text[:100]}")
-    except Exception:
-        pass
 
     result = await unified_analyze_flow(
         extracted_text=text,
@@ -464,6 +468,7 @@ async def api_analyze(
         blur_info=blur_info,
         label_confidence="high",
         front_text="",
+        image_content=working,
     )
 
     if "error" in result:

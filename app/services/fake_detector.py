@@ -177,6 +177,7 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
     carbs   = float(nutrients.get("carbs", 0) or nutrients.get("carbohydrate", 0) or 0)
     sugar   = float(nutrients.get("sugar",  0) or 0)
     fiber   = float(nutrients.get("fiber",  0) or nutrients.get("fibre", 0) or 0)
+    protein = float(nutrients.get("protein", 0) or 0)
     fat     = float(nutrients.get("fat",    0) or nutrients.get("total_fat", 0) or 0)
     sat_fat = float(nutrients.get("saturated_fat", 0) or 0)
 
@@ -194,6 +195,18 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
             "reason": (
                 f"Integrity Failure: Saturated Fat ({sat_fat}g) > "
                 f"Total Fat ({fat}g)."
+            ),
+        }
+    
+    # ── 1.1 Gross Weight Integrity: Sum of macros cannot exceed 100g ──────—
+    # (Allowing 3g slack for rounding errors on the label)
+    macro_sum = protein + carbs + fat
+    if macro_sum > 103.0:
+        return {
+            "is_valid": False,
+            "reason": (
+                f"Gross Integrity Failure: Macros ({macro_sum:.1f}g) exceed 100g. "
+                "This is physically impossible for a 100g portion."
             ),
         }
 
@@ -299,8 +312,8 @@ def detect_fake_claims(full_ocr_text: str, ingredients_raw: str, front_text: str
     if not claim_found:
         return {"fake_claim_detected": False, "hidden_ingredients": []}
 
-    hidden_sugars = ["maltodextrin", "dextrose", "fructose", "glucose syrup", "corn syrup", "invert sugar", "date syrup", "cane juice", "jaggery", "honey"]
-    hidden_colors = ["e102", "e110", "e122", "e129", "e133", "e150", "e171", "ins 102", "ins 110", "ins 122", "ins 129", "ins 133", "tartrazine", "sunset yellow", "carmine"]
+    hidden_sugars = ["maltodextrin", "dextrose", "fructose", "glucose syrup", "corn syrup", "invert sugar", "date syrup", "cane juice", "jaggery", "honey", "sucrose", "malts"]
+    hidden_colors = ["e102", "e110", "e122", "e127", "e129", "e133", "e150", "e171", "ins 102", "ins 110", "ins 122", "ins 127", "ins 129", "ins 133", "tartrazine", "sunset yellow", "carmine", "allura red"]
 
     lies_found = []
     if any(c in combined_text for c in ["no added sugar", "sugar free", "zero sugar", "no sugar"]):

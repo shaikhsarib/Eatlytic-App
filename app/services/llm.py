@@ -273,7 +273,7 @@ async def unified_analyze_flow(
     age_group: str,
     product_category_hint: str,
     language: str,
-    web_context: str,
+    web_context: str, # Deprecated in favor of internal search, but kept for signature parity
     blur_info: dict,
     label_confidence: str,
     front_text: str = "",
@@ -404,6 +404,18 @@ async def unified_analyze_flow(
     }
     ingredients_raw = extracted.get("ingredients_raw", "") or ""
 
+    # P0 FIX: Perform Live Research AFTER extraction to use the clean product name
+    internal_web_context = ""
+    try:
+        p_name = extracted.get("product_name", "Unknown")
+        if p_name and p_name != "Unknown":
+            # Avoid redundant search if we already have context (e.g. from B2B)
+            # but usually we want fresh search on the specific product.
+            internal_web_context = get_live_search(f"health analysis ingredients {p_name} {category}")
+            logger.info("Internal Live Research succeeded for: %s", p_name)
+    except Exception as e:
+        logger.warning("Internal research failed: %s", e)
+
     # Step 7: DNA overrides ───────────────────────────────────────────
     rich = _primary(extracted)
     rich["sodium"] = float(extracted.get("sodium_mg") or 0)
@@ -487,7 +499,7 @@ async def unified_analyze_flow(
         language=language,
         nova_level=nova_level,
         dna_flags=dna_flags,
-        research_context=web_context,
+        research_context=internal_web_context or web_context,
         blur_info=blur_info,
     )
 
