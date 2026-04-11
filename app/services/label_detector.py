@@ -1,6 +1,7 @@
 """
 app/services/label_detector.py
-OpenCV-based ROI detection, deskewing, and YOLO integration.
+Improved ROI detection — finds the nutrition table region in real product photos.
+Strategy: score every candidate rectangle by text density, prefer table-like regions.
 """
 
 import cv2
@@ -11,112 +12,172 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+
+def _score_region(gray_crop: np.ndarray) -> float:
+    """
+    Score a candidate region for 'nutrition table likelihood'.
+    Criteria: high horizontal line density + lots of small text blobs.
+    """
+    if gray_crop.size == 0:
+        return 0.0
+    h, w = gray_crop.shape
+    if h < 40 or w < 60:
+        return 0.0
+
+    # Horizontal edge density (tables have many horizontal lines)
+    edges = cv2.Canny(gray_crop, 50, 150)
+    horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (w // 4, 1))
+    horiz_lines = cv2.morphologyEx(edges, cv2.MORPH_OPEN, horiz_kernel)
+    line_score = np.sum(horiz_lines > 0) / (h * w + 1e-6)
+
+    # Text blob count via connected components
+    _, bw = cv2.threshold(gray_crop, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    n_labels, _, stats, _ = cv2.connectedComponentsWithStats(bw, connectivity=8)
+    small_blobs = sum(
+        1 for i in range(1, n_labels)
+        if 4 <= stats[i, cv2.CC_STAT_WIDTH] <= 40
+        and 4 <= stats[i, cv2.CC_STAT_HEIGHT] <= 40
+    )
+    blob_density = small_blobs / (h * w / 100.0 + 1e-6)
+
+    return line_score * 40 + blob_density * 60
+
+
 def get_nutrition_table_roi(image_np: np.ndarray) -> np.ndarray:
     """
-    Finds high-density text regions surrounded by table borders (ROI).
-    Heuristic: Look for rectangular contours with a certain aspect ratio.
+    Find the nutrition facts table in a real-world product photo.
+    Returns the best candidate crop, or full image on failure.
     """
     try:
+        h, w = image_np.shape[:2]
         gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
-        
-        # Adaptive thresholding to handle different lighting
-        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                       cv2.THRESH_BINARY_INV, 11, 2)
-        
-        # Dilate to connect text lines into blocks
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 3))
-        dilate = cv2.dilate(thresh, kernel, iterations=2)
-        
-        # Find contours
-        cnts = cv2.findContours(dilate, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cnts = cnts[0] if len(cnts) == 2 else cnts[1]
-        
-        # Filter contours by size and aspect ratio
-        roi = image_np
-        max_area = 0
-        
+
+        # ── Pass 1: look for white/light rectangular blocks (nutrition tables
+        #   are almost always printed on a white or light background panel) ──
+        _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 5))
+        closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=3)
+        cnts, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        candidates = []
         for c in cnts:
-            x, y, w, h = cv2.boundingRect(c)
-            area = w * h
-            aspect_ratio = w / float(h)
-            
-            # Nutrition tables are usually wider than 0.5 and height is significant
-            if area > 800 and 0.2 < aspect_ratio < 5.0:
-                if area > max_area:
-                    max_area = area
-                    roi = image_np[y:y+h, x:x+w]
-        
-        return roi
+            x, y, cw, ch = cv2.boundingRect(c)
+            area = cw * ch
+            if area < (h * w * 0.04):        # must be ≥4% of image
+                continue
+            if area > (h * w * 0.92):        # reject full-image blobs
+                continue
+            ar = cw / float(ch)
+            if not (0.25 < ar < 4.5):        # sensible table aspect ratios
+                continue
+            candidates.append((x, y, cw, ch))
+
+        # ── Pass 2: if Pass 1 found nothing, try dark-background labels ──
+        if not candidates:
+            _, thresh2 = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            kernel2 = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 5))
+            closed2 = cv2.morphologyEx(thresh2, cv2.MORPH_CLOSE, kernel2, iterations=2)
+            cnts2, _ = cv2.findContours(closed2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for c in cnts2:
+                x, y, cw, ch = cv2.boundingRect(c)
+                area = cw * ch
+                if area < (h * w * 0.04) or area > (h * w * 0.92):
+                    continue
+                if not (0.25 < cw / float(ch) < 4.5):
+                    continue
+                candidates.append((x, y, cw, ch))
+
+        # ── Score each candidate and pick best ────────────────────────────
+        best_score = -1.0
+        best_roi = image_np
+        for (x, y, cw, ch) in candidates:
+            # Add a small margin
+            pad = 8
+            x1 = max(0, x - pad);  y1 = max(0, y - pad)
+            x2 = min(w, x + cw + pad);  y2 = min(h, y + ch + pad)
+            crop = image_np[y1:y2, x1:x2]
+            gray_crop = gray[y1:y2, x1:x2]
+            score = _score_region(gray_crop)
+            if score > best_score:
+                best_score = score
+                best_roi = crop
+
+        # Only use crop if it's meaningfully better than background noise
+        if best_score < 0.05:
+            logger.info("No confident ROI found (score=%.3f), using full image", best_score)
+            return image_np
+
+        logger.info("ROI found (score=%.3f)", best_score)
+        return best_roi
+
     except Exception as e:
-        logger.warning(f"ROI detection failed: {e}. Falling back to full image.")
+        logger.warning("ROI detection failed: %s — using full image", e)
         return image_np
 
+
 def deskew_image(image_np: np.ndarray) -> np.ndarray:
-    """
-    Automatically rotate the image to be horizontal.
-    Uses text baseline detection via minAreaRect.
-    """
+    """Auto-rotate the image to horizontal using text baseline detection."""
     try:
         gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
         gray = cv2.bitwise_not(gray)
-        
         thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-        
-        # Find all non-zero pixels
         coords = np.column_stack(np.where(thresh > 0))
+        if len(coords) < 10:
+            return image_np
         angle = cv2.minAreaRect(coords)[-1]
-        
-        # Adjust angle for OpenCV 4.5+ (angle range is 0-90)
-        # or handle older formats by normalizing to +/- 45
         if angle > 45:
             angle = angle - 90
-        
-        # Final rotation angle
-        rotation_angle = -angle
-            
+        # Only deskew small angles — large angles are probably real rotations
+        if abs(angle) > 20:
+            return image_np
         (h, w) = image_np.shape[:2]
         center = (w // 2, h // 2)
-        M = cv2.getRotationMatrix2D(center, rotation_angle, 1.0)
-        rotated = cv2.warpAffine(image_np, M, (w, h), flags=cv2.INTER_CUBIC, 
-                                 borderMode=cv2.BORDER_REPLICATE)
-        
-        return rotated
+        M = cv2.getRotationMatrix2D(center, -angle, 1.0)
+        return cv2.warpAffine(image_np, M, (w, h), flags=cv2.INTER_CUBIC,
+                              borderMode=cv2.BORDER_REPLICATE)
     except Exception as e:
-        logger.warning(f"Deskewing failed: {e}")
+        logger.warning("Deskewing failed: %s", e)
         return image_np
+
+
+def enhance_for_ocr(image_np: np.ndarray) -> np.ndarray:
+    """
+    Improve contrast and sharpness for OCR on a label crop.
+    Works on both light and dark backgrounds.
+    """
+    try:
+        # CLAHE for local contrast enhancement
+        lab = cv2.cvtColor(image_np, cv2.COLOR_RGB2LAB)
+        l_ch, a_ch, b_ch = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+        l_ch = clahe.apply(l_ch)
+        enhanced = cv2.merge([l_ch, a_ch, b_ch])
+        enhanced = cv2.cvtColor(enhanced, cv2.COLOR_LAB2RGB)
+
+        # Mild unsharp mask for sharpness
+        blurred = cv2.GaussianBlur(enhanced, (0, 0), 2)
+        sharp = cv2.addWeighted(enhanced, 1.4, blurred, -0.4, 0)
+        return sharp
+    except Exception:
+        return image_np
+
 
 def process_image_for_ocr(content: bytes) -> bytes:
     """
-    Orchestrates the image pipeline: ROI -> Deskew.
-    Returns bytes of the processed image.
+    Full pipeline: ROI Detection → Deskew → Enhance → bytes.
+    On any failure, returns the original image bytes.
     """
     try:
-        # Load image
         img = Image.open(BytesIO(content)).convert("RGB")
         img_np = np.array(img)
-        
-        # 1. ROI Detection
-        roi = get_nutrition_table_roi(img_np)
-        
-        # 2. Deskew
-        processed = deskew_image(roi)
-        
-        # Convert back to bytes
-        is_success, buffer = cv2.imencode(".jpg", cv2.cvtColor(processed, cv2.COLOR_RGB2BGR))
-        if is_success:
-            return buffer.tobytes()
-        return content
-    except Exception as e:
-        logger.error(f"Image pipeline failed: {e}")
-        return content
 
-def yolov8_table_detector_stub(image_np: np.ndarray):
-    """
-    Placeholder for Ultralytics YOLOv8 integration.
-    To use: 
-    1. pip install ultralytics
-    2. from ultralytics import YOLO
-    3. model = YOLO('path/to/best.pt')
-    4. results = model(image_np)
-    """
-    pass
+        roi = get_nutrition_table_roi(img_np)
+        deskewed = deskew_image(roi)
+        enhanced = enhance_for_ocr(deskewed)
+
+        ok, buf = cv2.imencode(".jpg", cv2.cvtColor(enhanced, cv2.COLOR_RGB2BGR),
+                               [cv2.IMWRITE_JPEG_QUALITY, 95])
+        return buf.tobytes() if ok else content
+    except Exception as e:
+        logger.error("Image pipeline failed: %s", e)
+        return content

@@ -741,6 +741,10 @@ input[type="file"]{display:none}
 /* dark mode toggle icon flip */
 #theme-toggle { transition: transform 0.25s; }
 [data-theme="dark"] #theme-toggle { content:'☀️'; }
+.daily-macro-item{text-align:center;background:var(--bg);border-radius:8px;padding:6px 4px}
+.dm-val{font-family:'Fraunces',serif;font-weight:900;font-size:1rem;color:var(--ink)}
+.dm-label{font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted)}
+.nutrient-detail-sheet{position:fixed;inset:0;z-index:200;display:flex;align-items:flex-end;background:rgba(0,0,0,0.5)}
 </style>
 </head>
 <body>
@@ -835,7 +839,10 @@ input[type="file"]{display:none}
   <div class="camera-viewport">
     <video id="camera-video" autoplay playsinline muted></video>
     <!-- AR nutrition overlay -->
-    <div class="camera-overlay-pill" id="cam-overlay-pill">Point at a food label</div>
+    <div class="camera-overlay-pill" id="cam-overlay-pill">📦 Point at the <strong>BACK</strong> of the pack</div>
+    <div id="cam-hint-strip" style="position:absolute;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;font-size:11px;font-weight:700;padding:6px 14px;border-radius:20px;letter-spacing:0.5px;white-space:nowrap;text-align:center;pointer-events:none;opacity:0;transition:opacity 0.4s">
+      Look for: Nutrition Facts / Nutritional Information
+    </div>
 
     <!-- Reticle (scan mode) -->
     <div class="camera-reticle" id="camera-reticle">
@@ -914,7 +921,10 @@ input[type="file"]{display:none}
 <div class="screen" id="s-history">
   <div class="app-header">
     <div class="app-logo">Eat<em>l</em>ytic</div>
-    <button class="header-pill" onclick="clearHistory()" style="font-size:10px;box-shadow:var(--shadow-sm)">🗑 Clear</button>
+    <div style="display:flex;gap:6px">
+      <button class="header-pill" onclick="showWeeklyReport()" style="font-size:10px;background:var(--yellow)">📊 Week</button>
+      <button class="header-pill" onclick="clearHistory()" style="font-size:10px">🗑 Clear</button>
+    </div>
   </div>
   <div class="scroll-inner pad-bottom" style="padding:0 18px" id="history-scroll">
     <!-- injected -->
@@ -1693,12 +1703,13 @@ function renderReveal(d) {
       const bg  = SAT_BG[i%SAT_BG.length];
       const rot = ((i%2===0?1:-1)*(i%3+1))+'deg';
       const rIcon={good:'✓',moderate:'~',caution:'~',bad:'!'}[n.rating]||'?';
-      html+=`<div class="ns-card" id="nsc-${i}" style="background:${bg};--rot:${rot}" onclick="flipNutrientCard(${i})">
-        <div class="ns-rating-badge">${rIcon}</div>
+      const ratingBg={good:'#00A87822',moderate:'#F59E0B22',caution:'#FF6B0022',bad:'#FF2D7822'}[n.rating]||'';
+      html+=`<div class="ns-card" id="nsc-${i}" style="background:${bg};--rot:${rot};outline:${n.rating==='bad'?'2px solid #FF2D7888':'none'}" onclick="flipNutrientCard(${i})">
+        <div class="ns-rating-badge" style="background:${{good:'#00A878',moderate:'#F59E0B',caution:'#FF6B00',bad:'#FF2D78'}[n.rating]||'#888'}">${rIcon}</div>
         <span class="ns-icon">${getNutrientIcon(n.name)}</span>
         <div class="ns-name">${esc(n.name)}</div>
         <div class="ns-val">${n.value}<small style="font-size:0.55em;font-weight:700"> ${n.unit||''}</small></div>
-        <div class="ns-bar"><div class="ns-fill" id="nsf-${i}"></div></div>
+        <div class="ns-bar"><div class="ns-fill" id="nsf-${i}" style="background:${{good:'#00A878',moderate:'#F59E0B',caution:'#FF6B00',bad:'#FF2D78'}[n.rating]||'var(--ink)'}"></div></div>
       </div>`;
     });
     html+=`</div>`;
@@ -1786,7 +1797,18 @@ function renderReveal(d) {
         if (!fill) return;
         const n=d.nutrient_breakdown?.[i];
         if (n) {
-          const pct=Math.min(100,Math.round(((n.value||0)/(n.unit==='g'?50:n.unit==='mg'?2400:100))*100));
+          // BUG FIX: proper Daily Value denominators per nutrient
+          const DV_G  = {energy:2000,calorie:2000,protein:50,carb:300,carbohydrate:300,fat:65,sugar:25,fiber:28,fibre:28,'saturated fat':20,'trans fat':2};
+          const DV_MG = {sodium:2000,iron:18,calcium:1000,potassium:3500,cholesterol:300};
+          const nm = n.name.toLowerCase();
+          let dv = 50;
+          if (n.unit==='kcal'||n.unit==='kJ') { dv=2000; }
+          else if (n.unit==='g') {
+            for (const [k,v] of Object.entries(DV_G)) { if (nm.includes(k)) { dv=v; break; } }
+          } else if (n.unit==='mg') {
+            for (const [k,v] of Object.entries(DV_MG)) { if (nm.includes(k)) { dv=v; break; } }
+          }
+          const pct=Math.min(100,Math.round(((n.value||0)/dv)*100));
           setTimeout(()=>{fill.style.width=pct+'%';},500);
         }
       }, i*130);
@@ -1855,9 +1877,64 @@ function flipNutrientCard(i) {
   const n=state.lastResult?.nutrient_breakdown?.[i];
   if (!card||!n) return;
   spawnStickerPop(getNutrientIcon(n.name),card.getBoundingClientRect().left+20,card.getBoundingClientRect().top);
-  showToast(getNutrientIcon(n.name)+' '+n.name+': '+(n.impact||n.value+(n.unit||'')));
   card.style.transform='scale(1.18) rotate(0deg)';
   setTimeout(()=>{if(card.classList.contains('visible'))card.style.transform='';},500);
+  // Show a proper info bottom-sheet with explanation
+  showNutrientDetail(n);
+}
+function showNutrientDetail(n) {
+  const ratingColor = {good:'#00A878',moderate:'#F59E0B',caution:'#FF6B00',bad:'#FF2D78'}[n.rating]||'#888';
+  const ratingLabel = {good:'✓ Good level',moderate:'~ Moderate',caution:'⚠ High',bad:'✗ Concerning'}[n.rating]||(n.rating||'?');
+  const impact = n.impact || getNutrientDefaultInfo(n.name);
+  let el = document.getElementById('nutrient-detail-overlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'nutrient-detail-overlay';
+    el.style.cssText='position:fixed;inset:0;z-index:200;display:flex;align-items:flex-end;background:rgba(0,0,0,0.5);opacity:0;transition:opacity 0.2s';
+    el.onclick=function(e){if(e.target===el)closeNutrientDetail();};
+    document.body.appendChild(el);
+  }
+  el.innerHTML=`<div style="width:100%;background:var(--white);border-radius:20px 20px 0 0;border:2px solid var(--ink);padding:20px;max-height:55vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <span style="font-size:2rem">${getNutrientIcon(n.name)}</span>
+      <div style="flex:1">
+        <div style="font-family:'Fraunces',serif;font-size:1.2rem;font-weight:900">${esc(n.name)}</div>
+        <div style="font-size:0.85rem;color:var(--muted)">Per 100g of this product</div>
+      </div>
+      <button onclick="closeNutrientDetail()" style="background:none;border:none;font-size:1.4rem;cursor:pointer">✕</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <div style="font-family:'Fraunces',serif;font-size:2.2rem;font-weight:900">${n.value}</div>
+      <div style="font-size:0.75rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">${n.unit||''}</div>
+      <div style="margin-left:auto;background:${ratingColor}20;border:1.5px solid ${ratingColor};color:${ratingColor};padding:4px 10px;border-radius:20px;font-size:0.75rem;font-weight:800">${ratingLabel}</div>
+    </div>
+    <div style="background:var(--bg);border-radius:10px;padding:12px;font-size:0.88rem;line-height:1.5;color:var(--ink)">${esc(impact)}</div>
+  </div>`;
+  el.style.display='flex';
+  requestAnimationFrame(()=>{ el.style.opacity='1'; });
+}
+function closeNutrientDetail() {
+  const el=document.getElementById('nutrient-detail-overlay');
+  if (!el) return;
+  el.style.opacity='0';
+  setTimeout(()=>{ el.style.display='none'; },200);
+}
+function getNutrientDefaultInfo(name) {
+  const n=(name||'').toLowerCase();
+  if (n.includes('sodium')) return 'Sodium controls fluid balance. Indians consume ~11g of salt/day vs the 5g limit. High sodium raises blood pressure — a leading risk for heart disease and stroke.';
+  if (n.includes('trans fat')) return 'Trans fat raises bad cholesterol (LDL) and lowers good cholesterol (HDL) at the same time. Even 0.5g/day increases heart disease risk. WHO calls for global elimination.';
+  if (n.includes('saturated fat')) return 'Saturated fat raises LDL cholesterol. Indian diets are often already high in saturated fat from ghee, coconut oil, and dairy. Keep total daily intake under 20g.';
+  if (n.includes('sugar')||n.includes('sucrose')) return 'Added sugar provides empty calories with no nutrients. Linked to obesity, type 2 diabetes, fatty liver, and dental decay. WHO recommends less than 25g/day.';
+  if (n.includes('calorie')||n.includes('energy')) return 'Calories measure total food energy. An average Indian adult needs ~2000 kcal/day. Consistently exceeding this leads to weight gain over time.';
+  if (n.includes('protein')) return 'Protein builds and repairs muscles, organs, and immune cells. Most Indians are protein-deficient — average intake is 47g vs the 54g recommended daily for adults.';
+  if (n.includes('fiber')||n.includes('fibre')) return 'Dietary fiber feeds good gut bacteria, regulates blood sugar, and prevents constipation. Aim for 28g/day — most Indians get less than 15g.';
+  if (n.includes('carb')) return 'Carbohydrates are the body's main fuel source. Quality matters: complex carbs (whole grains, legumes) are far better than refined carbs (maida, white rice) which spike blood sugar.';
+  if (n.includes('fat') && !n.includes('saturated') && !n.includes('trans')) return 'Total fat includes both healthy unsaturated fats (nuts, seeds, olive oil) and unhealthy saturated/trans fats. The type of fat matters more than the total amount.';
+  if (n.includes('iron')) return 'Iron carries oxygen in red blood cells. India has the highest anaemia burden in the world — about 50% of women are iron-deficient. Look for ≥15% RDA per serving.';
+  if (n.includes('calcium')) return 'Calcium builds bones and teeth. Indians typically get less than 50% of their daily requirement (1000mg). Deficiency causes osteoporosis later in life.';
+  if (n.includes('potassium')) return 'Potassium balances sodium's blood pressure effects. Most processed foods are low in potassium — another reason to eat whole fruits and vegetables daily.';
+  if (n.includes('cholesterol')) return 'Dietary cholesterol has less impact than saturated/trans fat on blood cholesterol. Still, limit to under 300mg/day as part of a heart-healthy diet.';
+  return `${name} is a nutrient found in this product. Check how it contributes to your daily nutrition goals.`;
 }
 function switchInsight(e,panel) {
   document.querySelectorAll('.itab').forEach(t=>t.classList.remove('active'));
@@ -1868,12 +1945,20 @@ function switchInsight(e,panel) {
 function getNutrientIcon(name) {
   const n=name?.toLowerCase()||'';
   if(n.includes('sodium')||n.includes('salt'))return'🧂';
+  if(n.includes('trans fat'))return'🚫';
+  if(n.includes('saturated fat'))return'🥩';
   if(n.includes('protein'))return'💪';
   if(n.includes('calorie')||n.includes('energy'))return'⚡';
-  if(n.includes('carb')||n.includes('sugar'))return'🌾';
+  if(n.includes('added sugar'))return'🍭';
+  if(n.includes('sugar'))return'🍬';
+  if(n.includes('fiber')||n.includes('fibre'))return'🌱';
+  if(n.includes('carb'))return'🌾';
   if(n.includes('fat'))return'🫒';
-  if(n.includes('fibre')||n.includes('fiber'))return'🌱';
-  if(n.includes('vitamin')||n.includes('calcium')||n.includes('iron'))return'💊';
+  if(n.includes('cholesterol'))return'🫀';
+  if(n.includes('iron'))return'💊';
+  if(n.includes('calcium'))return'🦴';
+  if(n.includes('potassium'))return'🍌';
+  if(n.includes('vitamin'))return'✨';
   return'🔬';
 }
 
@@ -2041,6 +2126,111 @@ function updateStreak() {
     spawnConfetti(window.innerWidth/2, window.innerHeight/2);
     showToast('🔥 '+streak.count+'-day streak! Keep it up!');spawnConfetti(window.innerWidth/2,window.innerHeight/2);
   }
+}
+
+/* ═══════════════════════════════════════
+   DAILY INTAKE TRACKER
+═══════════════════════════════════════ */
+function updateDailyIntake() {
+  var hist=getHistory(), todayStr=new Date().toDateString();
+  var todayScans=hist.filter(function(h){return new Date(h.ts).toDateString()===todayStr&&h.data;});
+  var bar=document.getElementById('daily-intake-bar');
+  if(!bar)return;
+  if(todayScans.length===0){bar.style.display='none';return;}
+  bar.style.display='block';
+  var totalCal=0,totalPro=0,totalCarb=0,totalFat=0;
+  todayScans.forEach(function(s){
+    var nb=s.data&&s.data.nutrient_breakdown?s.data.nutrient_breakdown:[];
+    function get(kw){var n=nb.find(function(x){return x.name&&x.name.toLowerCase().includes(kw);});return parseFloat(n&&n.value||0);}
+    totalCal+=get('energy')||get('calorie');
+    totalPro+=get('protein');
+    totalCarb+=get('carb');
+    totalFat+=get('total fat')||get('fat');
+  });
+  var profile=getProfile(),tdee=computeTDEE(profile)||2000;
+  var calPct=Math.min(100,Math.round((totalCal/tdee)*100));
+  var calBarColor=calPct>90?'#FF2D78':calPct>70?'#F59E0B':'#00A878';
+  document.getElementById('dm-cal').textContent=Math.round(totalCal);
+  document.getElementById('dm-pro').textContent=Math.round(totalPro)+'g';
+  document.getElementById('dm-carb').textContent=Math.round(totalCarb)+'g';
+  document.getElementById('dm-fat').textContent=Math.round(totalFat)+'g';
+  document.getElementById('dm-cal-pct').textContent=calPct+'% of '+Math.round(tdee)+' kcal';
+  var bar2=document.getElementById('dm-cal-bar');
+  if(bar2){bar2.style.width=calPct+'%';bar2.style.background=calBarColor;}
+  var sc=document.getElementById('daily-scan-count');
+  if(sc)sc.textContent=todayScans.length+' scan'+(todayScans.length!==1?'s':'')+' today';
+}
+
+/* ═══════════════════════════════════════
+   WEEKLY REPORT CARD
+═══════════════════════════════════════ */
+function showWeeklyReport() {
+  var hist=getHistory(),now=new Date(),weekAgo=new Date(now);
+  weekAgo.setDate(now.getDate()-6);
+  var weekScans=hist.filter(function(h){return new Date(h.ts)>=weekAgo&&h.data;});
+  if(weekScans.length===0){showToast('Scan food labels this week to see your report!');return;}
+  var avgScore=(weekScans.reduce(function(s,h){return s+(h.score||0);},0)/weekScans.length).toFixed(1);
+  var good=0,ok=0,bad=0;
+  weekScans.forEach(function(h){if((h.score||0)>=7)good++;else if((h.score||0)>=4)ok++;else bad++;});
+  function countHigh(kw,limit){return weekScans.filter(function(h){var n=(h.data&&h.data.nutrient_breakdown||[]).find(function(x){return x.name&&x.name.toLowerCase().includes(kw);});return(n&&n.value||0)>limit;}).length;}
+  var sodiumHigh=countHigh('sodium',700),sugarHigh=countHigh('sugar',15),transHigh=countHigh('trans',0.5);
+  var bestScan=weekScans.reduce(function(a,b){return(a.score||0)>(b.score||0)?a:b;},weekScans[0]);
+  var worstScan=weekScans.reduce(function(a,b){return(a.score||0)<(b.score||0)?a:b;},weekScans[0]);
+  var half=Math.ceil(weekScans.length/2);
+  var firstAvg=weekScans.slice(half).reduce(function(s,h){return s+(h.score||0);},0)/Math.max(weekScans.slice(half).length,1);
+  var secondAvg=weekScans.slice(0,half).reduce(function(s,h){return s+(h.score||0);},0)/Math.max(weekScans.slice(0,half).length,1);
+  var trend=secondAvg>firstAvg+0.5?'📈 Improving':secondAvg<firstAvg-0.5?'📉 Declining':'➡ Steady';
+  var gradeColor=avgScore>=7?'#00A878':avgScore>=4?'#F59E0B':'#FF2D78';
+  var grade=avgScore>=8?'A':avgScore>=7?'B':avgScore>=5?'C':avgScore>=3?'D':'F';
+  var el=document.getElementById('weekly-report-overlay');
+  if(!el){el=document.createElement('div');el.id='weekly-report-overlay';el.style.cssText='position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.6);overflow-y:auto;padding:16px';document.body.appendChild(el);}
+  el.innerHTML='<div style="max-width:400px;margin:0 auto;background:var(--white);border:2.5px solid var(--ink);border-radius:18px;overflow:hidden"><div style="background:'+gradeColor+';padding:20px;display:flex;align-items:center;gap:16px"><div style="width:70px;height:70px;border-radius:50%;background:white;border:3px solid rgba(0,0,0,0.2);display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-family:Fraunces,serif;font-weight:900;font-size:2rem;color:'+gradeColor+';line-height:1">'+grade+'</div></div><div style="color:white"><div style="font-family:Fraunces,serif;font-weight:900;font-size:1.2rem">Weekly Report</div><div style="font-size:0.85rem;opacity:0.9">'+weekScans.length+' products scanned &middot; avg '+avgScore+'/10</div><div style="font-size:0.8rem;opacity:0.8;margin-top:2px">'+trend+'</div></div><button onclick="document.getElementById('weekly-report-overlay').style.display='none'" style="margin-left:auto;background:rgba(255,255,255,0.3);border:none;color:white;width:32px;height:32px;border-radius:50%;font-size:1rem;cursor:pointer;flex-shrink:0">&#x2715;</button></div><div style="padding:16px;border-bottom:1px solid var(--bg)"><div style="font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px">Score Breakdown</div><div style="display:flex;gap:8px"><div style="flex:1;text-align:center;background:#00A87822;border:1.5px solid #00A878;border-radius:10px;padding:10px"><div style="font-family:Fraunces,serif;font-size:1.6rem;font-weight:900;color:#00A878">'+good+'</div><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#00A878">&#x2713; Good<br>7-10</div></div><div style="flex:1;text-align:center;background:#F59E0B22;border:1.5px solid #F59E0B;border-radius:10px;padding:10px"><div style="font-family:Fraunces,serif;font-size:1.6rem;font-weight:900;color:#F59E0B">'+ok+'</div><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#F59E0B">~ OK<br>4-6</div></div><div style="flex:1;text-align:center;background:#FF2D7822;border:1.5px solid #FF2D78;border-radius:10px;padding:10px"><div style="font-family:Fraunces,serif;font-size:1.6rem;font-weight:900;color:#FF2D78">'+bad+'</div><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#FF2D78">&#x2717; Avoid<br>1-3</div></div></div></div>'
+  +'<div style="padding:16px;border-bottom:1px solid var(--bg)"><div style="font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px">Nutrient Alerts</div>'
+  +(sodiumHigh>0?'<div style="display:flex;align-items:center;gap:10px;padding:8px;background:#FF6B0015;border-radius:8px;margin-bottom:6px"><span>&#x1F9C2;</span><div><strong>'+sodiumHigh+' product'+(sodiumHigh!==1?'s':'')+'</strong> had high sodium (&gt;700mg/100g)</div></div>':'')
+  +(sugarHigh>0?'<div style="display:flex;align-items:center;gap:10px;padding:8px;background:#FF2D7815;border-radius:8px;margin-bottom:6px"><span>&#x1F36C;</span><div><strong>'+sugarHigh+' product'+(sugarHigh!==1?'s':'')+'</strong> had high sugar (&gt;15g/100g)</div></div>':'')
+  +(transHigh>0?'<div style="display:flex;align-items:center;gap:10px;padding:8px;background:#FF2D7815;border-radius:8px;margin-bottom:6px"><span>&#x1F6AB;</span><div><strong>'+transHigh+' product'+(transHigh!==1?'s':'')+'</strong> contained significant trans fat</div></div>':'')
+  +(sodiumHigh===0&&sugarHigh===0&&transHigh===0?'<div style="color:#00A878;font-weight:700">&#x1F389; No major alerts this week!</div>':'')
+  +'</div><div style="padding:16px;border-bottom:1px solid var(--bg)"><div style="font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px">Highlights</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div style="background:#00A87815;border:1.5px solid #00A87866;border-radius:10px;padding:10px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#00A878;margin-bottom:4px">&#x1F3C6; Best Choice</div><div style="font-weight:800;font-size:0.85rem;line-height:1.3">'+esc(bestScan.product_name||'')+'</div><div style="font-family:Fraunces,serif;font-weight:900;color:#00A878">'+(bestScan.score||0)+'/10</div></div><div style="background:#FF2D7815;border:1.5px solid #FF2D7866;border-radius:10px;padding:10px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#FF2D78;margin-bottom:4px">&#x26A0; Avoid Again</div><div style="font-weight:800;font-size:0.85rem;line-height:1.3">'+esc(worstScan.product_name||'')+'</div><div style="font-family:Fraunces,serif;font-weight:900;color:#FF2D78">'+(worstScan.score||0)+'/10</div></div></div></div>'
+  +'<div style="padding:16px"><div style="font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">Advice</div><div style="font-size:0.88rem;line-height:1.6">'
+  +(sodiumHigh>=2?'&#x1F9C2; <strong>Cut sodium.</strong> You chose high-sodium products '+sodiumHigh+' times this week.<br><br>':'')
+  +(sugarHigh>=2?'&#x1F36C; <strong>Watch added sugar.</strong> Look for products with &lt;5g sugar/100g.<br><br>':'')
+  +(avgScore>=7?'&#x1F389; <strong>Great week!</strong> Avg '+avgScore+'/10. Keep scanning before you buy.':'')
+  +(avgScore<7&&avgScore>=4?'&#x1F4A1; <strong>Room to improve.</strong> Avg '+avgScore+'/10. Try one green-scored (7+) product/day.':'')
+  +(avgScore<4?'&#x1F6A8; <strong>High-risk choices.</strong> Avg '+avgScore+'/10. Replace one bad product per day.':'')
+  +'</div></div></div>';
+  el.style.display='block';
+}
+
+function showShareCard(d) {
+  var score=d.score||0;
+  var scoreColor=score>=7?'#00A878':score>=4?'#F59E0B':'#FF2D78';
+  var bg=score>=7?'#C0FFE8':score>=4?'#FFF8C0':'#FFE0EC';
+  var topNutrients=(d.nutrient_breakdown||[]).slice(0,3).map(function(n){
+    return '<div style="text-align:center"><div style="font-weight:900;font-size:1.1rem">'+n.value+'<small style="font-size:0.6em">'+(n.unit||'')+'</small></div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;opacity:0.7">'+n.name.replace('of which ','').replace('Total ','').substring(0,8)+'</div></div>';
+  }).join('');
+  var el=document.getElementById('share-card-overlay');
+  if(!el){el=document.createElement('div');el.id='share-card-overlay';el.style.cssText='position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);padding:20px';el.onclick=function(e){if(e.target===el)el.style.display='none';};document.body.appendChild(el);}
+  el.innerHTML='<div style="width:100%;max-width:340px"><div style="background:'+bg+';border:2.5px solid #0a0a0a;border-radius:18px;padding:22px;font-family:Fraunces,serif"><div style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#0a0a0a88;margin-bottom:8px">EATLYTIC &middot; FOOD REPORT</div><div style="font-weight:900;font-size:1.25rem;margin-bottom:4px;line-height:1.2">'+esc(d.product_name||'Food Product')+'</div><div style="font-size:0.78rem;color:#0a0a0a99;margin-bottom:16px">'+esc(d.product_category||'')+'</div><div style="display:flex;align-items:center;gap:16px;margin-bottom:16px"><div style="width:80px;height:80px;border-radius:50%;border:3px solid '+scoreColor+';background:white;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-weight:900;font-size:2rem;color:'+scoreColor+';line-height:1">'+score+'</div><div style="font-size:10px;font-weight:800;color:#0a0a0a66">/10</div></div><div><div style="font-weight:900;font-size:1rem;margin-bottom:4px">'+esc(d.verdict||'')+'</div><div style="font-size:0.8rem;line-height:1.4;color:#0a0a0aaa">'+esc((d.summary||'').substring(0,120))+'&hellip;</div></div></div>'
+  +(topNutrients?'<div style="display:flex;gap:12px;justify-content:space-around;background:white;border-radius:12px;border:1.5px solid #0a0a0a22;padding:10px 6px;margin-bottom:14px">'+topNutrients+'</div>':'')
+  +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'
+  +(d.cons||[]).slice(0,2).map(function(c){return'<div style="background:#FF2D7822;border:1px solid #FF2D7888;border-radius:20px;padding:3px 10px;font-size:10px;font-weight:700;color:#cc1155">&#x26A0; '+esc(c.substring(0,35))+'</div>';}).join('')
+  +(d.pros||[]).slice(0,1).map(function(p){return'<div style="background:#00A87822;border:1px solid #00A87888;border-radius:20px;padding:3px 10px;font-size:10px;font-weight:700;color:#007755">&#x2713; '+esc(p.substring(0,35))+'</div>';}).join('')
+  +'</div><div style="font-size:9px;color:#0a0a0a55;font-family:Space Mono,monospace">eatlytic.app &middot; Know what you eat</div></div>'
+  +'<div style="display:flex;gap:10px;margin-top:12px"><button onclick="copyShareText()" style="flex:1;background:white;border:2px solid #0a0a0a;border-radius:10px;padding:11px;font-weight:800;font-size:13px;cursor:pointer">&#x1F4CB; Copy text</button><button onclick="nativeShare()" style="flex:1;background:#0a0a0a;color:white;border:2px solid #0a0a0a;border-radius:10px;padding:11px;font-weight:800;font-size:13px;cursor:pointer">&#x1F4E4; Share</button><button onclick="document.getElementById('share-card-overlay').style.display='none'" style="background:none;border:2px solid #0a0a0a66;border-radius:10px;padding:11px;font-weight:800;font-size:13px;cursor:pointer">&#x2715;</button></div></div>';
+  el.style.display='flex';
+}
+
+function copyShareText(){
+  var d=state.lastResult||{};
+  var pros=(d.pros||[]).slice(0,2).map(function(p){return'+ '+p;}).join('\n');
+  var cons=(d.cons||[]).slice(0,2).map(function(c){return'- '+c;}).join('\n');
+  var text='Eatlytic Report: '+esc(d.product_name||'')+' | Score: '+(d.score||0)+'/10 — '+(d.verdict||'')+'\n\n'+(d.summary||'')+'\n\n'+pros+'\n'+cons+'\n\nScan yours @ eatlytic.app';
+  navigator.clipboard.writeText(text).then(function(){showToast('Copied to clipboard!');}).catch(function(){showToast('Copy failed');});
+}
+async function nativeShare(){
+  var d=state.lastResult||{};
+  var text='Eatlytic: '+(d.product_name||'Food')+' scored '+(d.score||0)+'/10 — '+(d.verdict||'')+'. '+(d.summary||'')+' Check yours @ eatlytic.app';
+  try{if(navigator.share)await navigator.share({title:'Eatlytic Food Report',text:text});else copyShareText();}catch(e){copyShareText();}
 }
 
 /* ═══════════════════════════════════════
@@ -2420,6 +2610,7 @@ function esc(s){
 document.getElementById('bottom-nav').classList.add('visible');
 loadQuota();
 setupVoice();
+setTimeout(updateDailyIntake, 200);
 
 // Preload profile
 setTimeout(()=>{

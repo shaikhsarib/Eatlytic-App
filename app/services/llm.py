@@ -175,7 +175,7 @@ Return ONLY this JSON (no markdown):
   "score": <integer 1-10, REQUIRED>,
   "verdict": "<Two-word verdict in {lang_name}>",
   "summary": "<2-sentence professional summary in {lang_name}>",
-  "eli5": "<Child-friendly 1-sentence with one emoji in {lang_name}>",
+  "eli5_explanation": "<Child-friendly 1-sentence with one emoji in {lang_name}>",
   "pros": ["<Genuine benefit 1>", "<Genuine benefit 2>", "<Genuine benefit 3>"],
   "cons": ["<Health concern 1>", "<Health concern 2>"],
   "age_warnings": [
@@ -186,11 +186,19 @@ Return ONLY this JSON (no markdown):
     {{"group": "Pregnant",             "emoji": "🤰", "status": "warning|caution|good", "message": "<in {lang_name}>"}}
   ],
   "molecular_insight": "<1 sentence on biochemical impact in {lang_name}>",
-  "chart_data": [<Safe%>, <Moderate%>, <Risky%>]
+  "chart_data": [<Safe%>, <Moderate%>, <Risky%>],
+  "nutrient_ratings": [
+    {{"name": "<same nutrient name from list>", "rating": "good|moderate|caution|bad", "impact": "<1 short sentence on this nutrient level in {lang_name}>"}}
+  ],
+  "ingredients_spotlight": [
+    {{"name": "<ingredient name>", "type": "natural|additive|preservative|emulsifier|vitamin|seasoning", "safety_rating": "safe|moderate|concern", "what_it_is": "<one sentence>", "health_impact": "<one sentence>", "curiosity_fact": "<interesting fact>"}}
+  ]
 }}
 RULES:
 - score MUST match actual nutrient values — NEVER default to middle scores.
 - chart_data must be [Safe%, Moderate%, Risky%] summing to exactly 100%.
+- nutrient_ratings: rate EVERY nutrient from the list above as good/moderate/caution/bad based on Indian health standards.
+- ingredients_spotlight: list the TOP 8 most noteworthy ingredients (additives, preservatives, major ingredients).
 - Extract ACTUAL values from the label text.
 {blur_context}
 """
@@ -554,29 +562,44 @@ async def unified_analyze_flow(
         else:
             merged_warnings[key] = {"group": pw["persona"], "status": pw["type"].lower(), "message": pw["msg"], "emoji": "⚠️"}
 
-    eli5         = analysis.get("eli5", "")
+    # BUG FIX: field was "eli5" in old prompt but frontend expects "eli5_explanation"
+    eli5         = analysis.get("eli5_explanation") or analysis.get("eli5", "")
     mol_insight  = analysis.get("molecular_insight", "")
     score_color  = "#22c55e" if final_score >= 7 else "#f59e0b" if final_score >= 4 else "#ef4444"
 
+    # BUG FIX: merge nutrient_ratings back onto each nutrient_breakdown item
+    rating_map = {r["name"]: r for r in analysis.get("nutrient_ratings", [])}
+    for n in nutrient_breakdown:
+        r = rating_map.get(n["name"], {})
+        n["rating"] = r.get("rating", "moderate")
+        n["impact"] = r.get("impact", "")
+
+    # BUG FIX: ingredients_spotlight was never populated from LLM
+    ingredients_spotlight = analysis.get("ingredients_spotlight", [])
+
+    # BUG FIX: merged_warnings was built but never converted back to list
+    age_warnings_final = list(merged_warnings.values())
+
     final_output = {
-        "product_name":      product_name,
-        "product_category":  category,
-        "serving_size":      extracted.get("serving_size"),
-        "score":             final_score,
-        "score_color":       score_color,
-        "verdict":           verdict,
-        "summary":           summary,
-        "nutrient_breakdown": nutrient_breakdown,
-        "pros":              pros,
-        "cons":              cons,
-        "age_warnings":      age_warnings,
-        "eli5":              eli5,
-        "molecular_insight": mol_insight,
-        "ingredients_raw":   ingredients_raw,
-        "explanation":       explanation,
-        "better_alternative": get_healthy_alternative(category, persona),
-        "whatsapp_content":  {},
-        "disclaimer":        MEDICAL_DISCLAIMER,
+        "product_name":          product_name,
+        "product_category":      category,
+        "serving_size":          extracted.get("serving_size"),
+        "score":                 final_score,
+        "score_color":           score_color,
+        "verdict":               verdict,
+        "summary":               summary,
+        "nutrient_breakdown":    nutrient_breakdown,
+        "pros":                  pros,
+        "cons":                  cons,
+        "age_warnings":          age_warnings_final,
+        "eli5_explanation":      eli5,
+        "molecular_insight":     mol_insight,
+        "ingredients_raw":       ingredients_raw,
+        "ingredients_spotlight": ingredients_spotlight,
+        "explanation":           explanation,
+        "better_alternative":    get_healthy_alternative(category, persona),
+        "whatsapp_content":      {},
+        "disclaimer":            MEDICAL_DISCLAIMER,
     }
 
     try:
