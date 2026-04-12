@@ -197,42 +197,33 @@ def build_super_prompt(
         )
 
     return f"""\
-You are a world-class food scientist and nutritionist with expertise across global food standards
-(Indian FSSAI, US FDA, UK FSA, EU, Codex Alimentarius). You can accurately read ANY nutrition
-label from ANY country — India, UK, US, Europe, Middle East, Southeast Asia, etc.
-You will do TWO things in ONE response:
+You are the Eatlytic "Nutrition Label Analysis and Card Generation Specialist".
+Your task is to analyze food product nutrition labels, detect their nutritional content,
+and generate customized informational cards based ONLY on what is actually present in that label.
 
-STEP 1 — READ THE LABEL (Blind Photocopier Rule):
-• Extract EVERY nutrient row from the label text below EXACTLY as printed.
-• Prefer "Per 100g" or "Per 100ml" column values.
-  If only "Per Serve" / "Per Serving" column exists, use those and note the serving size.
-• Include ALL rows visible in the text: Energy (kcal/kJ), Protein, Total Carbohydrate,
-  of which Sugars, of which Added Sugars, Dietary Fibre/Fiber, Total Fat, of which Saturated,
-  of which Trans Fat, of which Mono-unsaturated, of which Poly-unsaturated, Cholesterol,
-  Sodium/Salt, Potassium, Calcium, Iron, Magnesium, Vitamins (A, B1, B2, B3, B6, B12, C, D, E, K),
-  Moisture, Ash, Oleic acid — EVERYTHING. Do NOT skip any row.
-• Sub-components use prefix "  of which " (e.g., "  of which Sugar").
-• Output EXACT numbers from the label — NO estimation, NO calculation, NO hallucination.
-• Product name: Read brand + product type from label text. If not found, make a reasonable
-  inference (e.g., "Digestive Biscuits", "Peanut Butter", "Multigrain Crackers").
-  NEVER output "Unknown Product" as the final answer. If truly unidentifiable, use "Food Product".
-• Ingredients: transcribe FULL ingredient list if present in the text.
+## Core Task (Blind Photocopier)
+1. **Detect and extract** all nutritional values present on the label exactly as printed.
+2. **Generate cards only for nutrients actually listed** on that label—do not use a fixed template.
+   The number and type of cards depend entirely on what information is detected.
+   (If 8 nutrients are listed, generate 8 cards. If 15, generate 15. Never force a fixed template).
+3. **Create individual entries** for each detected nutrient with:
+   - A thematic icon name representing that nutrient (e.g., "protein", "sugar", "salt").
+   - The nutrient name in CAPITALS (e.g., "PROTEIN", "OF WHICH SUGARS").
+   - The exact numerical value + unit (e.g., "384kcal", "0.85g", "119/100g").
+   - A dynamic rating/impact based on global standards (FSSAI, FDA, EU, UK FSA).
 
-STEP 2 — ANALYZE (using global health standards):
-Respond ENTIRELY in {lang_name}.
-PERSONA: {persona}
-NOVA LEVEL: {nova_level} (1=whole food, 4=ultra-processed)
+## Content Requirements
+- **Nutritional values**: detected nutrient and quantity.
+- **Product name**: REQUIRED (infer from context, NEVER 'Unknown Product').
+- **Serving size**: exact text from label (e.g., 'Per 100g', 'Per 75g serve').
+- **Health warnings**: allergen info or special health claims found in text.
+- **Recommendations**: consumption guidance based on the context.
+
+[SPECIFIC CONTEXT]:
+PERSONA: {persona} (Analyze impact through this lens)
+NOVA LEVEL: {nova_level} (Reference for processing level)
 RISK FLAGS: {flags_text}
-WEB CONTEXT: {research_context or "No specific web data found."}
-
-SCORING RUBRIC (balanced global health standards):
-  9-10 → Whole/minimally processed food. Sugar <2g/100g, Sodium <200mg/100g.
-  7-8  → Moderately processed. Sugar <5g, Sodium <400mg.
-  5-6  → Processed. Sugar 5-15g OR Sodium 400-700mg.
-  3-4  → High sugar (>15g) OR high sodium (>700mg) OR poor nutritional profile.
-  1-2  → Ultra-processed (NOVA 4) OR very high sugar/sodium/saturated fat.
-  HARD CAPS: NOVA 4 → max 4. Sodium >1000mg/100g → max 5.
-
+{research_context or ""}
 {blur_context}
 
 [LABEL TEXT]:
@@ -546,46 +537,21 @@ async def unified_analyze_flow(
     explanation = get_explanation_report(rich, ingredients_raw)
     nova_level  = explanation["nova_level"]
 
-    # Step 9: Build final nutrient_breakdown from LLM list
-    # REFACTOR: Start with LLM list, then ADD standard macros if they are missing.
-    # This prevents the "Iron only" problem where focusing on one row hides the rest.
+    # Step 9: Build final nutrient_breakdown — SPECIALIST DYNAMIC CARDS
+    # We generate cards ONLY for nutrients actually LISTED on the label.
+    # No fixed templates, no forced priority fields (per Specialist instructions).
     llm_list = result_data.get("nutrients", [])
-    if not isinstance(llm_list, list):
+    if not isinstance(llm_list, list) or not llm_list:
+        # Emergency Fallback ONLY if LLM returned nothing
+        _backup = [
+            ("ENERGY", "calories", "kcal"), ("PROTEIN", "protein", "g"), 
+            ("CARBS", "carbs", "g"), ("FAT", "fat", "g")
+        ]
         llm_list = []
-    
-    existing_lower = [str(n.get("name", "")).lower().strip() for n in llm_list]
-    
-    _priority_fields = [
-        ("Energy",                  "calories",       "kcal"),
-        ("Protein",                 "protein",        "g"),
-        ("Total Carbohydrate",      "carbs",          "g"),
-        ("  of which Sugar",        "sugar",          "g"),
-        ("  of which Fiber",        "fiber",          "g"),
-        ("Total Fat",               "fat",            "g"),
-        ("  of which Saturated Fat","saturated_fat",  "g"),
-        ("  of which Trans Fat",    "trans_fat",      "g"),
-        ("Sodium",                  "sodium_mg",      "mg"),
-        ("Cholesterol",             "cholesterol_mg", "mg"),
-        ("Potassium",               "potassium_mg",   "mg"),
-        ("Calcium",                 "calcium_mg",     "mg"),
-        ("Iron",                    "iron_mg",        "mg"),
-    ]
-
-    for label, key, unit in _priority_fields:
-        # Check if already in list (fuzzy name match)
-        clean_lbl = label.lower().strip().replace("  of which ", "")
-        is_dub = any(clean_lbl in ex or ex in clean_lbl for ex in existing_lower)
-        if is_dub:
-            continue
-        
-        val = result_data.get(key)
-        if val is not None:
-             # Include if > 0 OR if it's a basic macro (Energy/Prot/Carb/Fat/Sugar/Sodium)
-             # Salt labels showing 0g Protein/Fat should still have cards.
-             v_float = float(val or 0)
-             is_basic = key in ["calories", "protein", "carbs", "fat", "sugar", "sodium_mg"]
-             if v_float > 0 or is_basic:
-                 llm_list.append({"name": label, "value": v_float, "unit": unit})
+        for label, key, unit in _backup:
+            val = result_data.get(key)
+            if val is not None and float(val or 0) >= 0:
+                llm_list.append({"name": label, "value": float(val), "unit": unit})
 
     # Normalise values (strip embedded unit strings)
     nutrient_breakdown = []
