@@ -3749,9 +3749,7 @@
         d.nutrient_breakdown.forEach((n, i) => {
           const bg = SAT_BG[i % SAT_BG.length], rot = ((i % 2 === 0 ? 1 : -1) * (i % 3 + 1)) + 'deg';
           const rIcon = { good: '✓', moderate: '~', caution: '~', bad: '!' }[n.rating] || '?';
-          const rColor = { good: '#00A878', moderate: '#F59E0B', caution: '#FF6B00', bad: '#FF2D78' }[n.rating] || '#888888';
-          const cardOutline = n.rating === 'bad' ? '2px solid #FF2D7888' : 'none';
-          html += `<div class="ns-card" id="nsc-${i}" style="background:${bg};--rot:${rot};outline:${cardOutline}" onclick="flipNutrientCard(${i})"><div class="ns-rating-badge" style="background:${rColor}">${rIcon}</div><span class="ns-icon">${getNutrientIcon(n.name)}</span><div class="ns-name">${esc(n.name)}</div><div class="ns-val">${n.value}<small style="font-size:0.55em;font-weight:700"> ${n.unit || ''}</small></div><div class="ns-bar"><div class="ns-fill" id="nsf-${i}" style="background:${rColor}"></div></div></div>`;
+          html += `<div class="ns-card" id="nsc-${i}" style="background:${bg};--rot:${rot}" onclick="flipNutrientCard(${i})"><div class="ns-rating-badge">${rIcon}</div><span class="ns-icon">${getNutrientIcon(n.name)}</span><div class="ns-name">${esc(n.name)}</div><div class="ns-val">${n.value}<small style="font-size:0.55em;font-weight:700"> ${n.unit || ''}</small></div><div class="ns-bar"><div class="ns-fill" id="nsf-${i}"></div></div></div>`;
         });
         html += `</div>`;
       }
@@ -3800,17 +3798,7 @@
             const fill = document.getElementById('nsf-' + i);
             if (!fill) return;
             const n = d.nutrient_breakdown?.[i];
-            if (n) {
-              const nm = (n.name || '').toLowerCase();
-              const DV_G  = {'energy':2000,'calorie':2000,'protein':50,'carb':300,'carbohydrate':300,'fat':65,'sugar':25,'fiber':28,'fibre':28,'saturated':20,'trans':2};
-              const DV_MG = {'sodium':2000,'iron':18,'calcium':1000,'potassium':3500,'cholesterol':300};
-              let dv = 50;
-              if (n.unit === 'kcal' || n.unit === 'kJ' || nm.includes('energy') || nm.includes('calorie')) { dv = 2000; }
-              else if (n.unit === 'g') { for (const [k,v] of Object.entries(DV_G)) { if (nm.includes(k)) { dv = v; break; } } }
-              else if (n.unit === 'mg') { for (const [k,v] of Object.entries(DV_MG)) { if (nm.includes(k)) { dv = v; break; } } }
-              const pct = Math.min(100, Math.round(((n.value || 0) / dv) * 100));
-              setTimeout(() => { fill.style.width = pct + '%'; }, 500);
-            }
+            if (n) { const pct = Math.min(100, Math.round(((n.value || 0) / (n.unit === 'g' ? 50 : n.unit === 'mg' ? 2400 : 100)) * 100)); setTimeout(() => { fill.style.width = pct + '%'; }, 500); }
           }, i * 130);
         });
       });
@@ -3867,67 +3855,9 @@
       const card = document.getElementById('nsc-' + i), n = state.lastResult?.nutrient_breakdown?.[i];
       if (!card || !n) return;
       spawnStickerPop(getNutrientIcon(n.name), card.getBoundingClientRect().left + 20, card.getBoundingClientRect().top);
-      card.style.transform = 'scale(1.12) rotate(0deg)';
-      setTimeout(() => { if (card.classList.contains('visible')) card.style.transform = ''; }, 400);
-      showNutrientDetail(n);
-    }
-    function showNutrientDetail(n) {
-      const ratingColor = { good: '#00A878', moderate: '#F59E0B', caution: '#FF6B00', bad: '#FF2D78' }[n.rating] || '#888';
-      const ratingLabel = { good: '✓ Good', moderate: '~ Moderate', caution: '⚠ High', bad: '✗ Concerning' }[n.rating] || (n.rating || '?');
-      const explanation = n.impact || getNutrientDefaultInfo(n.name);
-      let el = document.getElementById('nutrient-detail-overlay');
-      if (!el) {
-        el = document.createElement('div');
-        el.id = 'nutrient-detail-overlay';
-        el.style.cssText = 'position:fixed;inset:0;z-index:200;display:flex;align-items:flex-end;background:rgba(0,0,0,0.5);opacity:0;transition:opacity 0.2s';
-        el.onclick = (e) => { if (e.target === el) closeNutrientDetail(); };
-        document.body.appendChild(el);
-      }
-      el.innerHTML = `<div style="width:100%;background:var(--white);border-radius:20px 20px 0 0;border-top:2px solid var(--ink);border-left:2px solid var(--ink);border-right:2px solid var(--ink);padding:20px 20px 32px;max-height:60vh;overflow-y:auto">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-          <span style="font-size:2rem">${getNutrientIcon(n.name)}</span>
-          <div style="flex:1">
-            <div style="font-family:'Fraunces',serif;font-size:1.15rem;font-weight:900;line-height:1.2">${esc(n.name)}</div>
-            <div style="font-size:0.8rem;color:var(--muted);margin-top:2px">Per 100g of this product</div>
-          </div>
-          <button onclick="closeNutrientDetail()" style="background:none;border:1.5px solid var(--ink);border-radius:50%;width:28px;height:28px;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-          <div style="font-family:'Fraunces',serif;font-size:2.4rem;font-weight:900;line-height:1">${n.value}</div>
-          <div style="font-size:0.7rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">${n.unit || ''}</div>
-          <div style="margin-left:auto;background:${ratingColor}22;border:1.5px solid ${ratingColor};color:${ratingColor};padding:5px 12px;border-radius:20px;font-size:0.75rem;font-weight:800">${ratingLabel}</div>
-        </div>
-        <div style="background:var(--bg);border-radius:10px;padding:13px;font-size:0.88rem;line-height:1.55;color:var(--ink)">${esc(explanation)}</div>
-      </div>`;
-      el.style.display = 'flex';
-      requestAnimationFrame(() => { el.style.opacity = '1'; });
-    }
-    function closeNutrientDetail() {
-      const el = document.getElementById('nutrient-detail-overlay');
-      if (!el) return;
-      el.style.opacity = '0';
-      setTimeout(() => { el.style.display = 'none'; }, 200);
-    }
-    function getNutrientDefaultInfo(name) {
-      const n = (name || '').toLowerCase();
-      if (n.includes('trans')) return 'Trans fat is produced during industrial hydrogenation. Even tiny amounts raise bad cholesterol (LDL) and lower good cholesterol (HDL) simultaneously. The WHO wants global elimination — there is no safe level.';
-      if (n.includes('sodium') || n.includes('salt')) return 'Sodium controls blood pressure and fluid balance. Indians consume ~11g of salt per day vs the 5g WHO limit. The ICMR caps sodium at 2000mg/day. One pack of instant noodles can exceed 50% of this limit.';
-      if (n.includes('saturated')) return 'Saturated fat, found in palm oil, ghee, and dairy, raises LDL (bad) cholesterol and clogs arteries. Indian diets are often already high in saturated fat. ICMR recommends keeping it under 20g/day.';
-      if (n.includes('added sugar')) return 'Added sugars are sugars added during processing — not naturally occurring. They provide zero nutrition and directly drive obesity, fatty liver, and type 2 diabetes. WHO recommends below 25g (6 teaspoons) per day.';
-      if (n.includes('sugar')) return 'Sugar provides quick energy but no nutrients. Excess sugar causes blood sugar spikes and crashes, promotes fat storage, and is linked to obesity and diabetes. WHO daily limit is 25g (about 6 teaspoons).';
-      if (n.includes('energy') || n.includes('calorie')) return 'Calories represent total food energy. An average Indian adult needs about 2000 kcal/day. Foods above 400 kcal per 100g are considered high-energy-density — easy to overeat without feeling full.';
-      if (n.includes('protein')) return 'Protein is essential for muscle repair, immune function, and hormone production. India has a severe protein gap — the average intake is only 47g/day vs the 54g recommended. Processed snacks rarely contribute meaningful protein.';
-      if (n.includes('fiber') || n.includes('fibre')) return 'Dietary fiber feeds beneficial gut bacteria, slows sugar absorption, and prevents constipation. Most Indians get under 15g/day vs the recommended 28g. High-fiber products (≥6g/100g) are genuinely good for daily health.';
-      if (n.includes('carb')) return 'Carbohydrates are the body's primary fuel. However, the source matters hugely — whole grain carbs (dal, brown rice) come with fiber and nutrients; refined carbs (maida, white sugar) spike blood sugar and provide no other benefit.';
-      if (n.includes('fat') && !n.includes('saturated') && !n.includes('trans')) return 'Total fat includes both healthy fats (unsaturated, from nuts and seeds) and harmful fats (saturated, trans). A high total fat number alone is not alarming — check the breakdown to understand what type of fat you're eating.';
-      if (n.includes('cholesterol')) return 'Dietary cholesterol has less impact on blood cholesterol than saturated and trans fats. Still, limit intake to under 300mg/day. People with heart disease or diabetes should keep it under 200mg/day.';
-      if (n.includes('iron')) return 'Iron is critical for red blood cells that carry oxygen. India has the highest anaemia burden in the world — about 50% of women and 25% of men are iron-deficient. Products with ≥15% RDA per serving make a real nutritional difference.';
-      if (n.includes('calcium')) return 'Calcium builds and maintains bones and teeth. The adult daily requirement is 1000mg, but most Indians get less than 500mg. Chronic deficiency causes osteoporosis — brittle bones — in later life.';
-      if (n.includes('potassium')) return 'Potassium counterbalances sodium's blood pressure effects. High-sodium processed foods are almost always low in potassium — making the blood pressure problem worse. Fruits and vegetables are the best potassium sources.';
-      if (n.includes('vitamin')) return `${name}: This vitamin contributes to your daily micronutrient intake. Vitamins support metabolism, immune function, and cell repair. Fortified processed foods often add synthetic vitamins to offset nutrients lost during processing.`;
-      if (n.includes('magnesium')) return 'Magnesium supports over 300 biochemical reactions including muscle function, blood sugar regulation, and nerve transmission. Most Indians are deficient due to low whole grain and nut intake.';
-      if (n.includes('mono') || n.includes('poly') || n.includes('unsaturated')) return 'Unsaturated fats (mono and polyunsaturated) are the "good" fats found in nuts, seeds, olive oil, and fatty fish. Unlike saturated fat, they help lower LDL cholesterol and reduce heart disease risk.';
-      return `${name}: ${n} is listed on this product's nutrition label. Check how it fits into your daily nutritional goals based on the value shown.`;
+      showToast(getNutrientIcon(n.name) + ' ' + n.name + ': ' + (n.impact || n.value + (n.unit || '')));
+      card.style.transform = 'scale(1.18) rotate(0deg)';
+      setTimeout(() => { if (card.classList.contains('visible')) card.style.transform = ''; }, 500);
     }
     function switchInsight(e, panel) {
       document.querySelectorAll('.itab').forEach(t => t.classList.remove('active'));
@@ -3935,24 +3865,14 @@
       e.target.classList.add('active'); document.getElementById(panel)?.classList.add('active');
     }
     function getNutrientIcon(name) {
-      const n = (name || '').toLowerCase();
+      const n = name?.toLowerCase() || '';
       if (n.includes('sodium') || n.includes('salt')) return '🧂';
-      if (n.includes('trans')) return '🚫';
-      if (n.includes('saturated')) return '🥩';
-      if (n.includes('mono') || n.includes('poly') || (n.includes('unsaturated') && !n.includes('saturated'))) return '🫒';
       if (n.includes('protein')) return '💪';
       if (n.includes('calorie') || n.includes('energy')) return '⚡';
-      if (n.includes('added sugar')) return '🍭';
-      if (n.includes('sugar')) return '🍬';
-      if (n.includes('fiber') || n.includes('fibre')) return '🌱';
-      if (n.includes('carb')) return '🌾';
+      if (n.includes('carb') || n.includes('sugar')) return '🌾';
       if (n.includes('fat')) return '🫒';
-      if (n.includes('cholesterol')) return '🫀';
-      if (n.includes('iron')) return '💊';
-      if (n.includes('calcium')) return '🦴';
-      if (n.includes('potassium')) return '🍌';
-      if (n.includes('magnesium')) return '✨';
-      if (n.includes('vitamin')) return '💫';
+      if (n.includes('fibre') || n.includes('fiber')) return '🌱';
+      if (n.includes('vitamin') || n.includes('calcium') || n.includes('iron')) return '💊';
       return '🔬';
     }
 
