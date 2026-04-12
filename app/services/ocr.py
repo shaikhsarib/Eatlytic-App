@@ -5,10 +5,18 @@ EasyOCR wrapper with lazy loading, caching, and the Universal Label Filter.
 
 import os
 import re
+import sys
 import logging
 import hashlib
 import threading
+import warnings
 import numpy as np
+
+# Suppress noisy PyTorch pin_memory warning on CPU-only machines
+warnings.filterwarnings("ignore", message=".*pin_memory.*", category=UserWarning)
+
+logger = logging.getLogger(__name__)
+
 from PIL import Image
 from io import BytesIO
 from app.models.db import get_ocr_cache, set_ocr_cache
