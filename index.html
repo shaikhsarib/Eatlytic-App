@@ -2884,6 +2884,28 @@
     [data-theme="dark"] #theme-toggle {
       content: '☀️';
     }
+    /* scan tips styling */
+    .scan-tips {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin: 12px 0;
+      flex-wrap: wrap;
+    }
+    .tip-pill {
+      background: var(--white);
+      border: 1.5px solid var(--ink);
+      padding: 4px 10px;
+      border-radius: var(--r-pill);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      box-shadow: 2px 2px 0 var(--ink);
+    }
+    [data-theme="dark"] .tip-pill {
+      background: #222;
+      border-color: rgba(240, 237, 230, 0.18);
+    }
   </style>
 </head>
 
@@ -2929,6 +2951,13 @@
         <div
           style="font-family:'Space Mono',monospace;font-size:8px;color:var(--muted);text-align:center;margin-top:4px">
           or drag &amp; drop · or tap camera →</div>
+      </div>
+
+      <!-- Instruction Pills -->
+      <div class="scan-tips">
+        <div class="tip-pill">💡 Good Light</div>
+        <div class="tip-pill">🔭 Clear Focus</div>
+        <div class="tip-pill">📄 Shows Full Label</div>
       </div>
 
       <div class="quality-strip" id="quality-strip">
@@ -3431,9 +3460,13 @@
       wrap.classList.add('visible');
       document.getElementById('preview-badge').textContent = '✓ Ready to analyse';
       document.getElementById('analyse-cta').classList.add('visible');
+      document.getElementById('analyse-cta').disabled = false;
+      document.getElementById('analyse-cta').textContent = '✦ Analyse this Label →';
+      
       const fl = document.getElementById('scan-flash');
       fl.classList.add('flash'); setTimeout(() => fl.classList.remove('flash'), 120);
       spawnConfetti(window.innerWidth / 2, window.innerHeight * 0.38);
+      
       checkQuality(file);
     }
 
@@ -3461,13 +3494,66 @@
       applyQuality(score > 60 ? 'none' : score > 30 ? 'mild' : 'blurry', score);
     }
 
-    function applyQuality(sev, pct) {
+    async function applyQuality(sev, pct) {
       const fill = document.getElementById('qs-fill'), badge = document.getElementById('qs-badge'), label = document.getElementById('qs-label');
       let d = sev === 'none' ? Math.max(92, pct) : sev === 'mild' ? Math.max(60, pct) : Math.max(15, pct);
       fill.style.width = d + '%';
-      if (sev === 'none') { fill.style.background = 'var(--mint)'; badge.style.color = 'var(--mint)'; badge.textContent = '✓ Clear'; label.textContent = 'Great quality'; }
-      else if (sev === 'mild') { fill.style.background = 'var(--orange)'; badge.style.color = 'var(--orange)'; badge.textContent = '~ Fair'; label.textContent = 'Auto-correct on'; }
-      else { fill.style.background = 'var(--red)'; badge.style.color = 'var(--red)'; badge.textContent = '⚠ Blurry'; label.textContent = 'AI will enhance'; }
+      
+      const cta = document.getElementById('analyse-cta');
+
+      if (sev === 'none') { 
+        fill.style.background = 'var(--mint)'; badge.style.color = 'var(--mint)'; badge.textContent = '✓ Clear'; label.textContent = 'Great quality'; 
+        cta.textContent = '✦ Analyse this Label →';
+        cta.disabled = false;
+      }
+      else {
+        // Blurry or Mild - Trigger Auto-Enhance
+        fill.style.background = (sev === 'mild') ? 'var(--orange)' : 'var(--red)';
+        badge.style.color = (sev === 'mild') ? 'var(--orange)' : 'var(--red)';
+        badge.textContent = (sev === 'mild') ? '~ Fair' : '⚠ Blurry';
+        label.textContent = 'Auto-correcting…';
+        
+        // Auto-enhance flow
+        cta.disabled = true;
+        cta.textContent = '🔧 Auto-enhancing image...';
+        
+        try {
+          const fd = new FormData(); fd.append('image', state.blob);
+          const res = await fetch(`${API}/enhance-preview`, { method: 'POST', body: fd });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.deblurred && data.image_b64) {
+              // Replace preview and blob
+              const newUrl = `data:image/jpeg;base64,${data.image_b64}`;
+              document.getElementById('preview-img').src = newUrl;
+              // Convert b64 to blob for state.blob
+              const byteChars = atob(data.image_b64);
+              const byteNums = new Array(byteChars.length);
+              for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
+              const byteArray = new Uint8Array(byteNums);
+              state.blob = new Blob([byteArray], {type: 'image/jpeg'});
+              
+              label.textContent = 'Fixed by AI';
+              badge.textContent = '✓ Enhanced';
+              badge.style.color = 'var(--mint)';
+              fill.style.background = 'var(--mint)';
+              fill.style.width = '100%';
+              cta.disabled = false;
+              cta.textContent = '✦ Analyse Enhanced Label →';
+              showToast('✨ Image successfully enhanced!');
+            } else {
+              cta.disabled = false;
+              cta.textContent = '✦ Analyse Anyway →';
+            }
+          } else {
+             cta.disabled = false;
+             cta.textContent = '✦ Analyse Anyway →';
+          }
+        } catch (err) {
+          cta.disabled = false;
+          cta.textContent = '✦ Analyse Anyway →';
+        }
+      }
     }
 
     /* ═══════════════════════════════════════

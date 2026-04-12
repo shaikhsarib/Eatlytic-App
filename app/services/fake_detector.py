@@ -223,18 +223,31 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
             ),
         }
 
+    # ── 1.2 Zero-Washing Detection: High-calorie categories claiming 0 ────—
+    sus_categories = ["snack", "biscuit", "cereal", "noodle", "oil", "dairy", "sweet", "chocolate"]
+    cat_lower = category.lower()
+    is_sus_cat = any(c in cat_lower for c in sus_categories)
+    
+    macro_sum_check = protein + carbs + fat
+    label_calories = float(nutrients.get("calories") or nutrients.get("energy") or nutrients.get("kcal") or 0)
+    
+    if is_sus_cat and label_calories == 0 and macro_sum_check == 0:
+        return {
+            "is_valid": False,
+            "reason": (
+                f"Suspicious Label: This product is a '{category}' but claims 0 calories "
+                "and 0g macros. This is physically impossible for this category."
+            ),
+        }
+
     # ── 2. Map to FakeDetector key names ──────────────────────────────────────
     fd = dict(nutrients)
     if "carbs" in fd and "carbohydrate" not in fd:
         fd["carbohydrate"] = fd.pop("carbs")
 
-    label_calories = float(
-        fd.get("calories") or fd.get("energy") or fd.get("kcal") or 0
-    )
-
     # FIX: Single-ingredient whole foods (salt, water, pure spices) have 0 calories
     # AND 0 macros — this is VALID data, not a fake label. Never block such products.
-    macro_sum_check = protein + carbs + fat
+    # Note: These are NOT in sus_categories.
     if label_calories == 0 and macro_sum_check == 0:
         return {"is_valid": True, "reason": "Valid zero-calorie, zero-macro product (e.g. salt, water, pure spice)."}
 

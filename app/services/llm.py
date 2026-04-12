@@ -266,6 +266,7 @@ Return ONLY this single JSON object (no markdown, no extra text):
     {{"name": "  of which TRANS FAT", "value": 0.13, "unit": "g", "rating": "caution", "impact": "Trace trans fat."}},
     {{"name": "SODIUM", "value": 1000.0, "unit": "mg", "rating": "bad", "impact": "Dangerously high sodium."}}
   ],
+  "better_alternative": "string — suggest a healthier alternative product or category",
   "score": <integer 1-10, REQUIRED — use scoring rubric above>,
   "verdict": "<Two-word verdict in {lang_name}>",
   "summary": "<2-sentence professional summary in {lang_name}>",
@@ -286,10 +287,12 @@ Return ONLY this single JSON object (no markdown, no extra text):
   ]
 }}
 CRITICAL RULES:
+- Zero-washing Detection: If a product (e.g. Biscuit, Noodle, Snack) claims 0 kcal or zero-macros but obviously contains flour/oil, set score to 1 and mention "Suspicious Label" in summary.
 - nutrients array: include EVERY row visible in the label text — no skipping.
   Add "rating" (good|moderate|caution|bad) and "impact" on EACH nutrient entry.
   Nutrient names MUST be in CAPITALS (e.g. "ENERGY", "TOTAL FAT", "OF WHICH SUGARS").
 - product_name: REQUIRED. Infer if not explicit. NEVER output "Unknown Product".
+- better_alternative: REQUIRED. Suggest a 100% healthier alternative (e.g. "Try 100% Whole Wheat Oats" instead of "Maida Noodles").
 - score MUST reflect actual nutritional values using the rubric above. NEVER default to 5.
 - chart_data: [Safe%, Moderate%, Risky%] must sum to exactly 100.
 - ingredients_spotlight: TOP 8 notable ingredients. NEVER return empty if ingredients exist.
