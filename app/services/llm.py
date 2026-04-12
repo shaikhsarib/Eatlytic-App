@@ -71,22 +71,23 @@ def call_llm(prompt: str, max_tokens: int = 4000) -> str:
             return comp.choices[0].message.content
         except Exception as exc:
             err_msg = str(exc).lower()
-            
             # If it's a 413 (Payload Too Large), don't retry this model, try the next
             if "413" in err_msg or "payload too large" in err_msg:
                 logger.warning("Groq model %s payload too large (413).", model)
                 last_err = exc
                 continue
                 
-            # If it's a 429 (Rate Limit), tenacity will handle the retry if we raise
+            # If it's a 429 (Rate Limit), don't raise immediately! Try the fallback model.
             if "429" in err_msg or "rate limit" in err_msg:
-                logger.warning("Groq model %s rate limited (429). Retrying...", model)
-                raise exc # Trigger tenacity retry
+                logger.warning("Groq model %s rate limited (429). Trying fallback...", model)
+                last_err = exc
+                continue
                 
             logger.warning("Groq model %s failed: %s", model, exc)
             last_err = exc
             
-    raise RuntimeError(f"All LLM models failed. Last: {str(last_err)[:100]}")
+    # If we reach here, ALL models failed. Ensure we bubble up the error to trigger Tenacity.
+    raise last_err
 
 
 def parse_llm_response(s: str) -> dict:
