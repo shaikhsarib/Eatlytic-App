@@ -61,11 +61,12 @@ def call_llm(prompt: str, max_tokens: int = 4000) -> str:
     
     for model in models:
         try:
+            current_max = 2000 if "8b" in model else max_tokens
             comp = _groq_client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=max_tokens,
+                max_tokens=current_max,
                 response_format={"type": "json_object"},
             )
             return comp.choices[0].message.content
