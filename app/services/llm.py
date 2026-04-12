@@ -217,6 +217,20 @@ def build_super_prompt(
     safe_label_text = label_text[:3000]
     safe_research = research_context[:2000]
 
+    # FIX: build blur_context string from blur_info dict (was NameError before)
+    blur_context = ""
+    if blur_info and blur_info.get("detected"):
+        if blur_info.get("deblurred"):
+            blur_context = (
+                f"NOTE: Image was blurry ({blur_info.get('severity','moderate')}) "
+                "and has been AI-enhanced. OCR may have minor errors — use context clues."
+            )
+        else:
+            blur_context = (
+                f"NOTE: Image has some blur ({blur_info.get('severity','mild')}). "
+                "OCR results may be slightly ambiguous — use context to infer values."
+            )
+
     return f"""\
 You are the Eatlytic "Nutrition Label Analysis and Card Generation Specialist".
 You are a world-class food scientist with expertise across global food standards
@@ -226,17 +240,26 @@ extraction AND a scored health analysis — all in ONE response.
 
 ## STEP 1 — READ THE LABEL (Blind Photocopier)
 1. **Extract ALL nutritional rows** present on the label EXACTLY as printed.
-   - Prefer "Per 100g" / "Per 100ml" column. If only "Per Serve" exists, use that.
-   - Include EVERY row: Energy (kcal/kJ), Protein, Total Carbohydrate,
+   - Prefer "Per 100g" / "Per 100ml" column. If ONLY "Per Serve" exists, use that and note it.
+   - **Multi-column labels** (Indian format): If the table has columns like
+     "Per 100g | Per Serve | %GDA" — extract ONLY the "Per 100g" column values.
+     The OCR text may mix columns using tabs or spaces — the FIRST number after
+     the nutrient name is usually Per 100g. Example:
+       "Energy (kcal)\t389\t272\t14%" → extract 389
+       "Protein (g)\t8.2\t5.7\t11%" → extract 8.2
+   - Include EVERY row without exception: Energy (kcal/kJ), Protein, Total Carbohydrate,
      of which Sugars, of which Added Sugars, Dietary Fibre/Fiber, Total Fat,
-     of which Saturated, of which Trans Fat, of which Mono-unsaturated,
-     of which Poly-unsaturated, Cholesterol, Sodium/Salt, Potassium, Calcium,
-     Iron, Magnesium, Vitamins, Moisture, Ash, Oleic acid — EVERYTHING.
-   - Do NOT skip any row. Do NOT hallucinate rows not present.
-   - If 8 rows are on the label → 8 nutrient cards. If 15 → 15. Never force a template.
-2. **Product name**: Read from label. If not visible, infer from type.
-   NEVER output "Unknown Product".
-3. **Ingredients**: Transcribe full list if present.
+     of which Saturated Fat, of which Trans Fat, of which Mono-unsaturated Fat,
+     of which Poly-unsaturated Fat, Cholesterol, Sodium/Salt, Potassium, Calcium,
+     Iron, Magnesium, Iodine, Selenium, Vitamins (A/B1/B2/B6/B12/C/D/E/K),
+     Moisture, Ash — EVERYTHING visible in the nutrition table.
+   - Do NOT skip any row. Do NOT hallucinate rows not present on the label.
+   - If 7 rows are on the label → 7 nutrient cards. If 14 → 14. NEVER force a template.
+   - OCR errors: numbers like "l3.5" (letter l) = 13.5, "O.1" (letter O) = 0.1.
+     Use nutritional context to identify and correct obvious OCR character errors.
+2. **Product name**: Read from label text. If not explicit, infer from ingredients
+   or product type. NEVER output "Unknown Product" or leave blank.
+3. **Ingredients**: Transcribe the complete ingredients list if printed on the label.
 
 ## STEP 2 — ANALYZE (use global health standards)
 Respond text fields ENTIRELY in {lang_name}.
@@ -587,7 +610,16 @@ async def unified_analyze_flow(
             if val is not None and float(val or 0) >= 0:
                 llm_list.append({"name": label, "value": float(val), "unit": unit})
 
-    # Normalise values (strip embedded unit strings)
+    # Normalise values (strip embedded unit strings) + title-case names
+    def _title_nutrient(raw_name: str) -> str:
+        """Convert 'TOTAL FAT' or '  of which SUGARS' to 'Total Fat' / '  of which Sugars'."""
+        stripped = raw_name.strip()
+        prefix = "  of which " if raw_name.lower().lstrip().startswith("of which") else ""
+        core = stripped
+        if prefix:
+            core = re.sub(r"(?i)of\s+which\s+", "", core).strip()
+        return (prefix + core.title()).rstrip()
+
     nutrient_breakdown = []
     for n in llm_list:
         raw_val = n.get("value", 0)
@@ -595,11 +627,9 @@ async def unified_analyze_flow(
             m = re.search(r"[\d]+\.?[\d]*", raw_val.replace(",", "."))
             raw_val = float(m.group()) if m else 0.0
         nutrient_breakdown.append({
-            "name":   n.get("name", "?"),
+            "name":   _title_nutrient(n.get("name", "?")),
             "value":  round(float(raw_val or 0), 2),
             "unit":   n.get("unit", ""),
-            # Rating comes from LLM (embedded in super-prompt response)
-            # with guaranteed rule-based fallback for every card
             "rating": n.get("rating", ""),
             "impact": n.get("impact", ""),
         })
@@ -618,11 +648,16 @@ async def unified_analyze_flow(
         final_score = dna_res.get("score") or dna_res.get("base_score") or 4
         dna_flags   = [dna_res.get("reason", "")] + dna_flags
     elif result_data.get("score"):
-        final_score = int(result_data["score"])
+        try:
+            final_score = max(1, min(10, int(result_data["score"])))
+        except (ValueError, TypeError):
+            final_score = compute_rule_based_score(rich, nova_level)
         if nova_level == 4 and final_score > 4:
             final_score = 4
     else:
         final_score = compute_rule_based_score(rich, nova_level)
+    # Safety clamp — score must always be 1-10
+    final_score = max(1, min(10, int(final_score or 1)))
 
     # Step 11: Assemble output
     # BUG FIX: Better product name fallback — never show "Unknown Product" to users.

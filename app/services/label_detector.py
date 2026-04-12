@@ -63,12 +63,12 @@ def get_nutrition_table_roi(image_np: np.ndarray) -> np.ndarray:
         for c in cnts:
             x, y, cw, ch = cv2.boundingRect(c)
             area = cw * ch
-            if area < (h * w * 0.04):        # must be ≥4% of image
+            if area < (h * w * 0.02):        # ≥2% of image (was 4% — too strict)
                 continue
-            if area > (h * w * 0.92):        # reject full-image blobs
+            if area > (h * w * 0.95):        # reject full-image blobs
                 continue
             ar = cw / float(ch)
-            if not (0.25 < ar < 4.5):        # sensible table aspect ratios
+            if not (0.15 < ar < 6.0):        # wider ratio range for tall/narrow tables
                 continue
             candidates.append((x, y, cw, ch))
 
@@ -81,9 +81,9 @@ def get_nutrition_table_roi(image_np: np.ndarray) -> np.ndarray:
             for c in cnts2:
                 x, y, cw, ch = cv2.boundingRect(c)
                 area = cw * ch
-                if area < (h * w * 0.04) or area > (h * w * 0.92):
+                if area < (h * w * 0.02) or area > (h * w * 0.95):
                     continue
-                if not (0.25 < cw / float(ch) < 4.5):
+                if not (0.15 < cw / float(ch) < 6.0):
                     continue
                 candidates.append((x, y, cw, ch))
 
@@ -102,9 +102,15 @@ def get_nutrition_table_roi(image_np: np.ndarray) -> np.ndarray:
                 best_score = score
                 best_roi = crop
 
-        # Only use crop if it's meaningfully better than background noise
-        if best_score < 0.05:
+        # Only use crop if score is meaningful — low scores mean no clear table found
+        if best_score < 0.03:
             logger.info("No confident ROI found (score=%.3f), using full image", best_score)
+            return image_np
+        # Sanity check: the crop should be at least 20% of the full image area
+        # to avoid returning a tiny irrelevant region
+        if best_roi.shape[0] * best_roi.shape[1] < h * w * 0.05:
+            logger.info("ROI too small (%.1f%%), using full image", 
+                       best_roi.shape[0]*best_roi.shape[1]/(h*w)*100)
             return image_np
 
         logger.info("ROI found (score=%.3f)", best_score)

@@ -220,10 +220,20 @@ async def analyze_product(
             except Exception as e:
                 logger.warning(f"Deblurring failed: {e}")
 
-        # BUG FIX #2: Run OCR here so unified_analyze_flow does NOT re-run it.
-        # Passing image_content caused double-OCR (2x slower, 2x API cost).
+        # FIX: Run ROI crop + contrast enhance BEFORE OCR.
+        # This is the key step that makes complex labels (Maggi back, Tata Salt,
+        # any real-world product photo) work correctly.
+        # process_image_for_ocr() detects the nutrition table region,
+        # deskews it, and enhances contrast — then OCR is run on the clean crop.
         if not extracted_text:
-            ocr_result = run_ocr(working_content, language)
+            from app.services.label_detector import process_image_for_ocr
+            cropped_content = process_image_for_ocr(working_content)
+            ocr_result = run_ocr(cropped_content, language)
+            # If crop gave fewer words than full image, fall back to full image OCR
+            if ocr_result.get("word_count", 0) < 10:
+                ocr_result_full = run_ocr(working_content, language)
+                if ocr_result_full.get("word_count", 0) > ocr_result.get("word_count", 0):
+                    ocr_result = ocr_result_full
             extracted_text = ocr_result["text"]
 
         result = await unified_analyze_flow(
@@ -451,7 +461,13 @@ async def api_analyze(
         except Exception as e:
             logger.warning(f"B2B deblur failed: {e}")
 
-    ocr = run_ocr(working, language)
+    from app.services.label_detector import process_image_for_ocr
+    cropped_b2b = process_image_for_ocr(working)
+    ocr = run_ocr(cropped_b2b, language)
+    if ocr.get("word_count", 0) < 10:
+        ocr_full = run_ocr(working, language)
+        if ocr_full.get("word_count", 0) > ocr.get("word_count", 0):
+            ocr = ocr_full
     text = ocr["text"]
 
     # P0 FIX: B2B research is now internally handled by unified_analyze_flow
@@ -693,8 +709,14 @@ async def whatsapp_webhook(request: Request):
             except Exception:
                 pass
 
-        # BUG FIX #2 (WhatsApp): OCR done here — do NOT pass image_content to avoid double-OCR.
-        ocr_r = run_ocr(img_to_ocr, "en")
+        # FIX: crop to nutrition table before OCR (same as /analyze endpoint)
+        from app.services.label_detector import process_image_for_ocr
+        cropped_wa = process_image_for_ocr(img_to_ocr)
+        ocr_r = run_ocr(cropped_wa, "en")
+        if ocr_r.get("word_count", 0) < 10:
+            ocr_r_full = run_ocr(img_to_ocr, "en")
+            if ocr_r_full.get("word_count", 0) > ocr_r.get("word_count", 0):
+                ocr_r = ocr_r_full
         text = ocr_r["text"]
 
         analysis = await unified_analyze_flow(

@@ -75,35 +75,43 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
     # Reconstruct logical lines by grouping boxes by their vertical (Y) position.
     # Each result: (box_coords, text, confidence)
     # box_coords is a list of 4 [x,y] corners. We use the average Y of the box.
+    # Dynamic band size: ~1.5% of image height (scales with image resolution)
+    # Minimum 8px, maximum 22px — handles both tiny crops and full-res photos
+    img_h, img_w = img_np.shape[:2]
+    band_px = max(8, min(22, int(img_h * 0.015)))
+
     line_groups: dict[int, list[tuple[float, str, float]]] = {}
     for box, text, conf in boxes:
         if not text.strip():
             continue
         avg_x = sum(pt[0] for pt in box) / 4.0
         avg_y = sum(pt[1] for pt in box) / 4.0
-        # Bucket Y into ~10px bands to tolerate small alignment differences
-        band = int(round(avg_y / 10))
+        avg_h = abs(box[2][1] - box[0][1])   # box height in pixels
+        # Use the larger of the dynamic band or half the text box height
+        # so tall characters don't bleed into the wrong row
+        effective_band = max(band_px, int(avg_h * 0.6))
+        band = int(round(avg_y / effective_band))
         line_groups.setdefault(band, []).append((avg_x, text, conf))
 
-    # Sort bands top-to-bottom, then sort words within each band by X-coordinate
+    # Sort bands top-to-bottom, then words within each band left-to-right
     sorted_lines = []
     for band in sorted(line_groups.keys()):
-        # Sort words in this line by their horizontal (X) position
         words_sorted = sorted(line_groups[band], key=lambda x: x[0])
-        
-        # Assemble line with spacing awareness (use \t for large gaps)
+
+        # Build line text. Use TAB as column separator only for wide gaps
+        # (actual column gap in a nutrition table is typically > 80px after resize)
+        col_gap_threshold = max(60, int(img_w * 0.05))
         line_text = ""
         last_x = -1
         for x, text, _ in words_sorted:
             if last_x == -1:
                 line_text = text
             else:
-                # If gap is > 40px, use \t to hint that it's a new column
                 gap = x - last_x
-                sep = "\t" if gap > 40 else " "
+                sep = "\t" if gap > col_gap_threshold else " "
                 line_text += f"{sep}{text}"
-            last_x = x + (len(text) * 8) # Rough estimate of end-of-word X
-            
+            last_x = x + (len(text) * 7)   # ~7px per char estimate
+
         sorted_lines.append(line_text)
 
     all_text = "\n".join(sorted_lines)
