@@ -3523,11 +3523,15 @@
           if (res.ok) {
             const data = await res.json();
             if (data.deblurred && data.image_b64) {
+              // The backend returns a data URL (data:image/jpeg;base64,...)
+              const rawB64 = data.image_b64.includes(',') ? data.image_b64.split(',')[1] : data.image_b64;
+              const newUrl = data.image_b64.includes(',') ? data.image_b64 : `data:image/jpeg;base64,${data.image_b64}`;
+              
               // Replace preview and blob
-              const newUrl = `data:image/jpeg;base64,${data.image_b64}`;
               document.getElementById('preview-img').src = newUrl;
+              
               // Convert b64 to blob for state.blob
-              const byteChars = atob(data.image_b64);
+              const byteChars = atob(rawB64);
               const byteNums = new Array(byteChars.length);
               for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
               const byteArray = new Uint8Array(byteNums);

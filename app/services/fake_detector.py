@@ -225,8 +225,8 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
 
     # ── 1.2 Zero-Washing Detection: High-calorie categories claiming 0 ────—
     sus_categories = ["snack", "biscuit", "cereal", "noodle", "oil", "dairy", "sweet", "chocolate"]
-    cat_lower = category.lower()
-    is_sus_cat = any(c in cat_lower for c in sus_categories)
+    category_val = str(category or "unknown").lower()
+    is_sus_cat = any(c in category_val for c in sus_categories)
     
     macro_sum_check = protein + carbs + fat
     label_calories = float(nutrients.get("calories") or nutrients.get("energy") or nutrients.get("kcal") or 0)
@@ -235,7 +235,7 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
         return {
             "is_valid": False,
             "reason": (
-                f"Suspicious Label: This product is a '{category}' but claims 0 calories "
+                f"Suspicious Label: This product is a '{category or 'unknown'}' but claims 0 calories "
                 "and 0g macros. This is physically impossible for this category."
             ),
         }
