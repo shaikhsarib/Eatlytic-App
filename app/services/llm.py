@@ -519,25 +519,33 @@ async def unified_analyze_flow(
         return {"error": "server_busy", "message": "⚠️ Analysis failed. Please try again."}
 
     # Step 6: Atwater physics check on extracted macros
+    def _float(val):
+        if not val: return 0.0
+        try: return float(str(val).replace(',', '.'))
+        except: return 0.0
+
     def _primary(d):
+        base_cal = _float(d.get("calories")) or _float(d.get("energy")) or _float(d.get("kcal")) or _float(d.get("energy_kcal"))
+        kj = _float(d.get("energy_kj"))
+        if not base_cal and kj: base_cal = kj / 4.184
         return {
-            "calories":      float(d.get("calories") or d.get("energy") or d.get("kcal") or d.get("energy_kcal") or d.get("energy_kj", 0) / 4.184 or 0),
-            "protein":       float(d.get("protein")       or 0),
-            "carbs":         float(d.get("carbs")         or d.get("carbohydrate") or 0),
-            "fat":           float(d.get("fat")           or d.get("total_fat") or 0),
-            "sugar":         float(d.get("sugar")         or d.get("total_sugars") or 0),
-            "fiber":         float(d.get("fiber")         or d.get("dietary_fiber") or 0),
-            "saturated_fat": float(d.get("saturated_fat") or d.get("saturated") or 0),
+            "calories":      base_cal,
+            "protein":       _float(d.get("protein")),
+            "carbs":         _float(d.get("carbs")) or _float(d.get("carbohydrate")),
+            "fat":           _float(d.get("fat")) or _float(d.get("total_fat")),
+            "sugar":         _float(d.get("sugar")) or _float(d.get("total_sugars")),
+            "fiber":         _float(d.get("fiber")) or _float(d.get("dietary_fiber")),
+            "saturated_fat": _float(d.get("saturated_fat")) or _float(d.get("saturated")),
         }
 
     category = result_data.get("product_category") or product_category_hint or "unknown"
     rich = _primary(result_data)
-    rich["sodium"]      = float(result_data.get("sodium_mg")      or 0)
-    rich["trans_fat"]   = float(result_data.get("trans_fat")      or 0)
-    rich["cholesterol"] = float(result_data.get("cholesterol_mg") or 0)
-    rich["potassium"]   = float(result_data.get("potassium_mg")   or 0)
-    rich["calcium"]     = float(result_data.get("calcium_mg")     or 0)
-    rich["iron"]        = float(result_data.get("iron_mg")        or 0)
+    rich["sodium"]      = _float(result_data.get("sodium_mg"))
+    rich["trans_fat"]   = _float(result_data.get("trans_fat"))
+    rich["cholesterol"] = _float(result_data.get("cholesterol_mg"))
+    rich["potassium"]   = _float(result_data.get("potassium_mg"))
+    rich["calcium"]     = _float(result_data.get("calcium_mg"))
+    rich["iron"]        = _float(result_data.get("iron_mg"))
 
     math_ok = atwater_math_check(_primary(result_data), category)
     if not math_ok["is_valid"]:
