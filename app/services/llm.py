@@ -547,29 +547,45 @@ async def unified_analyze_flow(
     nova_level  = explanation["nova_level"]
 
     # Step 9: Build final nutrient_breakdown from LLM list
+    # REFACTOR: Start with LLM list, then ADD standard macros if they are missing.
+    # This prevents the "Iron only" problem where focusing on one row hides the rest.
     llm_list = result_data.get("nutrients", [])
+    if not isinstance(llm_list, list):
+        llm_list = []
+    
+    existing_lower = [str(n.get("name", "")).lower().strip() for n in llm_list]
+    
+    _priority_fields = [
+        ("Energy",                  "calories",       "kcal"),
+        ("Protein",                 "protein",        "g"),
+        ("Total Carbohydrate",      "carbs",          "g"),
+        ("  of which Sugar",        "sugar",          "g"),
+        ("  of which Fiber",        "fiber",          "g"),
+        ("Total Fat",               "fat",            "g"),
+        ("  of which Saturated Fat","saturated_fat",  "g"),
+        ("  of which Trans Fat",    "trans_fat",      "g"),
+        ("Sodium",                  "sodium_mg",      "mg"),
+        ("Cholesterol",             "cholesterol_mg", "mg"),
+        ("Potassium",               "potassium_mg",   "mg"),
+        ("Calcium",                 "calcium_mg",     "mg"),
+        ("Iron",                    "iron_mg",        "mg"),
+    ]
 
-    # Fallback: reconstruct from top-level fields if LLM left the list empty
-    if not llm_list:
-        _fields = [
-            ("Energy",                  "calories",       "kcal"),
-            ("Protein",                 "protein",        "g"),
-            ("Total Carbohydrate",      "carbs",          "g"),
-            ("  of which Sugar",        "sugar",          "g"),
-            ("  of which Fiber",        "fiber",          "g"),
-            ("Total Fat",               "fat",            "g"),
-            ("  of which Saturated Fat","saturated_fat",  "g"),
-            ("  of which Trans Fat",    "trans_fat",      "g"),
-            ("Sodium",                  "sodium_mg",      "mg"),
-            ("Cholesterol",             "cholesterol_mg", "mg"),
-            ("Potassium",               "potassium_mg",   "mg"),
-            ("Calcium",                 "calcium_mg",     "mg"),
-            ("Iron",                    "iron_mg",        "mg"),
-        ]
-        for label, key, unit in _fields:
-            val = result_data.get(key)
-            if val is not None and float(val or 0) > 0:
-                llm_list.append({"name": label, "value": float(val), "unit": unit})
+    for label, key, unit in _priority_fields:
+        # Check if already in list (fuzzy name match)
+        clean_lbl = label.lower().strip().replace("  of which ", "")
+        is_dub = any(clean_lbl in ex or ex in clean_lbl for ex in existing_lower)
+        if is_dub:
+            continue
+        
+        val = result_data.get(key)
+        if val is not None:
+             # Include if > 0 OR if it's a basic macro (Energy/Prot/Carb/Fat/Sugar/Sodium)
+             # Salt labels showing 0g Protein/Fat should still have cards.
+             v_float = float(val or 0)
+             is_basic = key in ["calories", "protein", "carbs", "fat", "sugar", "sodium_mg"]
+             if v_float > 0 or is_basic:
+                 llm_list.append({"name": label, "value": v_float, "unit": unit})
 
     # Normalise values (strip embedded unit strings)
     nutrient_breakdown = []
