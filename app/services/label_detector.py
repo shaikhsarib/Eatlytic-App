@@ -63,12 +63,12 @@ def get_nutrition_table_roi(image_np: np.ndarray) -> np.ndarray:
         for c in cnts:
             x, y, cw, ch = cv2.boundingRect(c)
             area = cw * ch
-            if area < (h * w * 0.02):        # ≥2% of image (was 4% — too strict)
+            if area < (h * w * 0.005):       # ≥0.5% of image (was 2%)
                 continue
-            if area > (h * w * 0.95):        # reject full-image blobs
+            if area > (h * w * 0.99):        # reject strictly full-image blobs
                 continue
             ar = cw / float(ch)
-            if not (0.15 < ar < 6.0):        # wider ratio range for tall/narrow tables
+            if not (0.1 < ar < 10.0):        # wider ratio range for tall/narrow tables
                 continue
             candidates.append((x, y, cw, ch))
 
@@ -81,9 +81,9 @@ def get_nutrition_table_roi(image_np: np.ndarray) -> np.ndarray:
             for c in cnts2:
                 x, y, cw, ch = cv2.boundingRect(c)
                 area = cw * ch
-                if area < (h * w * 0.02) or area > (h * w * 0.95):
+                if area < (h * w * 0.005) or area > (h * w * 0.99):
                     continue
-                if not (0.15 < cw / float(ch) < 6.0):
+                if not (0.1 < cw / float(ch) < 10.0):
                     continue
                 candidates.append((x, y, cw, ch))
 
