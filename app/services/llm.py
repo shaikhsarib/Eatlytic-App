@@ -17,6 +17,7 @@ import json
 import logging
 import asyncio
 import hashlib
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from app.models.db import get_ai_cache, set_ai_cache
 from app.services.fake_detector import apply_dna_overrides, atwater_math_check
 from app.services.alternatives import get_healthy_alternative
@@ -44,12 +45,20 @@ LANGUAGE_MAP = {
 }
 
 
-# ── LLM caller ──────────────────────────────────────────────────────────
+# ── LLM caller (Robust with Retries) ────────────────────────────────────—
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(Exception), # Categorized retries below
+    reraise=True
+)
 def call_llm(prompt: str, max_tokens: int = 4000) -> str:
     if not _groq_client:
         raise RuntimeError("AI Configuration Error: GROQ_API_KEY not set")
+        
     models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
     last_err = None
+    
     for model in models:
         try:
             comp = _groq_client.chat.completions.create(
@@ -61,8 +70,22 @@ def call_llm(prompt: str, max_tokens: int = 4000) -> str:
             )
             return comp.choices[0].message.content
         except Exception as exc:
+            err_msg = str(exc).lower()
+            
+            # If it's a 413 (Payload Too Large), don't retry this model, try the next
+            if "413" in err_msg or "payload too large" in err_msg:
+                logger.warning("Groq model %s payload too large (413).", model)
+                last_err = exc
+                continue
+                
+            # If it's a 429 (Rate Limit), tenacity will handle the retry if we raise
+            if "429" in err_msg or "rate limit" in err_msg:
+                logger.warning("Groq model %s rate limited (429). Retrying...", model)
+                raise exc # Trigger tenacity retry
+                
             logger.warning("Groq model %s failed: %s", model, exc)
             last_err = exc
+            
     raise RuntimeError(f"All LLM models failed. Last: {str(last_err)[:100]}")
 
 
@@ -189,12 +212,10 @@ def build_super_prompt(
 ) -> str:
     lang_name = LANGUAGE_MAP.get(language, "English")
     flags_text = "\n".join(f"  - {f}" for f in (dna_flags or [])) or "  None"
-    blur_context = ""
-    if blur_info and blur_info.get("detected"):
-        blur_context = (
-            f"Note: Image detected as {blur_info.get('severity','moderate')}ly blurry. "
-            "OCR results might have minor errors — use context clues."
-        )
+    # AGGRESSIVE TRUNCATION to stay within 6,000 TPM limit
+    # 3,000 chars of OCR text + 2,000 chars of research context = ~2,000 tokens
+    safe_label_text = label_text[:3000]
+    safe_research = research_context[:2000]
 
     return f"""\
 You are the Eatlytic "Nutrition Label Analysis and Card Generation Specialist".
@@ -222,7 +243,7 @@ Respond text fields ENTIRELY in {lang_name}.
 PERSONA: {persona}
 NOVA LEVEL: {nova_level} (1=whole food, 4=ultra-processed)
 RISK FLAGS: {flags_text}
-{research_context or ""}
+{safe_research or ""}
 {blur_context}
 
 SCORING RUBRIC (score 1-10, REQUIRED, NEVER default to 5):
@@ -234,7 +255,7 @@ SCORING RUBRIC (score 1-10, REQUIRED, NEVER default to 5):
   HARD CAPS: NOVA 4 → max score 4. Sodium >1000mg/100g → max score 5.
 
 [LABEL TEXT]:
-{label_text}
+{safe_label_text}
 
 Return ONLY this single JSON object (no markdown, no extra text):
 {{
@@ -466,6 +487,11 @@ async def unified_analyze_flow(
         result_data = parse_llm_response(raw_response)
     except Exception as e:
         logger.error("Super-prompt LLM failed: %s", e)
+        err_msg = str(e).lower()
+        if "rate limit" in err_msg or "429" in err_msg:
+            return {"error": "server_busy", "message": "⚠️ High traffic on AI servers. Please try again in a few minutes."}
+        if "payload too large" in err_msg or "413" in err_msg:
+             return {"error": "impossible_data", "message": "⚠️ Label text too complex to analyze. Please try a closer crop."}
         return {"error": "server_busy", "message": "⚠️ Analysis failed. Please try again."}
 
     # Step 6: Atwater physics check on extracted macros

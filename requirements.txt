@@ -16,6 +16,8 @@ easyocr
 
 # AI / LLM
 groq
+tenacity
+duckduckgo-search
 
 # Supabase (production database)
 supabase
