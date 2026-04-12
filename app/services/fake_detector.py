@@ -232,13 +232,8 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
     label_calories = float(nutrients.get("calories") or nutrients.get("energy") or nutrients.get("kcal") or 0)
     
     if is_sus_cat and label_calories == 0 and macro_sum_check == 0:
-        return {
-            "is_valid": False,
-            "reason": (
-                f"Suspicious Label: This product is a '{category or 'unknown'}' but claims 0 calories "
-                "and 0g macros. This is physically impossible for this category."
-            ),
-        }
+        # LOG only, don't block. This is likely an extraction failure, not fraud.
+        logger.warning("Potential Suspicious Label or Extraction Failure for %s", category)
 
     # ── 2. Map to FakeDetector key names ──────────────────────────────────────
     fd = dict(nutrients)

@@ -3507,30 +3507,25 @@
         cta.disabled = false;
       }
       else {
-        // Blurry or Mild - Trigger Auto-Enhance
+        // Blurry or Mild - Trigger Auto-Enhance in background
         fill.style.background = (sev === 'mild') ? 'var(--orange)' : 'var(--red)';
         badge.style.color = (sev === 'mild') ? 'var(--orange)' : 'var(--red)';
         badge.textContent = (sev === 'mild') ? '~ Fair' : '⚠ Blurry';
-        label.textContent = 'Auto-correcting…';
+        label.textContent = 'Enhance suggests…';
         
-        // Auto-enhance flow
-        cta.disabled = true;
-        cta.textContent = '🔧 Auto-enhancing image...';
+        cta.textContent = '✦ Analyse Anyway →';
+        cta.disabled = false;
         
+        // Auto-enhance flow (non-blocking)
         try {
           const fd = new FormData(); fd.append('image', state.blob);
-          const res = await fetch(`${API}/enhance-preview`, { method: 'POST', body: fd });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.deblurred && data.image_b64) {
-              // The backend returns a data URL (data:image/jpeg;base64,...)
+          fetch(`${API}/enhance-preview`, { method: 'POST', body: fd }).then(res => {
+            if (res.ok) return res.json();
+          }).then(data => {
+            if (data && data.deblurred && data.image_b64) {
               const rawB64 = data.image_b64.includes(',') ? data.image_b64.split(',')[1] : data.image_b64;
               const newUrl = data.image_b64.includes(',') ? data.image_b64 : `data:image/jpeg;base64,${data.image_b64}`;
-              
-              // Replace preview and blob
               document.getElementById('preview-img').src = newUrl;
-              
-              // Convert b64 to blob for state.blob
               const byteChars = atob(rawB64);
               const byteNums = new Array(byteChars.length);
               for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
@@ -3542,21 +3537,11 @@
               badge.style.color = 'var(--mint)';
               fill.style.background = 'var(--mint)';
               fill.style.width = '100%';
-              cta.disabled = false;
               cta.textContent = '✦ Analyse Enhanced Label →';
-              showToast('✨ Image successfully enhanced!');
-            } else {
-              cta.disabled = false;
-              cta.textContent = '✦ Analyse Anyway →';
+              showToast('✨ Image sharpened!');
             }
-          } else {
-             cta.disabled = false;
-             cta.textContent = '✦ Analyse Anyway →';
-          }
-        } catch (err) {
-          cta.disabled = false;
-          cta.textContent = '✦ Analyse Anyway →';
-        }
+          }).catch(() => {});
+        } catch (err) { }
       }
     }
 

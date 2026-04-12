@@ -286,8 +286,6 @@ Return ONLY this single JSON object (no markdown, no extra text):
     {{"name": "<ingredient>", "type": "natural|additive|preservative|emulsifier|vitamin|seasoning", "safety_rating": "safe|moderate|concern", "what_it_is": "<one sentence>", "health_impact": "<one sentence>", "curiosity_fact": "<interesting fact>"}}
   ]
 }}
-CRITICAL RULES:
-- Zero-washing Detection: If a product (e.g. Biscuit, Noodle, Snack) claims 0 kcal or zero-macros but obviously contains flour/oil, set score to 1 and mention "Suspicious Label" in summary.
 - nutrients array: include EVERY row visible in the label text — no skipping.
   Add "rating" (good|moderate|caution|bad) and "impact" on EACH nutrient entry.
   Nutrient names MUST be in CAPITALS (e.g. "ENERGY", "TOTAL FAT", "OF WHICH SUGARS").
@@ -473,13 +471,13 @@ async def unified_analyze_flow(
     # Step 6: Atwater physics check on extracted macros
     def _primary(d):
         return {
-            "calories":      float(d.get("calories")      or 0),
+            "calories":      float(d.get("calories") or d.get("energy") or d.get("kcal") or d.get("energy_kcal") or d.get("energy_kj", 0) / 4.184 or 0),
             "protein":       float(d.get("protein")       or 0),
-            "carbs":         float(d.get("carbs")         or 0),
-            "fat":           float(d.get("fat")           or 0),
-            "sugar":         float(d.get("sugar")         or 0),
-            "fiber":         float(d.get("fiber")         or 0),
-            "saturated_fat": float(d.get("saturated_fat") or 0),
+            "carbs":         float(d.get("carbs")         or d.get("carbohydrate") or 0),
+            "fat":           float(d.get("fat")           or d.get("total_fat") or 0),
+            "sugar":         float(d.get("sugar")         or d.get("total_sugars") or 0),
+            "fiber":         float(d.get("fiber")         or d.get("dietary_fiber") or 0),
+            "saturated_fat": float(d.get("saturated_fat") or d.get("saturated") or 0),
         }
 
     category = result_data.get("product_category") or product_category_hint or "unknown"
