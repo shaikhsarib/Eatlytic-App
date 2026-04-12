@@ -1,6 +1,11 @@
 import os
 from dotenv import load_dotenv
 
+# Compatibility patch for older underlying libraries (like EasyOCR) that use deprecated PIL syntax
+import PIL.Image
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+
 # Load environment variables from .env if present
 load_dotenv()
 
