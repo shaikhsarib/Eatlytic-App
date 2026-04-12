@@ -468,7 +468,7 @@ async def api_analyze(
         blur_info=blur_info,
         label_confidence="high",
         front_text="",
-        image_content=working,
+        # BUG FIX: image_content NOT passed — OCR already done above (prevents double-OCR)
     )
 
     if "error" in result:

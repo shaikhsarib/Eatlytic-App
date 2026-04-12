@@ -197,35 +197,41 @@ def build_super_prompt(
         )
 
     return f"""\
-You are an expert Indian nutritionist AND a precise nutrition label reader.
+You are a world-class food scientist and nutritionist with expertise across global food standards
+(Indian FSSAI, US FDA, UK FSA, EU, Codex Alimentarius). You can accurately read ANY nutrition
+label from ANY country — India, UK, US, Europe, Middle East, Southeast Asia, etc.
 You will do TWO things in ONE response:
 
-STEP 1 — READ THE LABEL:
-• Extract EVERY nutrient row from the label text below exactly as printed.
-• Prefer "Per 100g" column values. If only "Per Serve" exists, use those.
-• Include ALL rows: Energy, Protein, Carbohydrate, Sugars, Added Sugars, 
-  Dietary Fiber, Total Fat, Saturated Fat, Trans Fat, Cholesterol, Sodium,
-  Salt, Potassium, Calcium, Iron, Vitamins, Moisture, Ash — EVERYTHING.
+STEP 1 — READ THE LABEL (Blind Photocopier Rule):
+• Extract EVERY nutrient row from the label text below EXACTLY as printed.
+• Prefer "Per 100g" or "Per 100ml" column values.
+  If only "Per Serve" / "Per Serving" column exists, use those and note the serving size.
+• Include ALL rows visible in the text: Energy (kcal/kJ), Protein, Total Carbohydrate,
+  of which Sugars, of which Added Sugars, Dietary Fibre/Fiber, Total Fat, of which Saturated,
+  of which Trans Fat, of which Mono-unsaturated, of which Poly-unsaturated, Cholesterol,
+  Sodium/Salt, Potassium, Calcium, Iron, Magnesium, Vitamins (A, B1, B2, B3, B6, B12, C, D, E, K),
+  Moisture, Ash, Oleic acid — EVERYTHING. Do NOT skip any row.
 • Sub-components use prefix "  of which " (e.g., "  of which Sugar").
-• Output EXACT numbers from the label. NEVER invent or estimate values.
-• Product name: read from label. If not explicit, INFER from brand/product type.
-  NEVER output "Unknown Product". Use a generic name like "Table Salt" if needed.
-• Ingredients: transcribe full ingredients list if present.
+• Output EXACT numbers from the label — NO estimation, NO calculation, NO hallucination.
+• Product name: Read brand + product type from label text. If not found, make a reasonable
+  inference (e.g., "Digestive Biscuits", "Peanut Butter", "Multigrain Crackers").
+  NEVER output "Unknown Product" as the final answer. If truly unidentifiable, use "Food Product".
+• Ingredients: transcribe FULL ingredient list if present in the text.
 
-STEP 2 — ANALYZE:
+STEP 2 — ANALYZE (using global health standards):
 Respond ENTIRELY in {lang_name}.
 PERSONA: {persona}
 NOVA LEVEL: {nova_level} (1=whole food, 4=ultra-processed)
 RISK FLAGS: {flags_text}
 WEB CONTEXT: {research_context or "No specific web data found."}
 
-SCORING RUBRIC (Indian health standards):
-  9-10 → Whole food. Sugar <2g/100g, Sodium <200mg.
+SCORING RUBRIC (balanced global health standards):
+  9-10 → Whole/minimally processed food. Sugar <2g/100g, Sodium <200mg/100g.
   7-8  → Moderately processed. Sugar <5g, Sodium <400mg.
   5-6  → Processed. Sugar 5-15g OR Sodium 400-700mg.
-  3-4  → High sugar (>15g) OR high sodium (>700mg) OR poor profile.
-  1-2  → Ultra-processed (NOVA 4) OR very high sugar/sodium/sat fat.
-  HARD CAPS: NOVA 4 → max 4. Sodium >1000mg → max 5.
+  3-4  → High sugar (>15g) OR high sodium (>700mg) OR poor nutritional profile.
+  1-2  → Ultra-processed (NOVA 4) OR very high sugar/sodium/saturated fat.
+  HARD CAPS: NOVA 4 → max 4. Sodium >1000mg/100g → max 5.
 
 {blur_context}
 
@@ -234,8 +240,8 @@ SCORING RUBRIC (Indian health standards):
 
 Return ONLY this single JSON object (no markdown, no extra text):
 {{
-  "product_name": "string — REQUIRED, infer from context",
-  "product_category": "Snack|Dairy|Beverage|Cereal|Noodle|Biscuit|Supplement|Spice|Oil|Sauce|Salt|Other",
+  "product_name": "string — REQUIRED, infer from context, NEVER 'Unknown Product'",
+  "product_category": "Snack|Dairy|Beverage|Cereal|Noodle|Biscuit|Supplement|Spice|Oil|Sauce|Salt|Cheese|Nuts|Bread|Chocolate|Candy|Meat|Seafood|Fruit|Vegetable|Other",
   "serving_size": "string or null",
   "calories": <number or null>,
   "protein": <number or null>,
@@ -282,8 +288,12 @@ Return ONLY this single JSON object (no markdown, no extra text):
   ]
 }}
 CRITICAL RULES:
-- nutrients array: include EVERY row from the label — no skipping. Add "rating" and "impact" on EACH nutrient.
-- score MUST match actual values, never default to 5.
+- nutrients array: include EVERY row visible in the label text — no skipping.
+  Add "rating" and "impact" on EACH nutrient entry.
+- product_name: REQUIRED. If the label text clearly shows a brand/product name, use it.
+  If not explicit, infer from product type (e.g. "Mixed Nuts", "Protein Bar", "Digestive Biscuits").
+  NEVER output "Unknown Product" or "Food Product" if you can infer a category.
+- score MUST match actual nutritional values, never default to 5.
 - chart_data: [Safe%, Moderate%, Risky%] must sum to exactly 100.
 - ingredients_spotlight: TOP 8 notable ingredients. NEVER return empty array if ingredients exist.
 """
@@ -426,12 +436,16 @@ async def unified_analyze_flow(
     clean_text = filter_result["clean_text"]
 
     # Step 4: Optional live web research (non-blocking, fast timeout)
+    # BUG FIX: Build a targeted search query from product keywords, not raw OCR text
     internal_web_context = ""
     try:
         from app.services.research_engine import get_live_search
+        # Extract the most nutrition-relevant words for a targeted search
+        _search_words = [w for w in clean_text.split() if len(w) >= 4 and w.isalpha()][:8]
+        _search_query = f"nutrition health analysis {' '.join(_search_words[:5])}" if _search_words else f"food label nutrition {clean_text[:40]}"
         # Run search asynchronously without blocking the main flow
         internal_web_context = await asyncio.wait_for(
-            asyncio.to_thread(get_live_search, f"health analysis {clean_text[:60]}"),
+            asyncio.to_thread(get_live_search, _search_query),
             timeout=3.0  # Hard 3-second cap so it never slows down the response
         )
     except Exception as e:
@@ -582,9 +596,10 @@ async def unified_analyze_flow(
             n["impact"]  = r["impact"]
 
     # Step 10: Final score
+    # BUG FIX: dna_res uses key "score" not "base_score" — was always defaulting to 4
     dna_flags = dna_res.get("extra_flags", [])
     if dna_res["action"] == "OVERRIDE":
-        final_score = dna_res.get("base_score", 4)
+        final_score = dna_res.get("score") or dna_res.get("base_score") or 4
         dna_flags   = [dna_res.get("reason", "")] + dna_flags
     elif result_data.get("score"):
         final_score = int(result_data["score"])
@@ -594,9 +609,21 @@ async def unified_analyze_flow(
         final_score = compute_rule_based_score(rich, nova_level)
 
     # Step 11: Assemble output
-    product_name = result_data.get("product_name") or "Unknown Product"
-    if product_name.lower() in ("unknown", "unknown product", "", "n/a"):
-        product_name = "Unknown Product"
+    # BUG FIX: Better product name fallback — never show "Unknown Product" to users.
+    # If the LLM couldn't extract a name, try to infer one from available data.
+    product_name = result_data.get("product_name") or ""
+    _bad_names = {"unknown", "unknown product", "", "n/a", "food product", "product"}
+    if product_name.lower().strip() in _bad_names:
+        # Try to build a name from category + ingredients hint
+        cat = (result_data.get("product_category") or "").capitalize()
+        ings = (result_data.get("ingredients_raw") or "").split(",")
+        first_ing = ings[0].strip().title() if ings and ings[0].strip() else ""
+        if cat and cat.lower() not in ("other", ""):
+            product_name = f"{cat} Product"
+        elif first_ing:
+            product_name = f"{first_ing}-based Product"
+        else:
+            product_name = "Food Product"
 
     verdict     = result_data.get("verdict")  or dna_res.get("reason") or "Analyzed"
     summary     = result_data.get("summary")  or dna_res.get("reason") or ""

@@ -135,12 +135,15 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
 
     nutrition_words = (
         r"(energy|calorie|calories|protein|protien|fat|carb|sugar|sodium|fibre|fiber|"
-        r"salt|per\s*100\s*g|per\s*serve|serving|trans\s*fat|saturated|unsaturated|"
+        r"salt|per\s*100\s*g|per\s*100\s*ml|per\s*serve|per\s*serving|serving|"
+        r"trans\s*fat|saturated|unsaturated|mono.unsaturated|poly.unsaturated|"
         r"cholesterol|polyunsaturated|monounsaturated|total\s*fat|total\s*carb|"
         r"dietary\s*fibre|dietary\s*fiber|added\s*sugar|vitamin|calcium|iron|"
-        r"potassium|moisture|ash|total\s*sugar|amount\s*per\s*serving|"
-        r"nutrition\s*facts|dietary\s*info|information\s*per|serving\s*size|"
-        r"daily\s*value|%\s*dv|percent\s*daily)"
+        r"potassium|magnesium|moisture|ash|total\s*sugar|amount\s*per\s*serving|"
+        r"nutrition\s*facts|nutritional\s*info|nutritional\s*value|dietary\s*info|"
+        r"information\s*per|serving\s*size|daily\s*value|%\s*dv|percent\s*daily|"
+        r"kj|kilojoule|kilojoules|kcal|kilo\s*calorie|oleic|starch|glycogen|"
+        r"nutrient|nutrients|per\s*portion|reference\s*intake|ri|\%\s*ri)"
     )
     garbage_words = (
         r"(fssai|lic\.?|net\s*wt|net\s*qty|mrp|customer\s*care|batch\s*no|"
@@ -219,15 +222,17 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
 
     clean_text = "\n".join(clean_lines)
 
-    # FINAL GATE (v4): Valid if EITHER:
+    # FINAL GATE (v5): Valid if EITHER:
     #   A) At least 1 number-like line found in cleaned text, OR
     #   B) Any high-strength nutrition keyword/header found ANYWHERE in original text
     # This ensures any label with recognizable nutrition keywords is always passed to AI.
     high_strength_header = bool(re.search(
         r"(nutrition\s*facts|amount\s*per\s*serving|information\s*per|serving\s*size|"
-        r"calories\s+from|daily\s+value|percent\s+daily|per\s+100\s*g|"
+        r"calories\s+from|daily\s+value|percent\s+daily|per\s+100\s*g|per\s+100\s*ml|"
         r"total\s+fat|total\s+carb|dietary\s+fiber|dietary\s+fibre|"
-        r"saturated\s+fat|trans\s+fat)",
+        r"saturated\s+fat|trans\s+fat|reference\s+intake|typical\s+values|"
+        r"nutritional\s+information|nutritional\s+value|nutrient\s+content|"
+        r"per\s+portion|per\s+serving|kj\s+\d|kcal\s+\d|\d+\s*kcal|\d+\s*kj)",
         raw_ocr_text.lower()
     ))
     is_valid = number_count >= 1 or high_strength_header
