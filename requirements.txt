@@ -5,6 +5,7 @@ python-multipart
 requests
 httpx
 pydantic
+python-dotenv
 
 # Image processing
 pillow

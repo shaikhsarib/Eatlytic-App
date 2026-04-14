@@ -79,6 +79,7 @@ init_db()
 
 # --- SCAN LIMITS & API KEYS ---
 FREE_SCAN_LIMIT = 3  # CEO Order: 3 scans, not 10
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB limit for stability
 
 # --- API KEY AUTH ---
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -136,6 +137,8 @@ async def home():
 @app.post("/check-image")
 @limiter.limit("30/minute")
 async def check_image(request: Request, image: UploadFile = File(...)):
+    if image.size and image.size > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (Max 10MB)")
     content = await image.read()
     return assess_image_quality(content)
 
@@ -143,6 +146,8 @@ async def check_image(request: Request, image: UploadFile = File(...)):
 @app.post("/enhance-preview")
 @limiter.limit("20/minute")
 async def enhance_preview(request: Request, image: UploadFile = File(...)):
+    if image.size and image.size > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (Max 10MB)")
     content = await image.read()
     quality = assess_image_quality(content)
     if not quality["is_blurry"]:
@@ -170,6 +175,8 @@ async def enhance_preview(request: Request, image: UploadFile = File(...)):
 async def perform_ocr(
     request: Request, image: UploadFile = File(...), language: str = Form("en")
 ):
+    if image.size and image.size > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (Max 10MB)")
     content = await image.read()
     return run_ocr(content, language)
 
@@ -203,6 +210,9 @@ async def analyze_product(
                 "scans_used": scan_check["scans_used"],
             },
         )
+
+    if image.size and image.size > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (Max 10MB)")
 
     try:
         content = await image.read()
@@ -452,6 +462,9 @@ async def api_analyze(
     limit = LIMITS.get(api_key_data.get("plan"), 1000)
     if scans_used >= limit:
         raise HTTPException(status_code=429, detail=f"Monthly limit ({limit}) reached.")
+
+    if image.size and image.size > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (Max 10MB)")
 
     content = await image.read()
     quality = assess_image_quality(content)

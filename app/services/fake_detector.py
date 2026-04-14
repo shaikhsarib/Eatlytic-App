@@ -158,22 +158,22 @@ class FakeDetector:
 # Nutrition labels are allowed a ±20% error under most global food laws.
 # We apply a generous tolerance to avoid false blocks on valid products.
 CATEGORY_TOLERANCES: dict[str, float] = {
-    "noodle": 40.0,  "noodles": 40.0, "instant noodles": 40.0,
-    "snack":  40.0,  "chips":   40.0, "biscuit": 40.0, "cracker": 40.0,
-    "spice":  50.0,  "condiment": 50.0, "sauce": 50.0,
+    "noodle": 25.0,  "noodles": 25.0, "instant noodles": 25.0,
+    "snack":  25.0,  "chips":   25.0, "biscuit": 25.0, "cracker": 25.0,
+    "spice":  30.0,  "condiment": 30.0, "sauce": 30.0,
     "salt":   99.0,  # Salt has no macros/calories — Atwater not applicable
-    "oil":    40.0,  # Pure fat product — slight variance allowed
-    "cheese": 40.0,  # Cheese has high moisture variance
-    "nuts":   40.0,  # Nuts have high fat/protein variance
-    "dairy":  40.0,  # Dairy products have wide variance
-    "meat":   40.0,  # Meat has moisture-related variance
-    "seafood": 40.0, # Seafood can vary significantly
-    "supplement": 40.0,  # Supplements have varied compositions
-    "bread":  40.0,  "cereal": 40.0,  "chocolate": 40.0,
-    "candy":  35.0,  "beverage": 40.0,
-    "other":  45.0,  # Generic catch-all — generous tolerance
+    "oil":    25.0,  # Pure fat product — slight variance allowed
+    "cheese": 25.0,  # Cheese has high moisture variance
+    "nuts":   25.0,  # Nuts have high fat/protein variance
+    "dairy":  25.0,  # Dairy products have wide variance
+    "meat":   25.0,  # Meat has moisture-related variance
+    "seafood": 25.0, # Seafood can vary significantly
+    "supplement": 25.0,  # Supplements have varied compositions
+    "bread":  25.0,  "cereal": 25.0,  "chocolate": 25.0,
+    "candy":  25.0,  "beverage": 25.0,
+    "other":  25.0,  # Strict baseline for DNA safety
 }
-DEFAULT_TOLERANCE = 45.0   # Very permissive to avoid false positives on global products
+DEFAULT_TOLERANCE = 25.0   # Enforce strictness for DNA engine safety
 
 
 def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
@@ -194,15 +194,15 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
     fat     = float(nutrients.get("fat",    0) or nutrients.get("total_fat", 0) or 0)
     sat_fat = float(nutrients.get("saturated_fat", 0) or 0)
 
-    if carbs > 0 and (sugar + fiber) > carbs * 1.15:   # 15% rounding slack for global labels
+    if carbs > 0 and (sugar + fiber) > (carbs * 1.05 + 0.5):   # 5% slack + 0.5g rounding
         return {
             "is_valid": False,
             "reason": (
                 f"Integrity Failure: Sugar ({sugar}g) + Fiber ({fiber}g) "
-                f"exceed Carbs ({carbs}g). Likely double-counting."
+                f"exceed Carbs ({carbs}g). Extraction error likely."
             ),
         }
-    if fat > 0 and sat_fat > fat * 1.10:  # 10% slack
+    if fat > 0 and sat_fat > (fat * 1.05 + 0.3):  # 5% slack
         return {
             "is_valid": False,
             "reason": (
@@ -276,28 +276,14 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
             ),
         }
     
-    # BUG FIX: Only BLOCK truly impossible data (>150% mismatch, i.e. >2.5x claimed calories).
-    # A 30-120% mismatch can happen on real labels due to:
-    #  - moisture/water content not counted in macros
-    #  - fibre energy differences (2 kcal/g vs 4 kcal/g by region)
-    #  - rounding errors on individual nutrient rows
-    # So we WARN about mismatches but only BLOCK the truly impossible ones.
-    if calculated > label_calories * 2.5:
-        return {
-            "is_valid": False,
-            "reason": (
-                f"Safety Failure: Calculated energy ({calculated:.0f} kcal) is more than 2.5x "
-                f"the label value ({label_calories:.0f} kcal). This is physically impossible."
-            ),
-        }
-
-    # For moderate mismatches, return a warning but still allow analysis
+    # ── 5. STRICT PHYSICS GATE ──────────────────────────────────────────────
+    # Any mismatch outside tolerance is BLOCKED to prevent scoring broken data.
     return {
-        "is_valid": True,
+        "is_valid": False,
         "reason": (
-            f"⚠️ Math note: Label={label_calories:.0f} kcal, "
-            f"Calculated={calculated:.0f} kcal ({diff_pct:.1f}% off). "
-            f"Possible rounding or regional labeling difference."
+            f"Math Mismatch: Label says {label_calories:.0f} kcal, but "
+            f"macros calculate to {calculated:.0f} kcal ({diff_pct:.1f}% off). "
+            f"Limit is {tolerance}%."
         ),
     }
 

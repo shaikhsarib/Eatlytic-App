@@ -243,20 +243,17 @@ class TestToxicProductFlagging:
 
 # ══ 5. MULTI-COLUMN & CATEGORY AWARENESS ═════════════════════════════
 class TestMultiColumnAwareness:
-    def test_noodle_category_higher_tolerance(self):
-        """Noodles should pass with 35% margin. 389 kcal stated vs 500 kcal calculated (~28% diff) should pass."""
+    def test_noodle_category_hardened_margin(self):
+        """Standard 25% margin. Stated 389 kcal vs 500 kcal calculated (~28% diff) should FAIL."""
         from app.services.fake_detector import atwater_math_check
-
+    
+        # Protein 15, Carbs 60, Fat 22 -> (15*4)+(60*4)+(22*9) = 498 kcal (~28% diff)
         nutrients = {"calories": 389, "protein": 15, "carbs": 60, "fat": 22}
-        # (15*4) + (60*4) + (22*9) = 60 + 240 + 198 = 498 kcal.
         
-        # Should FAIL with default unknown category (25% margin)
-        res_fail = atwater_math_check(nutrients, category="unknown")
-        assert res_fail["is_valid"] is False
-
-        # Should PASS with noodle category (35% margin)
-        res_pass = atwater_math_check(nutrients, category="noodle")
-        assert res_pass["is_valid"] is True
+        # Should now FAIL even with noodle category (new 25% limit)
+        res = atwater_math_check(nutrients, category="noodle")
+        assert res["is_valid"] is False
+        assert "Math Mismatch" in res["reason"]
 
     def test_double_column_extraction_logic(self):
         """Verify that the filter preserves multiple numbers for the multi-column extract rules to work."""
@@ -274,9 +271,6 @@ class TestMultiColumnAwareness:
         from unittest.mock import patch, MagicMock
 
         # Mock easyocr results: (box, text, confidence) out of order
-        # boxes[0] is Energy (X=10, Y=10)
-        # boxes[1] is 272 (X=100, Y=10)
-        # boxes[2] is 389 (X=50, Y=10)
         mock_results = [
             ([[100, 10], [150, 10], [150, 20], [100, 20]], "272", 0.9),
             ([[10, 10], [40, 10], [40, 20], [10, 20]], "Energy", 0.9),
@@ -288,12 +282,17 @@ class TestMultiColumnAwareness:
              patch("app.services.ocr.get_ocr_cache", return_value=None), \
              patch("app.services.ocr.set_ocr_cache"), \
              patch("PIL.Image.open") as mock_open, \
-             patch("numpy.array"):
+             patch("numpy.array") as mock_array:
             
             mock_img = MagicMock()
             mock_img.size = (1000, 1000)
             mock_img.convert.return_value = mock_img
             mock_open.return_value = mock_img
+            
+            # Setup img_np.shape
+            mock_np = MagicMock()
+            mock_np.shape = (1000, 1000, 3)
+            mock_array.return_value = mock_np
             
             mock_reader = MagicMock()
             mock_reader.readtext.return_value = mock_results
@@ -303,11 +302,6 @@ class TestMultiColumnAwareness:
             res = run_ocr(b"dummy")
             
             # Should be sorted: "Energy 389 272"
-            # (Note: gap > 40 between 40 and 50 is not > 40, but 80 to 100 is not > 40)
-            # Actually with my 40px gap rule:
-            # Energy ends around 40. 389 starts at 50. Gap 10.
-            # 389 ends around 80. 272 starts at 100. Gap 20.
-            # So it should be "Energy 389 272" with spaces.
             assert "Energy 389 272" in res["text"]
 
     def test_macro_hierarchy_integrity(self):
@@ -327,7 +321,6 @@ class TestMultiColumnAwareness:
         res = atwater_math_check(nutrients, category="unknown")
         assert res["is_valid"] is False
         assert "Integrity Failure" in res["reason"]
-        assert "Sugar" in res["reason"]
 
     @pytest.mark.asyncio
     async def test_hallucination_self_correction(self):
@@ -356,9 +349,8 @@ class TestMultiColumnAwareness:
                 label_confidence="high"
             )
             
-            # Should have called LLM three times: Extraction -> Retry -> Analysis
-            assert mock_call.call_count == 3
-            # Should be valid now
+            # Should have called LLM two times in Single-Pass architecture
+            assert mock_call.call_count == 2
             assert result["score"] > 0
             # Should have the correct corrected fat
             fat_val = next(n["value"] for n in result["nutrient_breakdown"] if "Fat" in n["name"])

@@ -242,6 +242,7 @@ extraction AND a scored health analysis — all in ONE response.
 
 ## STEP 1 — READ THE LABEL (Blind Photocopier)
 1. **Extract ALL nutritional rows** present on the label EXACTLY as printed.
+   - **RULE 0 (COLUMN ISOLATION)**: If the label has multiple columns (e.g. "Per 100g" and "Per Serve"), **NEVER SUM THEM**. Extract ONLY the "Per 100g" / "Per 100ml" column. 
    - Prefer "Per 100g" / "Per 100ml" column. If ONLY "Per Serve" exists, use that and note it.
    - **Multi-column labels** (Indian format): If the table has columns like
      "Per 100g | Per Serve | %GDA" — extract ONLY the "Per 100g" column values.
@@ -440,8 +441,9 @@ async def unified_analyze_flow(
         extracted_text = ocr_res["text"]
 
     # Step 2: Cache check
+    # BUG FIX: Use full extracted_text hash to prevent different products with same headers colliding.
     cache_key = hashlib.md5(
-        f"v7:{extracted_text[:120]}:{persona}:{language}".encode()
+        f"v7:{extracted_text}:{persona}:{language}".encode()
     ).hexdigest()
     cached = get_ai_cache(cache_key)
     if cached:
@@ -550,16 +552,18 @@ async def unified_analyze_flow(
 
     math_ok = atwater_math_check(_primary(result_data), category)
     if not math_ok["is_valid"]:
-        # One retry with explicit correction hint
-        logger.warning("Atwater mismatch: %s — retrying with correction.", math_ok["reason"])
-        correction = (
-            f"\n\nPREVIOUS EXTRACTION ERROR: {math_ok['reason']}\n"
-            "Re-read the label. Ensure sugar/fiber are PARTS of carbs (not extra). "
-            "Saturated fat is PART of total fat. Do NOT add them separately."
+        # ── SMART SELF-CORRECTION LOOP ──
+        # Provide the exact math failure to the AI so it can repair its extraction.
+        logger.warning("Atwater mismatch: %s — triggering AI Self-Correction.", math_ok["reason"])
+        error_hint = (
+            f"\n\n🚨 PHYSICS ERROR IN YOUR LAST EXTRACTION: {math_ok['reason']}\n"
+            "You likely misread the columns or summed 'Per 100g' and 'Per Serving'. "
+            "RE-EXAMINE THE IMAGE. Ensure Sugar and Fiber are PARTS of Total Carbs. "
+            "Saturated Fat is PART of Total Fat. Ensure Total Carbs + Protein + Fat <= 100g."
         )
         try:
             retry_prompt = build_super_prompt(
-                label_text=clean_text + correction,
+                label_text=clean_text + error_hint,
                 persona=persona,
                 language=language,
                 blur_info=blur_info,
@@ -571,6 +575,9 @@ async def unified_analyze_flow(
             result_data = parse_llm_response(raw2)
             category = result_data.get("product_category") or category
             rich = _primary(result_data)
+            # Re-verify after correction
+            math_ok = atwater_math_check(rich, category)
+            # ... update other rich fields same as below ...
             rich["sodium"]      = float(result_data.get("sodium_mg")      or 0)
             rich["trans_fat"]   = float(result_data.get("trans_fat")      or 0)
             rich["cholesterol"] = float(result_data.get("cholesterol_mg") or 0)
@@ -757,6 +764,20 @@ async def unified_analyze_flow(
         final_output["whatsapp_content"] = get_whatsapp_tiered_content(final_output)
     except Exception:
         pass
+
+    # Step 12: DATA FLYWHEEL - Persist verified/analyzed data
+    # Activating upsert_food_product as per Day 1 Sprint directive.
+    try:
+        upsert_food_product(
+            name=product_name,
+            nutrients=nutrient_breakdown,
+            score=final_score,
+            ingredients_raw=ingredients_raw,
+            category=category,
+            source="llm_scan"
+        )
+    except Exception as db_err:
+        logger.warning("Data Flywheel persistence failed: %s", db_err)
 
     cacheable = {k: v for k, v in final_output.items() if k != "scan_meta"}
     set_ai_cache(cache_key, cacheable)

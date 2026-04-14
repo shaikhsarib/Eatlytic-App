@@ -24,3 +24,9 @@ env/
 data/*.db
 data/*.json
 data/
+
+# Model Cache & Archives
+.cache/
+*.zip
+*.pth
+*.zip.*
