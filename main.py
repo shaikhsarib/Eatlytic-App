@@ -111,12 +111,14 @@ def generate_api_key(client_name: str, plan: str = "business") -> str:
 
 # --- DEVICE FINGERPRINT ---
 def get_device_key(request: Request) -> str:
-    """Fingerprint device using IP + UserAgent + Fingerprint header hint."""
+    """
+    Fingerprint device using IP + UserAgent.
+    REMOVED: fp_hint (x-fingerprint) to prevent client-side bypass.
+    """
     ip = request.client.host if request.client else "unknown"
     ua = request.headers.get("user-agent", "")
-    fp_hint = request.headers.get("x-fingerprint", "")
-    # BUG FIX: Include fp_hint so different browsers on same IP are treated as different devices.
-    return hashlib.md5(f"{ip}:{ua}:{fp_hint}".encode()).hexdigest()[:16]
+    # Treat IP+UA as the unique identity. In production, we'd add server-issued JWTs.
+    return hashlib.md5(f"{ip}:{ua}".encode()).hexdigest()[:16]
 
 
 # --- GROQ CLIENT ---
@@ -348,6 +350,53 @@ async def activate_pro(
         logger.warning("Payment log failed: %s", e)
 
     return {"status": "activated", "message": "Pro activated!", "expires": expires}
+
+
+@app.post("/restore-pro")
+async def restore_pro(request: Request, email: str = Form(...)):
+    """
+    Allow users to restore Pro status on a new device.
+    Strategy: Check for successful payments linked to this email.
+    """
+    device_key = get_device_key(request)
+    
+    # 1. Look for users with this email (if users table is used) or payments
+    with db_conn() as conn:
+        # Check if an existing payment matches this email
+        # Note: In a real system, you'd send an OTP to this email first.
+        # For now, we search the payments table.
+        # This requires the email to have been recorded.
+        # Let's check for any successful payment that hasn't expired.
+        
+        # Check payments for this email (we might need to add email to payments table)
+        # OR check the 'users' table if the user-id is linked to the email.
+        row = conn.execute(
+            "SELECT * FROM users WHERE email=? AND is_pro=1", (email,)
+        ).fetchone()
+        
+        if row:
+            u = dict(row)
+            expires = u.get("pro_expires")
+            if expires and expires < datetime.datetime.utcnow().isoformat():
+                raise HTTPException(status_code=400, detail="Subscription has expired.")
+            
+            # Grant Pro to current device
+            conn.execute(
+                "UPDATE devices SET is_pro=1, pro_expires=? WHERE device_key=?",
+                (expires, device_key)
+            )
+            return {
+                "status": "restored", 
+                "message": "Pro status restored to this device!",
+                "expires": expires
+            }
+            
+    # Fallback: check raw payment records if email was captured there
+    # (This assumes future updates to activate_pro will capture email)
+    raise HTTPException(
+        status_code=404, 
+        detail="No active Pro subscription found for this email. Please contact support."
+    )
 
 
 # ── Scan status ────────────────────────────────
@@ -711,7 +760,10 @@ async def whatsapp_webhook(request: Request):
     resp = MessagingResponse()
     msg = resp.message()
 
-    phone_number = form.get("From", "unknown_wa")
+    raw_phone = form.get("From", "unknown_wa")
+    # P0 FIX: Hash phone number for DPDP compliance before using as DB key
+    phone_number = "wa_" + hashlib.sha256(raw_phone.encode()).hexdigest()[:20]
+    
     # BUG FIX #1 (WhatsApp): Check only — do NOT increment yet.
     scan_check = check_and_increment_scan(phone_number, limit=FREE_SCAN_LIMIT, increment=False)
 

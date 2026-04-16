@@ -187,3 +187,52 @@ def process_image_for_ocr(content: bytes) -> bytes:
     except Exception as e:
         logger.error("Image pipeline failed: %s", e)
         return content
+
+
+LABEL_FORMAT_RULES = {
+    "indian_fssai": {
+        "required_nutrients": ["energy", "protein", "carb", "fat"],
+        "trust_signals": ["fssai", "per 100g", "per 100 g"],
+    },
+    "us_fda": {
+        "required_nutrients": ["calorie", "fat", "sodium", "carb", "protein"],
+        "trust_signals": ["nutrition facts", "daily value", "serving size", "% dv"],
+    },
+    "eu_format": {
+        "required_nutrients": ["energy", "fat", "carb", "protein", "salt"],
+        "trust_signals": ["reference intake", "typical values", "per 100g", "kj"],
+    },
+    "unknown": {
+        "required_nutrients": ["energy", "fat", "protein"],
+        "trust_signals": ["nutrition", "ingredient"],
+    }
+}
+
+
+def detect_label_format(ocr_text: str) -> str:
+    """Detect the regulatory format of this label."""
+    t = ocr_text.lower()
+    if "fssai" in t or "know your portion" in t or "per 100 g" in t:
+        return "indian_fssai"
+    if "nutrition facts" in t and "daily value" in t:
+        return "us_fda"
+    if "reference intake" in t or "typical values" in t:
+        return "eu_format"
+    return "unknown"
+
+
+def validate_against_format(nutrients: list, format_key: str) -> dict:
+    """Check if extracted nutrients match what this label format requires."""
+    rules = LABEL_FORMAT_RULES.get(format_key, LABEL_FORMAT_RULES["unknown"])
+    names = [n.get("name", "").lower() for n in nutrients]
+
+    missing_required = [
+        r for r in rules["required_nutrients"]
+        if not any(r in nm for nm in names)
+    ]
+
+    return {
+        "format": format_key,
+        "missing_required": missing_required,
+        "completeness": 1.0 - (len(missing_required) / max(1, len(rules["required_nutrients"]))),
+    }

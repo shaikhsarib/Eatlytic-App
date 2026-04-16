@@ -88,6 +88,7 @@ def init_db() -> None:
                 user_id         TEXT REFERENCES users(id),
                 created_at      TEXT DEFAULT (datetime('now')),
                 is_pro          INTEGER DEFAULT 0,
+                pro_expires     TEXT,
                 month           TEXT DEFAULT '',
                 scan_count      INTEGER DEFAULT 0,
                 streak_days     INTEGER DEFAULT 0,
@@ -98,6 +99,15 @@ def init_db() -> None:
                 onboarding_done INTEGER DEFAULT 0
             );
 
+            -- Migration: Add pro_expires column to devices if it was created without it
+            -- (SQLite doesn't support 'IF NOT EXISTS' in ALTER TABLE, so we handle it gracefully)
+        """)
+        try:
+            conn.execute("ALTER TABLE devices ADD COLUMN pro_expires TEXT")
+        except sqlite3.OperationalError:
+            pass  # Already exists
+
+        conn.executescript("""
             CREATE TABLE IF NOT EXISTS scans (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id       TEXT REFERENCES users(id),
@@ -353,9 +363,20 @@ def check_and_increment_scan(device_key: str, limit: int = 10, increment: bool =
                 "INSERT INTO devices(device_key, month, scan_count) VALUES(?,?,0)",
                 (device_key, month_key),
             )
-            u = {"is_pro": 0, "month": month_key, "scan_count": 0}
+            u = {"is_pro": 0, "month": month_key, "scan_count": 0, "pro_expires": None}
         else:
             u = dict(row)
+
+        # P0 FIX: Check and handle Pro expiry
+        if u.get("is_pro") == 1:
+            expires = u.get("pro_expires")
+            if expires and expires < datetime.datetime.utcnow().isoformat():
+                # Expired — downgrade silently
+                logger.info("Subscription expired for device %s", device_key[:8])
+                conn.execute(
+                    "UPDATE devices SET is_pro=0 WHERE device_key=?", (device_key,)
+                )
+                u["is_pro"] = 0
 
         if u["month"] != month_key:
             conn.execute(

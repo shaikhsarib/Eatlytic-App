@@ -407,6 +407,72 @@ Return ONLY:
         return {"is_valid": False, "clean_text": ""}
 
 
+def compute_extraction_confidence(
+    result_data: dict,
+    ocr_word_count: int,
+    avg_ocr_confidence: float,
+    atwater_valid: bool,
+    nutrient_count: int,
+) -> dict:
+    """
+    Returns a confidence dict: score (0-100), tier (HIGH/MEDIUM/LOW/UNRELIABLE),
+    and a user-facing message.
+    """
+    score = 100
+
+    # OCR quality signals
+    if ocr_word_count < 15:
+        score -= 35  # too little text extracted
+    elif ocr_word_count < 30:
+        score -= 15
+    if avg_ocr_confidence < 0.5:
+        score -= 25
+    elif avg_ocr_confidence < 0.7:
+        score -= 10
+
+    # Extraction completeness
+    if nutrient_count == 0:
+        score -= 50  # nothing extracted — total fail
+    elif nutrient_count < 4:
+        score -= 25  # suspicious minimum
+    elif nutrient_count < 7:
+        score -= 10
+
+    # Physics validation
+    if not atwater_valid:
+        score -= 20  # numbers don't add up
+
+    # Key nutrient presence (all real labels have these)
+    required = ["energy", "protein", "fat", "carb"]
+    names_lower = [n.get("name", "").lower() for n in result_data.get("nutrients", [])]
+    missing = [r for r in required if not any(r in nm for nm in names_lower)]
+    score -= len(missing) * 10
+
+    # Product name quality
+    bad_names = {"unknown", "unknown product", "food product", "", "n/a"}
+    if result_data.get("product_name", "").lower().strip() in bad_names:
+        score -= 15
+
+    score = max(0, min(100, score))
+
+    if score >= 80:
+        tier, message = "HIGH", "Extracted from clear label — high confidence."
+    elif score >= 55:
+        tier, message = "MEDIUM", "Some uncertainty — verify key nutrients against label."
+    elif score >= 30:
+        tier, message = "LOW", "Partial extraction — image may be blurry or label poorly read."
+    else:
+        tier, message = "UNRELIABLE", "Could not reliably read this label. Please retake the photo."
+
+    return {
+        "score": score,
+        "tier": tier,
+        "message": message,
+        "nutrient_count": nutrient_count,
+        "atwater_valid": atwater_valid,
+    }
+
+
 # ── Master pipeline (single-pass) ────────────────────────────────────────
 async def unified_analyze_flow(
     extracted_text: str,
@@ -693,6 +759,26 @@ async def unified_analyze_flow(
         else:
             product_name = "Food Product"
 
+    # P0 FIX: Compute confidence score
+    # We use heuristics for OCR word count and confidence if not passed directly
+    confidence = compute_extraction_confidence(
+        result_data=result_data,
+        ocr_word_count=len(clean_text.split()),
+        avg_ocr_confidence=0.85,  # Assume high if we reached here (or pass from caller)
+        atwater_valid=math_ok.get("is_valid", False),
+        nutrient_count=len(nutrient_breakdown),
+    )
+    
+    # If UNRELIABLE — return a soft error with the message from the confidence engine
+    if confidence["tier"] == "UNRELIABLE":
+        logger.warning("Unreliable extraction (score %d): %s", confidence["score"], product_name)
+        return {
+            "error": "low_confidence",
+            "message": "⚠️ " + confidence["message"],
+            "confidence": confidence,
+            "product_name": product_name
+        }
+
     verdict     = result_data.get("verdict")  or dna_res.get("reason") or "Analyzed"
     summary     = result_data.get("summary")  or dna_res.get("reason") or ""
     pros        = result_data.get("pros", [])
@@ -754,6 +840,7 @@ async def unified_analyze_flow(
         "chart_data":            chart_data,
         "ingredients_raw":       ingredients_raw,
         "ingredients_spotlight": ingredients_spotlight,
+        "extraction_confidence": confidence,
         "explanation":           explanation,
         "better_alternative":    get_healthy_alternative(category, persona),
         "whatsapp_content":      {},
