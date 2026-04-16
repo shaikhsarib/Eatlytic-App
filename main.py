@@ -11,6 +11,7 @@ load_dotenv()
 
 import re
 import json
+import hmac
 import logging
 import hashlib
 import secrets
@@ -68,6 +69,8 @@ app.add_middleware(
         "https://www.eatlytic.com",
         "http://localhost:3000",
         "http://localhost:7860",
+        # HuggingFace Spaces — pattern: https://<user>-<space>.hf.space
+        "https://*.hf.space",
     ],
     allow_methods=["GET", "POST", "PUT", "OPTIONS"],
     allow_headers=["*"],
@@ -294,37 +297,57 @@ async def health():
 
 # ── Pro activation ──────────────────────────────
 @app.post("/activate-pro")
-async def activate_pro(request: Request, payment_id: str = Form(...)):
-    # Basic format validation for Razorpay/Stripe-like IDs
-    if not re.match(r"^(pay_|razor_|pi_)?[\w]{10,60}$", payment_id):
-        raise HTTPException(status_code=400, detail="Invalid payment ID format.")
+async def activate_pro(
+    request: Request,
+    razorpay_order_id: str = Form(...),
+    razorpay_payment_id: str = Form(...),
+    razorpay_signature: str = Form(...),
+):
+    """
+    Activate Pro after Razorpay payment.
+    SECURITY: verifies HMAC-SHA256 signature before granting Pro — no signature = no Pro.
+    Called by frontend Razorpay success handler.
+    """
+    import hmac as _hmac, hashlib as _hashlib
+    secret = os.environ.get("RAZORPAY_KEY_SECRET", "")
+    if not secret:
+        # If Razorpay is not configured, reject the request entirely.
+        raise HTTPException(status_code=503, detail="Payment system not configured.")
+
+    expected_sig = _hmac.new(
+        secret.encode(),
+        f"{razorpay_order_id}|{razorpay_payment_id}".encode(),
+        _hashlib.sha256,
+    ).hexdigest()
+
+    if not _hmac.compare_digest(expected_sig, razorpay_signature):
+        logger.warning("activate-pro: HMAC mismatch — possible tampering. order=%s", razorpay_order_id)
+        raise HTTPException(status_code=400, detail="Invalid payment signature.")
 
     device_key = get_device_key(request)
+    expires = (datetime.datetime.utcnow() + datetime.timedelta(days=31)).isoformat()
+
     with db_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM devices WHERE device_key=?", (device_key,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM devices WHERE device_key=?", (device_key,)).fetchone()
         if not row:
             conn.execute(
                 "INSERT INTO devices(device_key, is_pro, month, scan_count) VALUES(?,1,?,0)",
                 (device_key, datetime.date.today().isoformat()[:7]),
             )
         else:
-            conn.execute(
-                "UPDATE devices SET is_pro=1 WHERE device_key=?", (device_key,)
-            )
+            conn.execute("UPDATE devices SET is_pro=1 WHERE device_key=?", (device_key,))
 
-    # Log payment for audit; TABLE may not exist in all envs — handle gracefully
     try:
         with db_conn() as conn:
             conn.execute(
-                "INSERT INTO payments(device_key, razorpay_payment_id, status, paid_at) VALUES(?,?,?,?)",
-                (device_key, payment_id, "captured", datetime.datetime.now().isoformat())
+                "INSERT OR IGNORE INTO payments(device_key, razorpay_order_id, razorpay_payment_id, razorpay_signature, status, paid_at) VALUES(?,?,?,?,?,?)",
+                (device_key, razorpay_order_id, razorpay_payment_id, razorpay_signature,
+                 "captured", datetime.datetime.utcnow().isoformat()),
             )
     except Exception as e:
-        logger.warning("Payment log failed (table may not exist): %s", e)
+        logger.warning("Payment log failed: %s", e)
 
-    return {"status": "activated", "message": "Pro activated! Payment logged."}
+    return {"status": "activated", "message": "Pro activated!", "expires": expires}
 
 
 # ── Scan status ────────────────────────────────
@@ -535,7 +558,7 @@ async def create_api_key_endpoint(
     plan: str = Form("business"),
 ):
     expected = os.environ.get("ADMIN_TOKEN")
-    if not expected or admin_token != expected:
+    if not expected or not hmac.compare_digest(admin_token, expected):
         raise HTTPException(status_code=403, detail="Invalid admin token.")
     key = generate_api_key(client_name, plan)
     return {"api_key": key, "client": client_name, "plan": plan}

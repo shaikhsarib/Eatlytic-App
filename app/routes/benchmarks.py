@@ -126,7 +126,8 @@ async def submit_ground_truth(
         raise HTTPException(
             status_code=500, detail="Server misconfiguration: ADMIN_TOKEN not set."
         )
-    if admin_token != _expected:
+    import hmac as _hmac_mod
+    if not _hmac_mod.compare_digest(admin_token, _expected):
         raise HTTPException(status_code=403, detail="Invalid admin token")
 
     try:
@@ -165,7 +166,8 @@ async def run_benchmark(
         raise HTTPException(
             status_code=500, detail="Server misconfiguration: ADMIN_TOKEN not set."
         )
-    if admin_token != _expected:
+    import hmac as _hmac_mod
+    if not _hmac_mod.compare_digest(admin_token, _expected):
         raise HTTPException(status_code=403, detail="Invalid admin token")
 
     with db_conn() as conn:

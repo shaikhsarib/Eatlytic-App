@@ -17,7 +17,7 @@ easyocr
 
 # AI / LLM
 groq
-tenacity
+tenacity>=8.2.0
 duckduckgo-search
 
 # Supabase (production database)

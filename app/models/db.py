@@ -337,9 +337,14 @@ def set_ai_cache(key: str, value: dict):
 
 
 def check_and_increment_scan(device_key: str, limit: int = 10, increment: bool = True) -> dict:
-    """Consolidated scan limit logic: tracks usage by device_key/month."""
+    """Consolidated scan limit logic. Thread-safe: uses BEGIN IMMEDIATE to prevent
+    concurrent requests from racing past the free-scan limit."""
     month_key = datetime.date.today().isoformat()[:7]
     with db_conn() as conn:
+        # IMMEDIATE lock prevents concurrent writers from both reading count=N
+        # and both incrementing past the limit.
+        conn.execute("BEGIN IMMEDIATE")
+
         row = conn.execute(
             "SELECT * FROM devices WHERE device_key=?", (device_key,)
         ).fetchone()
