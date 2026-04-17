@@ -40,4 +40,4 @@ RUN python -c "import easyocr; \
 EXPOSE 7860
 
 # 7. Start the backend
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "4"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]
