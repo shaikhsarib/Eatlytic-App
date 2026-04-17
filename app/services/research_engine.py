@@ -9,17 +9,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 try:
-    try:
-        from duckduckgo_search import DDGS
-    except ImportError:
-        from ddgs import DDGS
+    from duckduckgo_search import DDGS
     import warnings
     warnings.filterwarnings("ignore", module="duckduckgo_search")
     _DDGS_AVAILABLE = True
 except ImportError:
     DDGS = None
     _DDGS_AVAILABLE = False
-    logger.warning("ddgs not installed — web research disabled.")
+    logger.warning("duckduckgo-search not installed — web research disabled.")
 
 def get_live_search(query: str, max_results: int = 3) -> str:
     """

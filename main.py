@@ -23,7 +23,7 @@ try:
     from twilio.twiml.messaging_response import MessagingResponse
 except ImportError:
     MessagingResponse = None
-from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Security
+from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Security, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import APIKeyHeader
@@ -43,6 +43,8 @@ from app.models.db import (
     save_scan,
     get_device_history,
     get_scan_by_id,
+    get_image_fingerprint_match,
+    set_image_fingerprint,
     delete_user_data,
     get_unverified_scans,
     apply_correction,
@@ -57,6 +59,7 @@ from app.services.image import (
     ocr_quality_score,
 )
 from app.services.llm import unified_analyze_flow
+from app.services.hash_service import get_image_fingerprint
 # NOTE: get_live_search is NOT imported here — it is lazy-loaded inside llm.py
 # with a try/except guard to avoid crashing when duckduckgo_search is not installed.
 
