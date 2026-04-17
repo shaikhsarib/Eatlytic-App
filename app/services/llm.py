@@ -438,10 +438,10 @@ def compute_extraction_confidence(
     score = 100
 
     # OCR quality signals
-    if ocr_word_count < 15:
-        score -= 35  # too little text extracted
-    elif ocr_word_count < 30:
-        score -= 15
+    if ocr_word_count < 10:
+        score -= 25  # Reduced penalty (was 35)
+    elif ocr_word_count < 20:
+        score -= 10
     if avg_ocr_confidence < 0.5:
         score -= 25
     elif avg_ocr_confidence < 0.7:

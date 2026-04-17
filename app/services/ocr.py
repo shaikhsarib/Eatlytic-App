@@ -64,10 +64,17 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
 
     img = Image.open(BytesIO(content)).convert("RGB")
     w, h = img.size
-    max_dim = 1600
-    if max(w, h) > max_dim:
-        ratio = max_dim / max(w, h)
+    
+    # NEW: AI Super-Resolution Fallback for small thumbnails
+    # If the image is < 800px, upscale it significantly to help OCR detect tiny characters
+    if max(w, h) < 800:
+        scale_factor = 2000 / max(w, h)
+        img = img.resize((int(w * scale_factor), int(h * scale_factor)), Image.LANCZOS)
+    elif max(w, h) > 2200:
+        # Downscale massive 4K photos to prevent memory OOM
+        ratio = 2200 / max(w, h)
         img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+
     img_np = np.array(img)
     results = get_reader_for(lang_hint).readtext(img_np, detail=1)
     boxes = results
