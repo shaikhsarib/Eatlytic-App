@@ -11,6 +11,8 @@ python-dotenv
 pillow
 opencv-python-headless
 numpy
+ImageHash
+PyWavelets
 
 # OCR
 easyocr

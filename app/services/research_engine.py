@@ -10,9 +10,9 @@ logger = logging.getLogger(__name__)
 
 try:
     try:
-        from ddgs import DDGS
-    except ImportError:
         from duckduckgo_search import DDGS
+    except ImportError:
+        from ddgs import DDGS
     import warnings
     warnings.filterwarnings("ignore", module="duckduckgo_search")
     _DDGS_AVAILABLE = True

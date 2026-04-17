@@ -20,7 +20,6 @@ _SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 _supabase = None
 if _SUPABASE_URL and _SUPABASE_KEY:
     from supabase import create_client, Client
-
     _supabase: Client = create_client(_SUPABASE_URL, _SUPABASE_KEY)
     logger.info("Supabase client initialised: %s", _SUPABASE_URL)
 else:
@@ -31,7 +30,6 @@ DATA_DIR = os.path.join(os.getcwd(), "data")
 DB_FILE = os.path.join(DATA_DIR, "eatlytic.db")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_FILE, check_same_thread=False, timeout=15)
     conn.row_factory = sqlite3.Row
@@ -39,7 +37,6 @@ def get_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
-
 
 @contextmanager
 def db_conn():
@@ -52,7 +49,6 @@ def db_conn():
         raise
     finally:
         conn.close()
-
 
 def init_db() -> None:
     with db_conn() as conn:
@@ -75,12 +71,23 @@ def init_db() -> None:
                 onboarding_done INTEGER DEFAULT 0
             );
 
-            CREATE TABLE IF NOT EXISTS sessions (
-                token        TEXT PRIMARY KEY,
-                user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                created_at   TEXT DEFAULT (datetime('now')),
-                expires_at   TEXT NOT NULL,
-                device_hint  TEXT DEFAULT ''
+            CREATE TABLE IF NOT EXISTS organizations (
+                id           TEXT PRIMARY KEY,
+                name         TEXT NOT NULL,
+                plan         TEXT DEFAULT 'business',
+                admin_id     TEXT REFERENCES users(id),
+                created_at   TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS api_keys (
+                api_key            TEXT PRIMARY KEY,
+                client_name        TEXT NOT NULL,
+                organization_id    TEXT REFERENCES organizations(id),
+                plan               TEXT DEFAULT 'business',
+                scans_this_month   INTEGER DEFAULT 0,
+                month              TEXT DEFAULT '',
+                active             INTEGER DEFAULT 1,
+                created_at         TEXT DEFAULT (datetime('now'))
             );
 
             CREATE TABLE IF NOT EXISTS devices (
@@ -99,15 +106,6 @@ def init_db() -> None:
                 onboarding_done INTEGER DEFAULT 0
             );
 
-            -- Migration: Add pro_expires column to devices if it was created without it
-            -- (SQLite doesn't support 'IF NOT EXISTS' in ALTER TABLE, so we handle it gracefully)
-        """)
-        try:
-            conn.execute("ALTER TABLE devices ADD COLUMN pro_expires TEXT")
-        except sqlite3.OperationalError:
-            pass  # Already exists
-
-        conn.executescript("""
             CREATE TABLE IF NOT EXISTS scans (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id       TEXT REFERENCES users(id),
@@ -126,6 +124,8 @@ def init_db() -> None:
                 language      TEXT DEFAULT 'en',
                 scanned_at    TEXT DEFAULT (datetime('now')),
                 analysis_json TEXT DEFAULT '{}',
+                metadata_json TEXT DEFAULT '{}',
+                correction_json TEXT DEFAULT '{}',
                 verified      INTEGER DEFAULT 0,
                 verified_by   TEXT DEFAULT NULL,
                 verified_at   TEXT DEFAULT NULL,
@@ -138,108 +138,6 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_scans_date    ON scans(scanned_at);
             CREATE INDEX IF NOT EXISTS idx_scans_product ON scans(product_name);
 
-            CREATE TABLE IF NOT EXISTS daily_logs (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id     TEXT REFERENCES users(id),
-                device_key  TEXT,
-                log_date    TEXT NOT NULL,
-                meal_name   TEXT DEFAULT '',
-                calories    REAL DEFAULT 0,
-                protein     REAL DEFAULT 0,
-                carbs       REAL DEFAULT 0,
-                fat         REAL DEFAULT 0,
-                sodium      REAL DEFAULT 0,
-                fiber       REAL DEFAULT 0,
-                sugar       REAL DEFAULT 0,
-                source      TEXT DEFAULT 'scan',
-                logged_at   TEXT DEFAULT (datetime('now'))
-            );
-            CREATE INDEX IF NOT EXISTS idx_daily_user_date ON daily_logs(user_id, log_date);
-            CREATE INDEX IF NOT EXISTS idx_daily_dev_date  ON daily_logs(device_key, log_date);
-
-            CREATE TABLE IF NOT EXISTS allergen_profiles (
-                device_key  TEXT PRIMARY KEY,
-                user_id     TEXT REFERENCES users(id),
-                allergens   TEXT DEFAULT '[]',
-                conditions  TEXT DEFAULT '[]',
-                updated_at  TEXT DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS food_products (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                barcode         TEXT UNIQUE,
-                name            TEXT NOT NULL,
-                brand           TEXT DEFAULT '',
-                category        TEXT DEFAULT '',
-                calories_100g   REAL DEFAULT 0,
-                protein_100g    REAL DEFAULT 0,
-                carbs_100g      REAL DEFAULT 0,
-                fat_100g        REAL DEFAULT 0,
-                sodium_100g     REAL DEFAULT 0,
-                fiber_100g      REAL DEFAULT 0,
-                sugar_100g      REAL DEFAULT 0,
-                sat_fat_100g    REAL DEFAULT 0,
-                eatlytic_score  INTEGER DEFAULT 0,
-                ingredients_raw TEXT DEFAULT '',
-                allergens_json  TEXT DEFAULT '[]',
-                source          TEXT DEFAULT 'llm_scan',
-                scan_count      INTEGER DEFAULT 0,
-                verified        INTEGER DEFAULT 0,
-                verified_by     TEXT DEFAULT NULL,
-                created_at      TEXT DEFAULT (datetime('now')),
-                updated_at      TEXT DEFAULT (datetime('now'))
-            );
-            CREATE INDEX IF NOT EXISTS idx_food_barcode ON food_products(barcode);
-            CREATE INDEX IF NOT EXISTS idx_food_name    ON food_products(name);
-            CREATE INDEX IF NOT EXISTS idx_food_brand  ON food_products(brand);
-
-            CREATE TABLE IF NOT EXISTS benchmarks (
-                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                product_name        TEXT NOT NULL,
-                ground_truth_json   TEXT NOT NULL,
-                llm_output_json     TEXT DEFAULT '{}',
-                ocr_text            TEXT DEFAULT '',
-                f1_score            REAL DEFAULT 0,
-                score_delta         REAL DEFAULT 0,
-                field_accuracy      TEXT DEFAULT '{}',
-                tested_at           TEXT DEFAULT (datetime('now')),
-                model_used          TEXT DEFAULT ''
-            );
-
-            CREATE TABLE IF NOT EXISTS nps_responses (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_key   TEXT,
-                user_id      TEXT REFERENCES users(id),
-                score        INTEGER NOT NULL,
-                comment      TEXT DEFAULT '',
-                submitted_at TEXT DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS payments (
-                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id             TEXT REFERENCES users(id),
-                device_key          TEXT,
-                razorpay_order_id   TEXT UNIQUE,
-                razorpay_payment_id TEXT UNIQUE,
-                razorpay_signature  TEXT DEFAULT '',
-                amount_paise        INTEGER DEFAULT 19900,
-                currency            TEXT DEFAULT 'INR',
-                status              TEXT DEFAULT 'created',
-                plan                TEXT DEFAULT 'pro_monthly',
-                created_at          TEXT DEFAULT (datetime('now')),
-                paid_at             TEXT DEFAULT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS api_keys (
-                api_key            TEXT PRIMARY KEY,
-                client_name        TEXT NOT NULL,
-                plan               TEXT DEFAULT 'business',
-                scans_this_month   INTEGER DEFAULT 0,
-                month              TEXT DEFAULT '',
-                active             INTEGER DEFAULT 1,
-                created_at         TEXT DEFAULT (datetime('now'))
-            );
-
             CREATE TABLE IF NOT EXISTS ocr_cache (
                 cache_key   TEXT PRIMARY KEY,
                 result_json TEXT NOT NULL,
@@ -251,199 +149,181 @@ def init_db() -> None:
                 result_json TEXT NOT NULL,
                 created_at  TEXT DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS image_fingerprints (
+                hash_key    TEXT PRIMARY KEY,
+                result_json TEXT NOT NULL,
+                created_at  TEXT DEFAULT (datetime('now'))
+            );
+            
+            -- Keep other tables for consistency
+            CREATE TABLE IF NOT EXISTS daily_logs (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     TEXT REFERENCES users(id),
+                device_key  TEXT,
+                log_date    TEXT NOT NULL,
+                meal_name   TEXT DEFAULT '',
+                calories    REAL DEFAULT 0,
+                logged_at   TEXT DEFAULT (datetime('now'))
+            );
         """)
+        # Migrations for existing DBs
+        try: conn.execute("ALTER TABLE scans ADD COLUMN metadata_json TEXT DEFAULT '{}'")
+        except: pass
+        try: conn.execute("ALTER TABLE scans ADD COLUMN correction_json TEXT DEFAULT '{}'")
+        except: pass
     logger.info("Database ready: %s", DB_FILE)
 
-
-# ══════════════════════════════════════════════════════════════════════
-#  SUPABASE CACHE LAYER (production) with SQLite fallback (dev)
-# ══════════════════════════════════════════════════════════════════════
-
-
+# ── Retrieval Helpers ──────────────────────────────────────────────────
 def get_ocr_cache(key: str):
     if _supabase:
         try:
-            response = (
-                _supabase.table("ocr_cache").select("*").eq("cache_key", key).execute()
-            )
-            if response.data:
-                return json.loads(response.data[0]["result_json"])
-        except Exception as e:
-            logger.warning("Supabase get_ocr_cache failed: %s", e)
-    try:
-        with db_conn() as c:
-            row = c.execute(
-                "SELECT result_json FROM ocr_cache WHERE cache_key=?", (key,)
-            ).fetchone()
-        return json.loads(row["result_json"]) if row else None
-    except Exception:
-        return None
-
+            res = _supabase.table("ocr_cache").select("*").eq("cache_key", key).execute()
+            if res.data: return json.loads(res.data[0]["result_json"])
+        except Exception: pass
+    with db_conn() as c:
+        row = c.execute("SELECT result_json FROM ocr_cache WHERE cache_key=?", (key,)).fetchone()
+    return json.loads(row["result_json"]) if row else None
 
 def set_ocr_cache(key: str, value: dict):
     if _supabase:
-        try:
-            _supabase.table("ocr_cache").upsert(
-                {"cache_key": key, "result_json": json.dumps(value)}
-            ).execute()
-            return
-        except Exception as e:
-            logger.warning(
-                "Supabase set_ocr_cache failed, falling back to SQLite: %s", e
-            )
-    try:
-        with db_conn() as c:
-            c.execute(
-                "INSERT OR REPLACE INTO ocr_cache(cache_key,result_json) VALUES(?,?)",
-                (key, json.dumps(value)),
-            )
-    except Exception as exc:
-        logger.warning("set_ocr_cache: %s", exc)
+        try: _supabase.table("ocr_cache").upsert({"cache_key": key, "result_json": json.dumps(value)}).execute()
+        except: pass
+    with db_conn() as c:
+        c.execute("INSERT OR REPLACE INTO ocr_cache(cache_key,result_json) VALUES(?,?)", (key, json.dumps(value)))
 
-
-def get_ai_cache(key: str):
+def get_image_fingerprint_match(hash_key: str):
     if _supabase:
         try:
-            response = (
-                _supabase.table("cached_products")
-                .select("*")
-                .eq("label_hash", key)
-                .execute()
-            )
-            if response.data:
-                return response.data[0]
-        except Exception as e:
-            logger.warning("Supabase get_ai_cache failed: %s", e)
-    try:
-        with db_conn() as c:
-            row = c.execute(
-                "SELECT result_json FROM ai_cache WHERE cache_key=? AND created_at > datetime('now', '-30 days')",
-                (key,),
-            ).fetchone()
-        return json.loads(row["result_json"]) if row else None
-    except Exception:
-        return None
+            res = _supabase.table("image_fingerprints").select("*").eq("hash_key", hash_key).execute()
+            if res.data: return json.loads(res.data[0]["result_json"])
+        except Exception: pass
+    with db_conn() as c:
+        row = c.execute("SELECT result_json FROM image_fingerprints WHERE hash_key=?", (hash_key,)).fetchone()
+    return json.loads(row["result_json"]) if row else None
 
-
-def set_ai_cache(key: str, value: dict):
+def set_image_fingerprint(hash_key: str, value: dict):
     if _supabase:
-        try:
-            payload = {"label_hash": key}
-            payload.update({k: v for k, v in value.items() if k not in ("label_hash",)})
-            _supabase.table("cached_products").upsert(payload).execute()
-            return
-        except Exception as e:
-            logger.warning(
-                "Supabase set_ai_cache failed, falling back to SQLite: %s", e
-            )
-    try:
-        with db_conn() as c:
-            c.execute(
-                "INSERT OR REPLACE INTO ai_cache(cache_key,result_json) VALUES(?,?)",
-                (key, json.dumps(value)),
-            )
-    except Exception as exc:
-        logger.warning("set_ai_cache: %s", exc)
+        try: _supabase.table("image_fingerprints").upsert({"hash_key": hash_key, "result_json": json.dumps(value)}).execute()
+        except: pass
+    with db_conn() as c:
+        c.execute("INSERT OR REPLACE INTO image_fingerprints(hash_key, result_json) VALUES(?,?)", (hash_key, json.dumps(value)))
 
 
 def check_and_increment_scan(device_key: str, limit: int = 10, increment: bool = True) -> dict:
-    """Consolidated scan limit logic. Thread-safe: uses BEGIN IMMEDIATE to prevent
-    concurrent requests from racing past the free-scan limit."""
     month_key = datetime.date.today().isoformat()[:7]
     with db_conn() as conn:
-        # IMMEDIATE lock prevents concurrent writers from both reading count=N
-        # and both incrementing past the limit.
         conn.execute("BEGIN IMMEDIATE")
-
-        row = conn.execute(
-            "SELECT * FROM devices WHERE device_key=?", (device_key,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM devices WHERE device_key=?", (device_key,)).fetchone()
         if not row:
-            conn.execute(
-                "INSERT INTO devices(device_key, month, scan_count) VALUES(?,?,0)",
-                (device_key, month_key),
-            )
+            conn.execute("INSERT INTO devices(device_key, month, scan_count) VALUES(?,?,0)", (device_key, month_key))
             u = {"is_pro": 0, "month": month_key, "scan_count": 0, "pro_expires": None}
         else:
             u = dict(row)
 
-        # P0 FIX: Check and handle Pro expiry
         if u.get("is_pro") == 1:
-            expires = u.get("pro_expires")
-            if expires and expires < datetime.datetime.utcnow().isoformat():
-                # Expired — downgrade silently
-                logger.info("Subscription expired for device %s", device_key[:8])
-                conn.execute(
-                    "UPDATE devices SET is_pro=0 WHERE device_key=?", (device_key,)
-                )
+            exp = u.get("pro_expires")
+            if exp and exp < datetime.datetime.utcnow().isoformat():
+                conn.execute("UPDATE devices SET is_pro=0 WHERE device_key=?", (device_key,))
                 u["is_pro"] = 0
 
         if u["month"] != month_key:
-            conn.execute(
-                "UPDATE devices SET month=?, scan_count=0 WHERE device_key=?",
-                (month_key, device_key),
-            )
-            u["month"] = month_key
+            conn.execute("UPDATE devices SET month=?, scan_count=0 WHERE device_key=?", (month_key, device_key))
             u["scan_count"] = 0
 
         if u["is_pro"]:
-            if increment:
-                conn.execute(
-                    "UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?",
-                    (device_key,),
-                )
-            return {
-                "allowed": True,
-                "scans_used": u["scan_count"] + (1 if increment else 0),
-                "scans_remaining": 9999,
-                "is_pro": True,
-            }
+            if increment: conn.execute("UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?", (device_key,))
+            return {"allowed": True, "scans_used": u["scan_count"] + (1 if increment else 0), "scans_remaining": 9999, "is_pro": True}
 
         if u["scan_count"] >= limit:
-            return {
-                "allowed": False,
-                "scans_used": u["scan_count"],
-                "scans_remaining": 0,
-                "is_pro": False,
-            }
+            return {"allowed": False, "scans_used": u["scan_count"], "scans_remaining": 0, "is_pro": False}
 
-        if increment:
-            conn.execute(
-                "UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?",
-                (device_key,),
-            )
-
-        new_count = u["scan_count"] + (1 if increment else 0)
-        return {
-            "allowed": True,
-            "scans_used": new_count,
-            "scans_remaining": max(0, limit - new_count),
-            "is_pro": False,
-        }
-
-def load_api_keys() -> dict:
-    """Load all API keys from SQLite into a dictionary."""
-    with db_conn() as conn:
-        rows = conn.execute("SELECT * FROM api_keys").fetchall()
-        return {r["api_key"]: dict(r) for r in rows}
-
+        if increment: conn.execute("UPDATE devices SET scan_count=scan_count+1 WHERE device_key=?", (device_key,))
+        new_c = u["scan_count"] + (1 if increment else 0)
+        return {"allowed": True, "scans_used": new_c, "scans_remaining": max(0, limit - new_c), "is_pro": False}
 
 def verify_api_key(api_key: str) -> dict:
-    """Verify an API key and return its data."""
-    if not api_key:
-        return None
     with db_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM api_keys WHERE api_key=? AND active=1", (api_key,)
-        ).fetchone()
-        return dict(row) if row else None
-
+        row = conn.execute("SELECT * FROM api_keys WHERE api_key=? AND active=1", (api_key,)).fetchone()
+    return dict(row) if row else None
 
 def increment_api_scan(api_key: str) -> None:
-    """Increment the scan count for a specific API key."""
-    month_key = datetime.date.today().isoformat()[:7]
+    mo = datetime.date.today().isoformat()[:7]
     with db_conn() as conn:
-        conn.execute(
-            "UPDATE api_keys SET scans_this_month = CASE WHEN month = ? THEN scans_this_month + 1 ELSE 1 END, month = ? WHERE api_key = ?",
-            (month_key, month_key, api_key),
-        )
+        conn.execute("UPDATE api_keys SET scans_this_month = CASE WHEN month = ? THEN scans_this_month + 1 ELSE 1 END, month = ? WHERE api_key = ?", (mo, mo, api_key))
+
+# ── DPDP Compliance & Admin ───────────────────────────────────────────
+def purge_old_records():
+    """DPDP Article 12: Delete inactive records after 90 days."""
+    cutoff = (datetime.date.today() - datetime.timedelta(days=90)).isoformat()
+    with db_conn() as conn:
+        conn.execute("DELETE FROM devices WHERE last_scan_date < ? AND is_pro = 0", (cutoff,))
+        conn.execute("DELETE FROM ai_cache WHERE created_at < datetime('now', '-30 days')")
+    logger.info("DPDP cleanup executed.")
+
+def delete_user_data(device_key: str):
+    """Right to erasure."""
+    with db_conn() as conn:
+        conn.execute("DELETE FROM devices WHERE device_key=?", (device_key,))
+        conn.execute("DELETE FROM scans WHERE device_key=?", (device_key,))
+    if _supabase:
+        try: _supabase.table("devices").delete().eq("device_key", device_key).execute()
+        except: pass
+    logger.info("User data erased for %s", device_key[:8])
+
+def get_unverified_scans(limit: int = 50):
+    with db_conn() as conn:
+        rows = conn.execute("SELECT * FROM scans WHERE verified=0 ORDER BY scanned_at DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+def apply_correction(scan_id: int, correction: dict):
+    with db_conn() as conn:
+        conn.execute("UPDATE scans SET verified=1, correction_json=? WHERE id=?", (json.dumps(correction), scan_id))
+
+def save_scan(device_key: str, data: dict, user_id: str = None) -> int:
+    """Save a scan result to the database."""
+    with db_conn() as conn:
+        cursor = conn.execute("""
+            INSERT INTO scans (
+                device_key, user_id, product_name, score, verdict,
+                calories, protein, carbs, fat, sodium, fiber, sugar,
+                persona, language, analysis_json, metadata_json,
+                barcode, brand, category
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            device_key, user_id, data.get("product_name", "Unknown"),
+            data.get("score", 0), data.get("verdict", ""),
+            data.get("calories", 0), data.get("protein", 0),
+            data.get("carbs", 0), data.get("fat", 0),
+            data.get("sodium", 0), data.get("fiber", 0), data.get("sugar", 0),
+            data.get("persona", "general"), data.get("language", "en"),
+            json.dumps(data.get("analysis_json", data)),
+            json.dumps(data.get("metadata", {})),
+            data.get("barcode"), data.get("brand"), data.get("category")
+        ))
+        return cursor.lastrowid
+
+def get_device_history(device_key: str, limit: int = 15):
+    """Retrieve recent scans for a specific device."""
+    with db_conn() as conn:
+        rows = conn.execute("""
+            SELECT id, product_name, score, verdict, scanned_at, brand, category
+            FROM scans 
+            WHERE device_key = ? 
+            ORDER BY scanned_at DESC 
+            LIMIT ?
+        """, (device_key, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+def get_scan_by_id(scan_id: int):
+    """Retrieve full scan details by ID."""
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM scans WHERE id = ?", (scan_id,)).fetchone()
+    if not row: return None
+    d = dict(row)
+    # Parse JSON fields
+    for field in ["analysis_json", "metadata_json", "correction_json"]:
+        if d.get(field):
+            try: d[field] = json.loads(d[field])
+            except: d[field] = {}
+    return d

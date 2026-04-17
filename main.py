@@ -40,6 +40,12 @@ from app.models.db import (
     get_ai_cache,
     set_ai_cache,
     check_and_increment_scan,
+    save_scan,
+    get_device_history,
+    get_scan_by_id,
+    delete_user_data,
+    get_unverified_scans,
+    apply_correction,
 )
 
 # P0 FIX: Only import what actually exists in the new files
@@ -93,9 +99,19 @@ def verify_api_key(api_key: str = Security(api_key_header)):
         return None
     with db_conn() as conn:
         row = conn.execute(
-            "SELECT * FROM api_keys WHERE api_key=?", (api_key,)
+            "SELECT * FROM api_keys WHERE api_key=? AND active=1", (api_key,)
         ).fetchone()
     return dict(row) if row else None
+
+
+# --- ADMIN AUTH ---
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "eatlytic_master_key")
+
+def verify_admin(request: Request):
+    token = request.headers.get("X-Admin-Token")
+    if token != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
+    return True
 
 
 def generate_api_key(client_name: str, plan: str = "business") -> str:
@@ -245,6 +261,24 @@ async def analyze_product(
             except Exception as e:
                 logger.warning(f"Deblurring failed: {e}")
 
+        # P0 Architecture: Perceptual Hashing Cache (Duplicate Prevention)
+        # We calculate the hash of the image and check if we've seen it before.
+        # This saves Groq/OCR costs and provides instant results for repeat products.
+        image_hash = get_image_fingerprint(working_content)
+        if image_hash:
+            cached_result = get_image_fingerprint_match(image_hash)
+            if cached_result:
+                logger.info("pHash cache hit for %s", image_hash)
+                # Still need to handle quota logic for cached hits
+                scan_update = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=True)
+                cached_result["scan_meta"] = {
+                    "scans_remaining": scan_update["scans_remaining"],
+                    "is_pro": scan_update["is_pro"],
+                    "scans_used": scan_update["scans_used"],
+                    "cached": True,
+                }
+                return cached_result
+
         # FIX: Run ROI crop + contrast enhance BEFORE OCR.
         # This is the key step that makes complex labels (Maggi back, Tata Salt,
         # any real-world product photo) work correctly.
@@ -284,6 +318,37 @@ async def analyze_product(
             "is_pro": scan_update["is_pro"],
             "scans_used": scan_update["scans_used"],
         }
+        
+        # Save to pHash cache for future users
+        if image_hash:
+            set_image_fingerprint(image_hash, result)
+
+        # ── PERSISTENCE: Save result for History & Duel
+        # We save the scan results immediately so the user can see them in their "History"
+        # and compare them later in "Duel Mode".
+        try:
+            scan_id = save_scan(device_key, {
+                "product_name": result.get("product_name"),
+                "score": result.get("score"),
+                "verdict": result.get("verdict"),
+                "calories": result.get("calories"),
+                "protein": result.get("protein"),
+                "carbs": result.get("carbs"),
+                "fat": result.get("fat"),
+                "sugar": result.get("sugar"),
+                "persona": persona,
+                "language": language,
+                "analysis_json": result,
+                "metadata": {
+                    "phash": image_hash,
+                    "confidence": result.get("extraction_confidence", {}).get("score", 0),
+                    "latencies": result.get("scan_latency_breakdown", {})
+                }
+            })
+            result["scan_id"] = scan_id
+        except Exception as e:
+            logger.error("Failed to save scan: %s", e)
+
         return result
 
     except Exception as e:
@@ -294,7 +359,49 @@ async def analyze_product(
 # ── Health check ─────────────────────────────────
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "2.0"}
+    return {"status": "ok", "version": "3.0", "engine": "Production Hardened"}
+
+
+# ── COMPLIANCE (DPDP) ──────────────────────────────
+@app.delete("/api/v1/user/delete")
+async def erase_user_data(request: Request):
+    """Right to erasure."""
+    device_key = get_device_key(request)
+    delete_user_data(device_key)
+    return {"status": "erased", "message": "All your data has been permanently deleted."}
+
+
+@app.get("/api/v1/history")
+async def get_history(request: Request):
+    """Get recent scans for the current device."""
+    device_key = get_device_key(request)
+    return get_device_history(device_key)
+
+@app.post("/api/v1/duel")
+async def product_duel(request: Request, scan_a_id: int = Form(...), scan_b_id: int = Form(...)):
+    """Compare two products head-to-head."""
+    from app.services.duel_service import run_duel
+    
+    prod_a = get_scan_by_id(scan_a_id)
+    prod_b = get_scan_by_id(scan_b_id)
+    
+    if not prod_a or not prod_b:
+        raise HTTPException(status_code=404, detail="One or more products not found in history.")
+        
+    return run_duel(prod_a, prod_b, persona=prod_a.get("persona", "general"))
+
+
+# ── ADMIN TOOLS ──────────────────────────────
+@app.get("/admin/unverified", dependencies=[Depends(verify_admin)])
+async def list_unverified():
+    """List recent scans needing human verification."""
+    return get_unverified_scans()
+
+@app.post("/admin/correct/{scan_id}", dependencies=[Depends(verify_admin)])
+async def apply_scan_correction(scan_id: int, correction: dict):
+    """Manually override AI extraction for a scan."""
+    apply_correction(scan_id, correction)
+    return {"status": "corrected", "scan_id": scan_id}
 
 
 # ── Pro activation ──────────────────────────────

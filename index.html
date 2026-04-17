@@ -2906,6 +2906,164 @@
       background: #222;
       border-color: rgba(240, 237, 230, 0.18);
     }
+    /* history screen */
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 10px 0;
+    }
+    .history-card {
+      background: var(--white);
+      border: var(--border);
+      border-radius: var(--r);
+      padding: 12px 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .history-card:active {
+      transform: translateY(2px);
+      box-shadow: none;
+    }
+    .history-info {
+        flex: 1;
+    }
+    .history-name {
+      font-weight: 800;
+      font-size: 14px;
+      margin-bottom: 2px;
+    }
+    .history-meta {
+      font-size: 10px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+    }
+    .history-score {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1.5px solid var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 900;
+        margin-left: 10px;
+    }
+
+    /* Duel Mode UI */
+    .duel-header {
+      padding: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .duel-vs {
+      width: 44px;
+      height: 44px;
+      background: var(--ink);
+      color: var(--yellow);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Fraunces', serif;
+      font-weight: 900;
+      font-size: 1.2rem;
+      border: 3px solid var(--yellow);
+      z-index: 10;
+        margin-top: -22px;
+    }
+    .duel-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      flex: 1;
+      gap: 2px;
+      background: var(--ink);
+    }
+    .duel-side {
+      background: var(--bg);
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      overflow-y: auto;
+    }
+    .duel-product-name {
+      font-family: 'Fraunces', serif;
+      font-weight: 900;
+      font-size: 1rem;
+      text-align: center;
+      margin-bottom: 10px;
+      min-height: 2.4rem;
+    }
+    .duel-score-orb {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      border: 3px solid var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      font-weight: 900;
+      margin-bottom: 15px;
+      box-shadow: var(--shadow-sticker);
+    }
+    .duel-winner-badge {
+      position: absolute;
+      top: 50px;
+      background: var(--yellow);
+      border: var(--border);
+      padding: 4px 10px;
+      border-radius: var(--r-pill);
+      font-size: 10px;
+      font-weight: 900;
+      transform: rotate(-10deg);
+      box-shadow: var(--shadow-sticker);
+      z-index: 5;
+    }
+    .duel-metrics {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .duel-metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: var(--white);
+      border: 1.5px solid var(--ink);
+      border-radius: 10px;
+      font-size: 11px;
+      box-shadow: var(--shadow-sm);
+    }
+    .duel-metric-val {
+      font-weight: 800;
+    }
+    .duel-metric-row.win {
+        background: var(--mint);
+        border-color: var(--ink);
+    }
+    .edge-box {
+        background: var(--cream);
+        border: var(--border);
+        border-radius: var(--r);
+        padding: 15px;
+        margin: 15px;
+        font-size: 13px;
+        font-weight: 700;
+        text-align: center;
+        box-shadow: var(--shadow-card);
+    }
   </style>
 </head>
 
@@ -2921,6 +3079,7 @@
         <div class="quota-pill"><span class="quota-dot" id="qdot"></span><span id="quota-text">5 left</span></div>
         <button class="header-pill" id="theme-toggle" onclick="toggleDark()" title="Toggle dark mode"
           aria-label="Toggle dark mode">🌙</button>
+        <button class="header-pill" onclick="goTo('history')">📜 History</button>
         <button class="header-pill" onclick="goTo('camera')">📷 Scan</button>
       </div>
     </div>
@@ -3080,6 +3239,33 @@
       <div class="sat-expand-name" id="se-name">Nutrient</div>
       <div class="sat-expand-val" id="se-val">—</div>
       <div class="sat-expand-desc" id="se-desc">Tap a satellite for detail.</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════
+     S-DUEL — SIDE-BY-SIDE
+═══════════════════════ -->
+  <div class="screen" id="s-duel">
+    <div class="app-header">
+        <div class="app-logo">Duel<em>M</em>ode</div>
+        <button class="header-pill" onclick="goTo('history')">Close</button>
+    </div>
+    <div class="scroll-inner">
+        <div id="duel-winner-box" class="edge-box">
+            <!-- winner announcement -->
+        </div>
+        <div class="duel-split" id="duel-split-container">
+            <!-- side a -->
+            <div class="duel-side" id="duel-side-a"></div>
+            <!-- side b -->
+            <div class="duel-side" id="duel-side-b"></div>
+        </div>
+        <div style="height:44px; background:var(--ink); display:flex; align-items:center; justify-content:center">
+            <div class="duel-vs">VS</div>
+        </div>
+        <div style="padding: 15px">
+            <button class="analyse-cta visible" onclick="goTo('scan')">Scan More →</button>
+        </div>
     </div>
   </div>
 
@@ -3732,7 +3918,7 @@
       const meta = [d.product_category && esc(d.product_category), d.nutriscore && 'Nutri-Score: ' + esc(d.nutriscore), d.nova_group && 'NOVA: ' + d.nova_group, d.is_barcode_scan && 'Barcode scan', d.is_voice_log && 'Voice logged'].filter(Boolean);
       if (meta.length) html += `<div class="confidence-strip"><div class="conf-dot"></div><span style="font-size:9px;letter-spacing:1.5px">${meta.join(' · ')}</span></div>`;
 
-      html += `<div class="result-actions"><button class="rac-btn" onclick="shareResult()">📤 Share</button><button class="rac-btn" onclick="goTo('map')">✦ Map</button><button class="rac-btn" onclick="goTo('history')">📋 History</button><button class="rac-btn" onclick="goTo('scan')">🔄 Rescan</button></div>`;
+      html += `<div class="result-actions"><button class="rac-btn" onclick="shareResult()">📤 Share</button><button class="rac-btn" onclick="goTo('map')">✦ Map</button><button class="rac-btn" onclick="openDuelSelection(${d.scan_id})">⚔️ Duel</button><button class="rac-btn" onclick="goTo('history')">📋 History</button></div>`;
 
       if (d.risk_flags?.length) {
         html += `<div class="risk-flags">`;
@@ -3879,57 +4065,124 @@
     /* ═══════════════════════════════════════
        HISTORY SCREEN
     ═══════════════════════════════════════ */
-    function renderHistory() {
-      const allHist = getHistory(), filter = state.histFilter, now = new Date();
-      const filtered = allHist.filter(h => {
-        const ts = new Date(h.ts);
-        if (filter === 'today') return ts.toDateString() === now.toDateString();
-        if (filter === 'week') { const w = new Date(now); w.setDate(now.getDate() - 7); return ts >= w; }
-        if (filter === 'month') return ts.getMonth() === now.getMonth() && ts.getFullYear() === now.getFullYear();
-        return true;
-      });
-      const streak = getStreak();
-      const todayCals = allHist.filter(h => new Date(h.ts).toDateString() === now.toDateString()).reduce((s, h) => {
-        const cal = (h.data?.nutrient_breakdown || []).find(n => n.name?.toLowerCase().includes('calorie')); return s + (cal?.value || 0);
-      }, 0);
-      const profile = getProfile(), tdee = computeTDEE(profile) || 2000;
-      let html = '';
+    async function renderHistory() {
+      const histContainer = document.getElementById('history-container');
+      const emptyBox = document.getElementById('history-empty');
+      histContainer.innerHTML = '<div style="text-align:center;padding:20px;font-size:12px;color:var(--muted)">Syncing...</div>';
 
-      html += `<div class="streak-card"><div><div class="streak-num">🔥${streak.count}</div></div><div><div class="streak-text">Day Streak</div><div class="streak-label">${streak.count === 1 ? 'Keep it up!' : streak.count >= 7 ? 'On fire!' : 'Stay consistent'}</div></div><div style="margin-left:auto;text-align:right"><div style="font-family:'Fraunces',serif;font-weight:900;font-size:1.1rem">${allHist.length}</div><div style="font-size:8px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Total Scans</div></div></div>`;
-
-      if (todayCals > 0) {
-        const calPct = Math.min(100, Math.round(todayCals / tdee * 100));
-        html += `<div class="daily-banner"><div class="db-title">Today — ${todayCals} kcal logged</div><div class="db-macros"><div class="db-macro"><div class="db-macro-val">${todayCals}</div><div class="db-macro-label">Calories</div></div><div class="db-macro"><div class="db-macro-val">${tdee}</div><div class="db-macro-label">Target</div></div><div class="db-macro"><div class="db-macro-val">${Math.max(0, tdee - todayCals)}</div><div class="db-macro-label">Remaining</div></div></div><div class="db-progress-bar"><div class="db-progress-fill" style="width:${calPct}%;background:${calPct > 100 ? 'var(--red)' : calPct > 75 ? 'var(--orange)' : 'var(--yellow)'}"></div></div></div>`;
-      }
-
-      const badges = computeBadges(allHist, streak);
-      if (badges.length) {
-        html += `<div class="section-label">Achievements</div><div class="badges-row">`;
-        badges.forEach(b => { html += `<div class="badge" onclick="showToast('${b.locked ? '🔒 ' + b.cond : '🎉 ' + b.name + ' unlocked!'}')" title="${b.cond}"><div class="badge-icon${b.locked ? ' locked' : ''}" style="${b.locked ? '' : 'background:' + b.color}">${b.icon}</div><div class="badge-name">${b.name}</div></div>`; });
-        html += `</div>`;
-      }
-
-      html += `<div class="hist-filter-row">${['today', 'week', 'month', 'all'].map(f => `<button class="hf-btn${state.histFilter === f ? ' active' : ''}" onclick="setHistFilter('${f}')">${{ today: 'Today', week: 'Week', month: 'Month', all: 'All' }[f]}</button>`).join('')}</div>`;
-
-      if (!filtered.length) {
-        html += `<div class="hist-empty"><div class="hist-empty-icon">${filter === 'today' ? '🌱' : '📋'}</div>${filter === 'today' ? 'No scans today.<br>Use the Portal to log your first meal!' : 'No scans in this period.'}</div>`;
-      } else {
-        const grouped = {};
-        filtered.forEach(h => { const k = new Date(h.ts).toDateString(); if (!grouped[k]) grouped[k] = []; grouped[k].push(h); });
-        Object.entries(grouped).forEach(([dateStr, items]) => {
-          const label = dateStr === now.toDateString() ? 'Today' : new Date(dateStr).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
-          html += `<div class="hist-date-header">${label}</div>`;
-          items.forEach(h => {
-            const score = h.score || 0;
+      try {
+        const res = await fetch(`${API}/api/v1/history`);
+        const serverHist = await res.ok ? await res.json() : [];
+        
+        if (serverHist.length === 0) {
+            histContainer.innerHTML = '';
+            emptyBox.style.display = 'block';
+            return;
+        }
+        
+        emptyBox.style.display = 'none';
+        let html = '';
+        
+        serverHist.forEach(item => {
+            const score = item.score || 0;
             const sc = score >= 7 ? 'var(--mint)' : score >= 4 ? 'var(--orange)' : 'var(--red)';
-            const sb = score >= 7 ? '#C0FFE8' : score >= 4 ? '#FFE8C0' : '#FFE0EC';
-            const time = new Date(h.ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-            const cal = (h.data?.nutrient_breakdown || []).find(n => n.name?.toLowerCase().includes('calorie'));
-            html += `<div class="hist-item" onclick="replayHistoryItem('${h.id}')">${h.thumb ? `<img class="hist-thumb" src="${h.thumb}" alt="">` : `<div class="hist-thumb-placeholder">${h.is_voice ? '🎤' : h.is_barcode ? '▦' : '🌿'}</div>`}<div class="hist-info"><div class="hist-name">${esc(h.product_name)}</div><div class="hist-meta">${time} · ${esc(h.category) || 'Food'} · ${cal ? cal.value + 'kcal' : '—'}</div><div class="hist-verdict">${esc(h.verdict)}</div></div><div class="hist-score-badge" style="background:${sb};border-color:${sc};color:${sc}">${score}</div></div>`;
-          });
+            const date = new Date(item.scanned_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+            
+            html += `
+            <div class="history-card" onclick="openDuelSelection(${item.id})">
+                <div class="history-info">
+                    <div class="history-name">${esc(item.product_name)}</div>
+                    <div class="history-meta">${date} · ${esc(item.brand || 'No Brand')} · ${item.category || 'Food'}</div>
+                </div>
+                <div class="history-score" style="border-color:${sc}; color:${sc}">${score}</div>
+            </div>`;
         });
+        
+        histContainer.innerHTML = html;
+      } catch (e) {
+        histContainer.innerHTML = '<div style="text-align:center;color:var(--red);padding:20px">Failed to load history</div>';
       }
-      document.getElementById('history-scroll').innerHTML = html;
+    }
+
+    /* ═══════════════════════════════════════
+       DUEL MODE LOGIC
+    ═══════════════════════════════════════ */
+    let duelSelection = null;
+
+    function openDuelSelection(scanId) {
+        // If we don't have a first item, save this one and go to history to pick second
+        if (!duelSelection) {
+            duelSelection = scanId;
+            showToast('⚔️ First item selected! Pick a competitor from History.');
+            goTo('history');
+        } else {
+            // We have both items, run the duel
+            if (duelSelection === scanId) {
+                showToast('Choose a different product to compare!');
+                return;
+            }
+            runDuel(duelSelection, scanId);
+            duelSelection = null; // reset
+        }
+    }
+
+    async function runDuel(idA, idB) {
+        goTo('reading'); // Show loader
+        crystallizeText('Simulating Duel...');
+        
+        try {
+            const fd = new FormData();
+            fd.append('scan_a_id', idA);
+            fd.append('scan_b_id', idB);
+            
+            const res = await fetch(`${API}/api/v1/duel`, { method: 'POST', body: fd });
+            if (!res.ok) throw new Error('Duel simulation failed');
+            
+            const data = await res.json();
+            renderDuel(data);
+            goTo('duel');
+            spawnConfetti(window.innerWidth / 2, 200);
+        } catch (e) {
+            showToast('⚠️ Oops: ' + e.message);
+            goTo('history');
+        }
+    }
+
+    function renderDuel(d) {
+        const sideA = document.getElementById('duel-side-a');
+        const sideB = document.getElementById('duel-side-b');
+        const winnerBox = document.getElementById('duel-winner-box');
+        
+        winnerBox.innerHTML = `<div style="font-size:0.9rem; margin-bottom:5px">🏆 WINNER: <strong>${esc(d.winner_name)}</strong></div><div style="font-size:0.75rem; color:var(--muted)">${esc(d.edge)}</div>`;
+        
+        const renderSide = (prod, winnerId) => {
+            const isWinner = prod.id === winnerId;
+            const sc = prod.score >= 7 ? 'var(--mint)' : prod.score >= 4 ? 'var(--orange)' : 'var(--red)';
+            
+            let html = `
+                ${isWinner ? '<div class="duel-winner-badge">WINNER</div>' : ''}
+                <div class="duel-product-name">${esc(prod.name)}</div>
+                <div class="duel-score-orb" style="border-color:${sc}; color:${sc}">${prod.score}</div>
+                <div class="duel-metrics">
+            `;
+            
+            d.comparison.forEach(m => {
+                const winClass = (m.winner === (prod.id === d.side_by_side.a.id ? 'a' : 'b')) ? 'win' : '';
+                const val = prod.id === d.side_by_side.a.id ? m.val_a : m.val_b;
+                html += `
+                    <div class="duel-metric-row ${winClass}">
+                        <span>${m.metric}</span>
+                        <span class="duel-metric-val">${val}${m.unit}</span>
+                    </div>
+                `;
+            });
+            
+            html += `</div>`;
+            return html;
+        };
+        
+        sideA.innerHTML = renderSide(d.side_by_side.a, d.winner_id);
+        sideB.innerHTML = renderSide(d.side_by_side.b, d.winner_id);
     }
 
     function setHistFilter(f) { state.histFilter = f; renderHistory(); }

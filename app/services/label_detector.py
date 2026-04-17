@@ -149,22 +149,26 @@ def deskew_image(image_np: np.ndarray) -> np.ndarray:
 def enhance_for_ocr(image_np: np.ndarray) -> np.ndarray:
     """
     Improve contrast and sharpness for OCR on a label crop.
-    Works on both light and dark backgrounds.
+    Optimized for shiny plastic packets using CLAHE + Bilateral Denoising.
     """
     try:
-        # CLAHE for local contrast enhancement
-        lab = cv2.cvtColor(image_np, cv2.COLOR_RGB2LAB)
+        # 1. Bilateral Filter: Denoise while preserving edges (glare reduction)
+        denoised = cv2.bilateralFilter(image_np, 9, 75, 75)
+        
+        # 2. CLAHE for local contrast enhancement in LAB space
+        lab = cv2.cvtColor(denoised, cv2.COLOR_RGB2LAB)
         l_ch, a_ch, b_ch = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
         l_ch = clahe.apply(l_ch)
         enhanced = cv2.merge([l_ch, a_ch, b_ch])
         enhanced = cv2.cvtColor(enhanced, cv2.COLOR_LAB2RGB)
 
-        # Mild unsharp mask for sharpness
+        # 3. Mild unsharp mask for sharpness
         blurred = cv2.GaussianBlur(enhanced, (0, 0), 2)
-        sharp = cv2.addWeighted(enhanced, 1.4, blurred, -0.4, 0)
+        sharp = cv2.addWeighted(enhanced, 1.5, blurred, -0.5, 0)
         return sharp
-    except Exception:
+    except Exception as e:
+        logger.warning("Enhancement failed: %s", e)
         return image_np
 
 

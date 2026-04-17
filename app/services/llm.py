@@ -59,6 +59,7 @@ def call_llm(prompt: str, max_tokens: int = 4000) -> str:
     models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
     last_err = None
     
+    # Try Groq first
     for model in models:
         try:
             current_max = 2000 if "8b" in model else max_tokens
@@ -72,22 +73,38 @@ def call_llm(prompt: str, max_tokens: int = 4000) -> str:
             return comp.choices[0].message.content
         except Exception as exc:
             err_msg = str(exc).lower()
-            # If it's a 413 (Payload Too Large), don't retry this model, try the next
-            if "413" in err_msg or "payload too large" in err_msg:
-                logger.warning("Groq model %s payload too large (413).", model)
+            if "status_code: 413" in err_msg:
+                continue
+            if "status_code: 429" in err_msg:
+                logger.warning("Groq Rate Limit (429) hit. Trying next model/provider.")
                 last_err = exc
                 continue
-                
-            # If it's a 429 (Rate Limit), don't raise immediately! Try the fallback model.
-            if "429" in err_msg or "rate limit" in err_msg:
-                logger.warning("Groq model %s rate limited (429). Trying fallback...", model)
-                last_err = exc
-                continue
-                
-            logger.warning("Groq model %s failed: %s", model, exc)
+            logger.warning("Groq failed for %s: %s", model, exc)
             last_err = exc
-            
-    # If we reach here, ALL models failed. Ensure we bubble up the error to trigger Tenacity.
+
+    # ── Fallback: Together AI ──
+    together_key = os.environ.get("TOGETHER_API_KEY", "")
+    if together_key:
+        try:
+            import requests # type: ignore
+            logger.info("Failing over to TogetherAI (Llama-3-70b)...")
+            url = "https://api.together.xyz/v1/chat/completions"
+            headers = {"Authorization": f"Bearer {together_key}", "Content-Type": "application/json"}
+            payload = {
+                "model": "meta-llama/Llama-3-70b-chat-hf",
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": 0.1,
+                "response_format": {"type": "json_object"}
+            }
+            res = requests.post(url, json=payload, timeout=20)
+            if res.status_code == 200:
+                return res.json()["choices"][0]["message"]["content"]
+            else:
+                logger.error("TogetherAI failed: %s", res.text)
+        except Exception as e:
+            logger.error("TogetherAI request failed: %s", e)
+
     raise last_err
 
 
