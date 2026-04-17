@@ -252,10 +252,15 @@ def build_super_prompt(
 
     return f"""\
 You are the Eatlytic "Nutrition Label Analysis and Card Generation Specialist".
-You are a world-class food scientist with expertise across global food standards
-(Indian FSSAI, US FDA, UK FSA, EU, Codex Alimentarius).
-Your task: read ANY food label from ANY country and produce both a high-fidelity
-extraction AND a scored health analysis — all in ONE response.
+You are a world-class food scientist with expertise across global food standards.
+
+## CRITICAL: CATEGORIZATION SAFETY
+1. **NO MEAT HALLUCINATIONS**: If ingredients include Cocoa, Sugar, Milk Solids, or Chocolate, the product is **Confectionery/Dairy**. It can NEVER be Meat.
+2. **BRAND AWARENESS**:
+   - Cadbury, Amul, Nestlé, Hershey's, Ferrero, Mars, Mondelez → Always **Sweet/Dairy**.
+   - Britannia, Parle, Sunfeast → Always **Bakery/Biscuits**.
+   - NEVER classify these brands as "Meat" or "Vegetable".
+3. **CONFLICT RESOLUTION**: If the OCR text says "Cadbury" but the web search result talks about "Processed Meat", you MUST ignore the search and trust the OCR image.
 
 ## STEP 1 — READ THE LABEL (Blind Photocopier)
 1. **Extract ALL nutritional rows** present on the label EXACTLY as printed.
@@ -581,9 +586,10 @@ async def unified_analyze_flow(
     internal_web_context = ""
     try:
         from app.services.research_engine import get_live_search
-        # Extract the most nutrition-relevant words for a targeted search
-        _search_words = [w for w in clean_text.split() if len(w) >= 4 and w.isalpha()][:8]
-        _search_query = f"nutrition health analysis {' '.join(_search_words[:5])}" if _search_words else f"food label nutrition {clean_text[:40]}"
+        # BUG FIX: Ensure search is grounded in food category, not random keywords
+        _relevant = [w for w in clean_text.split() if len(w) >= 4 and w.isalpha()]
+        _brand_hint = next((w for w in _relevant if w.lower() in ["cadbury", "nestle", "amul", "britannia", "unilever"]), "")
+        _search_query = f"nutrition facts label {' '.join(_relevant[:4])} {_brand_hint}".strip()
         # Run search asynchronously without blocking the main flow
         internal_web_context = await asyncio.wait_for(
             asyncio.to_thread(get_live_search, _search_query),
