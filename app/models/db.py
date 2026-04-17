@@ -174,6 +174,23 @@ def init_db() -> None:
         except: pass
     logger.info("Database ready: %s", DB_FILE)
 
+def get_ai_cache(key: str):
+    if _supabase:
+        try:
+            res = _supabase.table("ai_cache").select("*").eq("cache_key", key).execute()
+            if res.data: return json.loads(res.data[0]["result_json"])
+        except Exception: pass
+    with db_conn() as c:
+        row = c.execute("SELECT result_json FROM ai_cache WHERE cache_key=?", (key,)).fetchone()
+    return json.loads(row["result_json"]) if row else None
+
+def set_ai_cache(key: str, value: dict):
+    if _supabase:
+        try: _supabase.table("ai_cache").upsert({"cache_key": key, "result_json": json.dumps(value)}).execute()
+        except: pass
+    with db_conn() as c:
+        c.execute("INSERT OR REPLACE INTO ai_cache(cache_key,result_json) VALUES(?,?)", (key, json.dumps(value)))
+
 # ── Retrieval Helpers ──────────────────────────────────────────────────
 def get_ocr_cache(key: str):
     if _supabase:
