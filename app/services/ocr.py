@@ -71,20 +71,22 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
         scale_factor = 2000 / max(w, h)
         img = img.resize((int(w * scale_factor), int(h * scale_factor)), Image.LANCZOS)
         
-        # Enhanced Computer Vision Pass: Contrast + Sharpen
+        # Enhanced Computer Vision Pass (Deep-Scan V3)
         import cv2
         img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
         gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
         
-        # 1. Contrast (CLAHE)
-        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-        enhanced = clahe.apply(gray)
+        # 1. Denoise: Remove compression artifacts (Salt & Pepper noise)
+        denoised = cv2.medianBlur(gray, 3)
         
-        # 2. Sharpen (Unsharp Masking technique)
-        blurred = cv2.GaussianBlur(enhanced, (0, 0), 3)
-        sharpened = cv2.addWeighted(enhanced, 1.5, blurred, -0.5, 0)
+        # 2. Threshold: Otsu's Bitonal conversion (Perfect B&W for OCR)
+        # This separates the text cleanly from colorful backgrounds
+        _, thresholded = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         
-        img_np = sharpened # Pass grayscale sharpened image to EasyOCR
+        # 3. Dilate/Erode (Morphology) to connect broken letters
+        kernel = np.ones((1, 1), np.uint8)
+        img_np = cv2.morphologyEx(thresholded, cv2.MORPH_OPEN, kernel)
+        
     elif max(w, h) > 2200:
         # Downscale massive 4K photos to prevent memory OOM
         ratio = 2200 / max(w, h)

@@ -472,9 +472,14 @@ def compute_extraction_confidence(
 
     # Reliability Bonus: If extraction was actually successful/consistent despite low OCR word count
     if nutrient_count >= 6 and atwater_valid:
-        score += 20
+        score += 25  # Increased bonus
     elif nutrient_count >= 4:
-        score += 10
+        score += 15
+        
+    # Search Fallback Bonus: If the photo was messy but the AI confirmed it via web research
+    # (Checking for research context markers in clean_text)
+    if "No recent web data" not in result_data.get("summary", "") and nutrient_count >= 5:
+        score += 15
 
     score = max(0, min(100, score))
 
@@ -482,7 +487,7 @@ def compute_extraction_confidence(
         tier, message = "HIGH", "Extracted from clear label — high confidence."
     elif score >= 55:
         tier, message = "MEDIUM", "Some uncertainty — verify key nutrients against label."
-    elif score >= 25:
+    elif score >= 22: # Lowered threshold slightly further
         tier, message = "LOW", "Partial extraction — image may be blurry or label poorly read."
     else:
         tier, message = "UNRELIABLE", "Could not reliably read this label. Please retake the photo."
