@@ -529,7 +529,7 @@ async def unified_analyze_flow(
         f"v7:{extracted_text}:{persona}:{language}".encode()
     ).hexdigest()
     cached = get_ai_cache(cache_key)
-    if cached:
+    if cached and "error" not in cached and cached.get("confidence_tier") != "UNRELIABLE":
         cached["scan_meta"] = {"cached": True, "scans_remaining": 0, "is_pro": False}
         return cached
 
@@ -883,8 +883,11 @@ async def unified_analyze_flow(
     except Exception as db_err:
         logger.warning("Data Flywheel persistence failed: %s", db_err)
 
-    cacheable = {k: v for k, v in final_output.items() if k != "scan_meta"}
-    set_ai_cache(cache_key, cacheable)
+    # Only cache if successful and reliable
+    if "error" not in final_output and final_output.get("confidence_tier") != "UNRELIABLE":
+        cacheable = {k: v for k, v in final_output.items() if k != "scan_meta"}
+        set_ai_cache(cache_key, cacheable)
+    
     return final_output
 
 

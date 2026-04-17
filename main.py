@@ -270,7 +270,7 @@ async def analyze_product(
         image_hash = get_image_fingerprint(working_content)
         if image_hash:
             cached_result = get_image_fingerprint_match(image_hash)
-            if cached_result:
+            if cached_result and "error" not in cached_result:
                 logger.info("pHash cache hit for %s", image_hash)
                 # Still need to handle quota logic for cached hits
                 scan_update = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=True)
@@ -323,7 +323,7 @@ async def analyze_product(
         }
         
         # Save to pHash cache for future users
-        if image_hash:
+        if image_hash and "error" not in result:
             set_image_fingerprint(image_hash, result)
 
         # ── PERSISTENCE: Save result for History & Duel
