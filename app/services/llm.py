@@ -470,13 +470,19 @@ def compute_extraction_confidence(
     if result_data.get("product_name", "").lower().strip() in bad_names:
         score -= 15
 
+    # Reliability Bonus: If extraction was actually successful/consistent despite low OCR word count
+    if nutrient_count >= 6 and atwater_valid:
+        score += 20
+    elif nutrient_count >= 4:
+        score += 10
+
     score = max(0, min(100, score))
 
     if score >= 80:
         tier, message = "HIGH", "Extracted from clear label — high confidence."
     elif score >= 55:
         tier, message = "MEDIUM", "Some uncertainty — verify key nutrients against label."
-    elif score >= 30:
+    elif score >= 25:
         tier, message = "LOW", "Partial extraction — image may be blurry or label poorly read."
     else:
         tier, message = "UNRELIABLE", "Could not reliably read this label. Please retake the photo."

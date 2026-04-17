@@ -70,12 +70,29 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
     if max(w, h) < 800:
         scale_factor = 2000 / max(w, h)
         img = img.resize((int(w * scale_factor), int(h * scale_factor)), Image.LANCZOS)
+        
+        # Enhanced Computer Vision Pass: Contrast + Sharpen
+        import cv2
+        img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+        
+        # 1. Contrast (CLAHE)
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+        
+        # 2. Sharpen (Unsharp Masking technique)
+        blurred = cv2.GaussianBlur(enhanced, (0, 0), 3)
+        sharpened = cv2.addWeighted(enhanced, 1.5, blurred, -0.5, 0)
+        
+        img_np = sharpened # Pass grayscale sharpened image to EasyOCR
     elif max(w, h) > 2200:
         # Downscale massive 4K photos to prevent memory OOM
         ratio = 2200 / max(w, h)
         img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+        img_np = np.array(img)
+    else:
+        img_np = np.array(img)
 
-    img_np = np.array(img)
     results = get_reader_for(lang_hint).readtext(img_np, detail=1)
     boxes = results
 

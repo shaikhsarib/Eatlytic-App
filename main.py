@@ -297,6 +297,8 @@ async def analyze_product(
                 if ocr_result_full.get("word_count", 0) > ocr_result.get("word_count", 0):
                     ocr_result = ocr_result_full
             extracted_text = ocr_result["text"]
+            logger.info("Scan Metrics: words=%d, conf=%.2f, source=%s", 
+                ocr_result.get("word_count", 0), ocr_result.get("avg_confidence", 0.0), blur_info["ocr_source"])
 
         result = await unified_analyze_flow(
             extracted_text=extracted_text,
