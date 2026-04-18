@@ -31,28 +31,58 @@ To handle high-resolution photos and blurry WhatsApp thumbnails, the engine uses
 ## 📂 Exact File Structure
 
 ```text
-Eatlytic-App/
-├── main.py                     # API Entry Point (FastAPI)
+Eatlytic-App-main/
+├── .github/
+│   └── workflows/
+│       └── sync_to_huggingface.yml    # CI/CD: Auto-deploy to HF Spaces
 ├── app/
 │   ├── models/
-│   │   ├── db.py               # Cache & Persistence (SQLite/Supabase)
+│   │   ├── db.py                    # SQLite & Supabase persistence
+│   │   └── __init__.py
 │   ├── routes/
-│   │   ├── food_db.py          # Scan History & Analytics
-│   │   ├── auth.py             # User Management & Key Rotation
-│   │   └── payments.py         # Monetization & Pro Quotas
+│   │   ├── auth.py                  # User Auth & Token Management
+│   │   ├── benchmarks.py            # Performance stats & monitoring
+│   │   ├── food_db.py               # Analytics & Scan History
+│   │   ├── payments.py              # Billing & Quota management
+│   │   └── __init__.py
 │   └── services/
-│       ├── ocr.py              # Dual-Pass OCR Logic
-│       ├── llm.py              # AI Extractor & Brand Guardrails
-│       ├── fake_detector.py    # Atwater Math Physics Engine
-│       ├── duel_service.py     # Product Comparison Logic (Persona-weighted)
-│       ├── alternatives.py      # Healthy Swap Matrix (Indian Context)
-│       ├── explanation_engine.py # ICMR RDA & Cultural Benchmarking
-│       ├── label_detector.py   # Computer Vision Pre-processing
-│       └── research_engine.py  # DuckDuckGo Targeted Research
-├── maintenance/
-│   ├── flush_cache.py          # Admin Tool: Clear failed scans
-│   ├── scrub_meat.py           # Safety Tool: Purge categorization errors
-│   └── inspect_db.py           # Debug Tool: View live cache entries
+│       ├── ocr.py                   # Dual-Pass OCR Engine
+│       ├── llm.py                   # AI Brain & Categorization
+│       ├── fake_detector.py         # Atwater Physics Validator
+│       ├── duel_service.py          # Product Comparison Logic
+│       ├── alternatives.py           # Healthy Swap Matrix
+│       ├── explanation_engine.py      # ICMR RDA Benchmarking
+│       ├── label_detector.py        # CV ROI & Enhancement
+│       ├── hash_service.py          # Perceptual Hashing
+│       ├── formatter.py             # Post-processing & WhatsApp Tiers
+│       ├── image.py                 # Image processing utilities
+│       ├── auth.py                  # Backend auth logic
+│       ├── payments.py              # Payment integration logic
+│       ├── research_engine.py       # Live Web Research (DDG)
+│       └── __init__.py
+├── data/
+│   ├── eatlytic.db                  # Primary SQLite Database
+│   ├── ai_cache.json                # AI Response Cache (local)
+│   ├── ocr_cache.json               # OCR Text Cache (local)
+│   └── scan_limits.json             # Quota persistence (local)
+├── maintenance/ (Tests & Scripts)
+│   ├── flush_cache.py               # Utility: Clear failed scans
+│   ├── scrub_meat.py                # Utility: Fix categorization
+│   ├── inspect_db.py                # Utility: View database
+│   ├── conftest.py                  # Test configuration
+│   ├── test_critical.py             # Stability tests
+│   ├── test_phash.py                # Deduplication tests
+│   └── test_poison_pill.py          # Input resilience tests
+├── deployment/
+│   ├── Dockerfile                   # Production Docker Image
+│   ├── docker-compose.yml           # Local orchestration
+│   └── deploy.sh                    # Manual deployment script
+├── .env                             # Environment variables
+├── index.html                       # Web Frontend Entry Point
+├── main.py                          # FastAPI Application Core
+├── README.md                        # Platform Documentation
+├── requirements.txt                 # System Dependencies
+└── Eatlytic-12Week-Roadmap.md      # Long-term strategy
 ```
 
 ---
