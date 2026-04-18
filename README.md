@@ -80,4 +80,4 @@ Eatlytic-App/
 
 ---
 
-Developed with ❤️ by the Eatlytic Team.
+Developed with ❤️ by the Vartistic Studio Team.
