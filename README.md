@@ -1,100 +1,83 @@
-# Eatlytic — Ultra-Reliable Food Label Intelligence
+# Eatlytic — The Ultimate Food Label Intelligence Platform
 
-Eatlytic is a high-performance, AI-powered nutritional analysis platform designed to transform food label photos into verifiable health intelligence. It uses a custom **Dual-Pass OCR Engine**, **Atwater Physics Validation**, and **LLM-driven Research** to provide accurate analysis even from low-resolution or damaged packaging.
-
----
-
-## 🚀 Core Technology Stack
-- **Backend**: FastAPI (Python 3.11)
-- **OCR Engine**: EasyOCR + OpenCV (Adaptive Dual-Pass)
-- **AI Brain**: Groq (Llama-3-70B)
-- **Search Engine**: DuckDuckGo Research (Live Fallback)
-- **Phyics Engine**: Custom Atwater Math Validator
-- **Deployment**: Hugging Face Spaces (Docker)
+Eatlytic is a high-performance, AI-native nutritional analysis engine designed to transform blurry packaging photos into verifiable health intelligence. It is specifically optimized for the Indian market, featuring **Dual-Pass OCR**, **Atwater Physics Validation**, and **Cultural Benchmarking**.
 
 ---
 
-## 🎨 System Architecture & Flow
+## 🚀 The Eatlytic Intelligence Pipeline
 
-### **1. The Analysis Pipeline**
-1. **Entry Point** (`main.py`): Receives image buffer and device metadata.
-2. **Duplicate Detection** (`hash_service.py`): Uses **Perceptual Hashing (pHash)** to check if the image has been analyzed before. Discards 0-nutrient "poisoned" caches automatically.
-3. **Visual Hardening** (`label_detector.py`): Crops the Region of Interest (ROI), enhances contrast, and performs initial AI-based label detection.
-4. **Dual-Pass OCR** (`ocr.py`):
-    - **Pass 1 (Natural)**: Upscaling + CLAHE + Sharpening (Best for clear color labels).
-    - **Pass 2 (Adaptive)**: Adaptive Gaussian Thresholding (Fallback for blurry or low-contrast text).
-5. **Universal Label Filter** (`ocr.py`): Custom "Trash Compactor" that strips out Indian legal text (FSSAI, MRP, License Nos) and focuses purely on the nutrition table.
-6. **AI Analysis** (`llm.py`):
-    - **V4 Categorization Guardrails**: Brand-aware logic (e.g., Cadbury is always Sweet/Dairy, never Meat).
-    - **Live Research Fallback** (`research_engine.py`): Queries the web for verified nutrition facts if the OCR is compromised.
-7. **Atwater Physics Check** (`fake_detector.py`): A physics-based verification layer that checks if `Protein + Carb + Fat` math matches the `Total Calories` stated on the label.
-8. **Final Rendering**: Returns a structured JSON displayed as a premium Health Card.
+The system processes images through a sophisticated multi-stage pipeline:
+
+### **1. Visual Hardening & Detection**
+- **Deduplication**: Uses Perceptual Hashing (pHash) in `hash_service.py` to identify returning images and serve cached results instantly, skipping expensive OCR and AI calls.
+- **ROI Targeting**: `label_detector.py` automatically crops the the nutrition table (Region of Interest) and performs contrast-limiting adaptive histogram equalization (CLAHE) to make text stand out.
+
+### **2. Dual-Pass OCR Engine (`ocr.py`)**
+To handle high-resolution photos and blurry WhatsApp thumbnails, the engine uses two scanning modes:
+- **Pass 1 (Natural Enhancement)**: Preserves gradients and antialiasing, perfect for high-quality camera photos.
+- **Pass 2 (Adaptive Bitonal)**: Converts the image to a Gaussian adaptive black-and-white mask. This "cuts through" background noise on low-resolution or dark-light packaging (e.g., light text on dark purple wrappers).
+
+### **3. The Analysis Brain (`llm.py`)**
+- **Categorization Guardrails (V4)**: Hardcoded logical gates ensure that common brands (Cadbury, Amul, Nestlé) are never misidentified. 
+- **Live Search Fallback**: If the OCR is messy, `research_engine.py` performs a targeted web search for the specific brand's verified nutrition table.
+
+### **4. Verification & Insights**
+- **Atwater Physics Validator (`fake_detector.py`)**: Checks the physics of the label. If `(Protein * 4) + (Fat * 9) + (Carb * 4)` does not match the stated Calories, the system flags the label as unreliable.
+- **ICMR 2020 RDA (`explanation_engine.py`)**: Benchmarks all data against Indian Adult RDA standards.
+- **Cultural Equivalents**: Converts abstract calories into relatable Indian foods (e.g., "This biscuit is equivalent to 1.5 Samosas in calories").
 
 ---
 
-## 📂 Project Structure
+## 📂 Exact File Structure
 
 ```text
 Eatlytic-App/
-├── main.py                     # FastAPI Application Root & Routes
-├── flush_cache.py              # Maintenance: Purge failure/poisoned caches
-├── inspect_db.py              # Maintenance: Inspect local database content
-├── scrub_meat.py               # Maintenance: Specific classification purge
-├── index.html                  # Frontend: Web interface entry point
-├── requirements.txt           # Dependencies
-├── Eatlytic-12Week-Roadmap.md # Long-term project strategy
+├── main.py                     # API Entry Point (FastAPI)
 ├── app/
 │   ├── models/
-│   │   ├── db.py               # Database connections (SQLite/Supabase)
-│   │   └── __init__.py
+│   │   ├── db.py               # Cache & Persistence (SQLite/Supabase)
 │   ├── routes/
-│   │   ├── auth.py             # User authentication routes
-│   │   ├── benchmarks.py       # Performance testing endpoints
-│   │   ├── food_db.py          # Analytics and scanning history
-│   │   ├── payments.py         # Subscription & Billing routes
-│   │   └── __init__.py
+│   │   ├── food_db.py          # Scan History & Analytics
+│   │   ├── auth.py             # User Management & Key Rotation
+│   │   └── payments.py         # Monetization & Pro Quotas
 │   └── services/
-│       ├── ocr.py              # Dual-Pass OCR Engine (Natural vs Adaptive)
-│       ├── llm.py              # AI Brain & Categorization Guardrails
-│       ├── fake_detector.py    # Atwater Physics Math Validator
-│       ├── label_detector.py   # Visual Image ROI & Contrast Enhancement
-│       ├── hash_service.py     # Perceptual Hashing (pHash) Deduplication
-│       ├── research_engine.py  # DuckDuckGo Targeted Web Research
-│       ├── explanation_engine.py # Health Card narrative generator
-│       ├── formatter.py        # Post-processing nutrient formatting
-│       ├── duel_service.py     # Competitive product comparison logic
-│       ├── alternatives.py      # Healthier product recommendation engine
-│       ├── image.py            # Image compression & handling
-│       ├── auth.py             # Authentication backend logic
-│       ├── payments.py         # Stripe/Razorpay integration service
-│       └── __init__.py
-├── tests/ (Scripts)
-│   ├── test_critical.py        # Core stability tests
-│   ├── test_phash.py           # Duplicate detection tests
-│   └── test_poison_pill.py    # Resilience tests for bad inputs
+│       ├── ocr.py              # Dual-Pass OCR Logic
+│       ├── llm.py              # AI Extractor & Brand Guardrails
+│       ├── fake_detector.py    # Atwater Math Physics Engine
+│       ├── duel_service.py     # Product Comparison Logic (Persona-weighted)
+│       ├── alternatives.py      # Healthy Swap Matrix (Indian Context)
+│       ├── explanation_engine.py # ICMR RDA & Cultural Benchmarking
+│       ├── label_detector.py   # Computer Vision Pre-processing
+│       └── research_engine.py  # DuckDuckGo Targeted Research
+├── maintenance/
+│   ├── flush_cache.py          # Admin Tool: Clear failed scans
+│   ├── scrub_meat.py           # Safety Tool: Purge categorization errors
+│   └── inspect_db.py           # Debug Tool: View live cache entries
 ```
 
 ---
 
-## 🛠️ Local Setup & Maintenance
+## ⚡ Key Specialty Features
 
-### **Running Locally**
-1. Install requirements: `pip install -r requirements.txt`
-2. Set `GROQ_API_KEY` in `.env`
-3. Run the server: `uvicorn main:app --reload --port 8000`
+### **The Duel Engine**
+Located in `duel_service.py`, this module allows head-to-head product comparisons. Unlike generic score comparison, it uses a **Persona-Weighted Matrix**:
+- **Muscle Mode**: Favors protein density.
+- **Diabetic Mode**: Penalizes sugar and refined carbs (Maida) with a -5.0 multiplier.
+- **Weight Loss Mode**: Strongly penalizes calorie-to-satiety ratios.
 
-### **Maintenance Utilities**
-- **Fresh Start**: To wipe all local cache/history: `Remove-Item data/eatlytic.db`
-- **Partial Purge**: To remove specific classification errors: `python scrub_meat.py`
-- **Cache Clean**: To remove "failed" or "unreliable" entries: `python flush_cache.py`
+### **Product Alternatives**
+The `alternatives.py` module uses an **Ingredient-Pivot** matrix specifically for the Indian diet, recommending local healthy swaps like roasted Makhana (fox nuts) for chips, or Poha/Sevai for instant noodles.
 
----
-
-## 🔒 Security & Reliability
-- **Safety Valve**: The system automatically detects and bypasses "poisoned" cache entries (results with 0 macro-nutrients).
-- **Tier-Based Confidence**: Results are tagged as **HIGH**, **MEDIUM**, **LOW**, or **UNRELIABLE** based on OCR word count and physics verification.
-- **Brand Guardrails**: Hardcoded logic prevents hallucinations for common global brands (Cadbury, Amul, Nestle, Britannia, etc.).
+### **INS Additive Scanner**
+`explanation_engine.py` contains a built-in database of INS/E numbers (e.g., 621, 150d) that scans the ingredients list to warn users about flavor enhancers, synthetic colors, and preservatives.
 
 ---
 
-Developed with ❤️ by the Vartistic Studio Team.
+## 🛠️ Performance & Scalability
+- **Quota Logic**: Built-in scan tracking in `main.py` prevents API abuse.
+- **Cache Safety Valve**: Automatically discards any cached results with 0 macronutrients to ensure users never see "dead" data.
+- **Docker-Ready**: Optimized `Dockerfile` for deployment on Hugging Face Spaces with specialized memory management for EasyOCR.
+
+---
+
+*Built with ❤️ for a Healthier India.*
