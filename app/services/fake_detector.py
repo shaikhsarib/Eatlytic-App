@@ -18,7 +18,7 @@ class FakeDetector:
     ALREADY INCLUDED in their parent totals. Do NOT double-count them!
     """
     
-    def __init__(self, tolerance_percent=35.0):
+    def __init__(self, tolerance_percent=15.0): # was 35.0
         # Tolerance for high-variance products (noodles, snacks)
         self.tolerance = tolerance_percent
         
@@ -194,7 +194,7 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
     fat     = float(nutrients.get("fat",    0) or nutrients.get("total_fat", 0) or 0)
     sat_fat = float(nutrients.get("saturated_fat", 0) or 0)
 
-    if carbs > 0 and (sugar + fiber) > (carbs * 1.05 + 0.5):   # 5% slack + 0.5g rounding
+    if carbs > 0 and (sugar + fiber) > (carbs * 1.1 + 1.0):   # 10% slack + 1.0g rounding
         return {
             "is_valid": False,
             "reason": (
@@ -244,6 +244,9 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
     # AND 0 macros — this is VALID data, not a fake label. Never block such products.
     # Note: These are NOT in sus_categories.
     if label_calories == 0 and macro_sum_check == 0:
+        # WHITELIST: Allow zero-calorie beverages (water, coffee, tea, diet soda)
+        if any(x in category_val for x in ["water", "beverage", "soda", "coffee", "tea"]):
+            return {"is_valid": True, "reason": "Valid zero-calorie beverage."}
         return {"is_valid": True, "reason": "Valid zero-calorie, zero-macro product (e.g. salt, water, pure spice)."}
 
     if label_calories == 0:

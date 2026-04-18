@@ -272,12 +272,16 @@ async def analyze_product(
             cached_result = get_image_fingerprint_match(image_hash)
             if cached_result and "error" not in cached_result:
                 # SAFETY VALVE: If the cached result has 0 nutrients/calories, it's likely a poisoned/failed cache.
-                # Force a fresh re-scan to trigger our new, improved logic.
+                # EXCEPTION: Allow zero-calorie beverages (water, soda, coffee, tea).
                 has_data = (float(cached_result.get("calories", 0)) > 0 or 
                             float(cached_result.get("protein", 0)) > 0 or
-                            float(cached_result.get("fat", 0)) > 0)
+                            float(cached_result.get("fat", 0)) > 0 or
+                            float(cached_result.get("carbs", 0)) > 0)
                 
-                if has_data:
+                is_beverage = any(x in cached_result.get("product_name", "").lower() for x in ["water", "soda", "coffee", "tea"]) or \
+                             any(x in cached_result.get("product_category", "").lower() for x in ["beverage", "water", "soda"])
+
+                if has_data or is_beverage:
                     logger.info("Reliable pHash cache hit for %s", image_hash)
                     scan_update = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=True)
                     cached_result["scan_meta"] = {

@@ -23,10 +23,10 @@ def run_duel(product_a: dict, product_b: dict, persona: str = "general") -> dict
     
     # Weighting matrix based on persona
     weights = {
-        "muscle": {"protein": 3.0, "calories": 1.0, "sugar": -1.0},
-        "weight_loss": {"calories": -3.0, "sugar": -2.0, "fiber": 1.0},
-        "diabetic": {"sugar": -5.0, "carbs": -1.0, "fiber": 2.0},
-        "general": {"score": 3.0, "sugar": -2.0, "protein": 1.0}
+        "muscle": {"protein": 2.0, "calories": 0.5, "sugar": -1.0},
+        "weight_loss": {"calories": -2.0, "sugar": -1.5, "fiber": 1.0},
+        "diabetic": {"sugar": -3.0, "carbs": -1.0, "fiber": 1.5}, # was -5.0
+        "general": {"score": 2.0, "sugar": -1.5, "protein": 1.0}
     }
     
     current_weights = weights.get(persona, weights["general"])

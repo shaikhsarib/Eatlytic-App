@@ -68,7 +68,7 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
     # NEW: AI Super-Resolution Fallback for small thumbnails
     # If the image is < 800px, upscale it significantly to help OCR detect tiny characters
     if max(w, h) < 800:
-        scale_factor = 2000 / max(w, h)
+        scale_factor = min(3.0, 1200 / max(w, h)) # cap at 3x, not 10x
         img = img.resize((int(w * scale_factor), int(h * scale_factor)), Image.LANCZOS)
         
         # Enhanced Computer Vision Pass (Dual-Pass Strategy V4)
@@ -279,20 +279,20 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
 
     clean_text = "\n".join(clean_lines)
 
-    # FINAL GATE (v5): Valid if EITHER:
-    #   A) At least 1 number-like line found in cleaned text, OR
-    #   B) Any high-strength nutrition keyword/header found ANYWHERE in original text
-    # This ensures any label with recognizable nutrition keywords is always passed to AI.
+    # FINAL GATE (v5): Valid if extraction has BOTH:
+    #   A) High-strength nutrition header/keywords found, AND
+    #   B) At least 2 numerical values extracted.
+    # This prevents stylized mockups with zero numbers from passing as valid labels.
     high_strength_header = bool(re.search(
         r"(nutrition\s*facts|amount\s*per\s*serving|information\s*per|serving\s*size|"
         r"calories\s+from|daily\s+value|percent\s+daily|per\s+100\s*g|per\s+100\s*ml|"
         r"total\s+fat|total\s+carb|dietary\s+fiber|dietary\s+fibre|"
         r"saturated\s+fat|trans\s+fat|reference\s+intake|typical\s+values|"
         r"nutritional\s+information|nutritional\s+value|nutrient\s+content|"
-        r"per\s+portion|per\s+serving|kj\s+\d|kcal\s+\d|\d+\s*kcal|\d+\s*kj)",
+        r"per\s+portion|per\s+serving|kj\s+\d|kcal\s+\d|\d+\s*kcal|\d+\s*kj|energy\s*\d|protein\s*\d)",
         raw_ocr_text.lower()
     ))
-    is_valid = number_count >= 1 or high_strength_header
+    is_valid = (number_count >= 2) and high_strength_header
 
     return {"is_valid": is_valid, "clean_text": clean_text}
 

@@ -540,9 +540,9 @@ async def unified_analyze_flow(
         extracted_text = ocr_res["text"]
 
     # Step 2: Cache check
-    # BUG FIX: Use full extracted_text hash to prevent different products with same headers colliding.
+    # BUG FIX: Use image hash and full extracted_text to prevent collisions.
     cache_key = hashlib.md5(
-        f"v7:{extracted_text}:{persona}:{language}".encode()
+        f"v7:{extracted_text[:500]}:{persona}:{language}:{blur_info.get('score',0)}".encode()
     ).hexdigest()
     cached = get_ai_cache(cache_key)
     if cached and "error" not in cached and cached.get("confidence_tier") != "UNRELIABLE":

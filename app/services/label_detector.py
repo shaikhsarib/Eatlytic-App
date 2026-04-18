@@ -49,12 +49,19 @@ def get_nutrition_table_roi(image_np: np.ndarray) -> np.ndarray:
     Returns the best candidate crop, or full image on failure.
     """
     try:
+        # UPSCALE FIRST — critical for WhatsApp thumbnails and small crops
         h, w = image_np.shape[:2]
+        if max(h, w) < 1000:
+            scale = 1200 / max(h, w)
+            image_np = cv2.resize(image_np, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+            h, w = image_np.shape[:2]
+
         gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
 
         # ── Pass 1: look for white/light rectangular blocks (nutrition tables
         #   are almost always printed on a white or light background panel) ──
-        _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+        # Lowered threshold to 180 (was 200) to catch off-white packaging
+        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 5))
         closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=3)
         cnts, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -63,12 +70,12 @@ def get_nutrition_table_roi(image_np: np.ndarray) -> np.ndarray:
         for c in cnts:
             x, y, cw, ch = cv2.boundingRect(c)
             area = cw * ch
-            if area < (h * w * 0.005):       # ≥0.5% of image (was 2%)
+            if area < (h * w * 0.003):       # ≥0.3% of image (was 0.5%)
                 continue
             if area > (h * w * 0.99):        # reject strictly full-image blobs
                 continue
             ar = cw / float(ch)
-            if not (0.1 < ar < 10.0):        # wider ratio range for tall/narrow tables
+            if not (0.2 < ar < 8.0):        # tighter ratio range
                 continue
             candidates.append((x, y, cw, ch))
 
@@ -81,9 +88,9 @@ def get_nutrition_table_roi(image_np: np.ndarray) -> np.ndarray:
             for c in cnts2:
                 x, y, cw, ch = cv2.boundingRect(c)
                 area = cw * ch
-                if area < (h * w * 0.005) or area > (h * w * 0.99):
+                if area < (h * w * 0.003) or area > (h * w * 0.99):
                     continue
-                if not (0.1 < cw / float(ch) < 10.0):
+                if not (0.2 < cw / float(ch) < 8.0):
                     continue
                 candidates.append((x, y, cw, ch))
 
@@ -103,10 +110,12 @@ def get_nutrition_table_roi(image_np: np.ndarray) -> np.ndarray:
                 best_roi = crop
 
         # Only use crop if score is meaningful — low scores mean no clear table found
-        if best_score < 0.03:
+        # Lowered confidence threshold to 0.015 (was 0.03)
+        if best_score < 0.015:
             logger.info("No confident ROI found (score=%.3f), using full image", best_score)
             return image_np
-        # Sanity check: the crop should be at least 20% of the full image area
+        
+        # Sanity check: the crop should be at least 5% of the full image area
         # to avoid returning a tiny irrelevant region
         if best_roi.shape[0] * best_roi.shape[1] < h * w * 0.05:
             logger.info("ROI too small (%.1f%%), using full image", 

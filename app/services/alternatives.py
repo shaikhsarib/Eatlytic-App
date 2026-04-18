@@ -59,7 +59,7 @@ def get_healthy_alternative(product_category: str, persona: str = "general") -> 
     category_data = alternatives_map.get(p_cat)
     
     if not category_data:
-        return "Eat more whole foods, fruits, and vegetables, and avoid ultra-processed packaged items."
+        return "🥗 Healthier Swap: Choose whole foods with <5 ingredients, no added sugar, and <400mg sodium per 100g."
 
     # 2. Check for Persona-Specific Override (Crucial for Diabetics!)
     if "diabetic" in p_pers and "diabetic_alt" in category_data:
