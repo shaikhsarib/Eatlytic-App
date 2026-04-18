@@ -271,16 +271,24 @@ async def analyze_product(
         if image_hash:
             cached_result = get_image_fingerprint_match(image_hash)
             if cached_result and "error" not in cached_result:
-                logger.info("pHash cache hit for %s", image_hash)
-                # Still need to handle quota logic for cached hits
-                scan_update = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=True)
-                cached_result["scan_meta"] = {
-                    "scans_remaining": scan_update["scans_remaining"],
-                    "is_pro": scan_update["is_pro"],
-                    "scans_used": scan_update["scans_used"],
-                    "cached": True,
-                }
-                return cached_result
+                # SAFETY VALVE: If the cached result has 0 nutrients/calories, it's likely a poisoned/failed cache.
+                # Force a fresh re-scan to trigger our new, improved logic.
+                has_data = (float(cached_result.get("calories", 0)) > 0 or 
+                            float(cached_result.get("protein", 0)) > 0 or
+                            float(cached_result.get("fat", 0)) > 0)
+                
+                if has_data:
+                    logger.info("Reliable pHash cache hit for %s", image_hash)
+                    scan_update = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=True)
+                    cached_result["scan_meta"] = {
+                        "scans_remaining": scan_update["scans_remaining"],
+                        "is_pro": scan_update["is_pro"],
+                        "scans_used": scan_update["scans_used"],
+                        "cached": True,
+                    }
+                    return cached_result
+                else:
+                    logger.warning("Discarding suspect (0-nutrient) cache entry for %s. Forcing fresh scan.", image_hash)
 
         # FIX: Run ROI crop + contrast enhance BEFORE OCR.
         # This is the key step that makes complex labels (Maggi back, Tata Salt,
