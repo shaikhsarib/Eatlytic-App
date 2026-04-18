@@ -36,25 +36,42 @@ Eatlytic is a high-performance, AI-powered nutritional analysis platform designe
 
 ```text
 Eatlytic-App/
-├── main.py                 # FastAPI Application Root & Routes
+├── main.py                     # FastAPI Application Root & Routes
+├── flush_cache.py              # Maintenance: Purge failure/poisoned caches
+├── inspect_db.py              # Maintenance: Inspect local database content
+├── scrub_meat.py               # Maintenance: Specific classification purge
+├── index.html                  # Frontend: Web interface entry point
+├── requirements.txt           # Dependencies
+├── Eatlytic-12Week-Roadmap.md # Long-term project strategy
 ├── app/
 │   ├── models/
-│   │   └── db.py           # SQLite & Supabase persistence layer
+│   │   ├── db.py               # Database connections (SQLite/Supabase)
+│   │   └── __init__.py
 │   ├── routes/
-│   │   └── food_db.py      # History and analytics endpoints
+│   │   ├── auth.py             # User authentication routes
+│   │   ├── benchmarks.py       # Performance testing endpoints
+│   │   ├── food_db.py          # Analytics and scanning history
+│   │   ├── payments.py         # Subscription & Billing routes
+│   │   └── __init__.py
 │   └── services/
-│       ├── ocr.py          # Dual-Pass OCR & Thresholding logic
-│       ├── llm.py          # AI Analysis & Categorization Guardrails
-│       ├── fake_detector.py # Atwater Physics Engine
-│       ├── label_detector.py # Image ROI and contrast enhancement
-│       ├── research_engine.py # DuckDuckGo LIVE Search integration
-│       └── hash_service.py # Image Fingerprinting (pHash)
-├── data/
-│   └── eatlytic.db         # Local SQLite database
-├── flush_cache.py          # Admin utility to clear failed scan history
-├── scrub_meat.py           # Safety utility to purge misclassified cache entries
-├── requirements.txt        # System dependencies
-└── Dockerfile              # Hugging Face deployment configuration
+│       ├── ocr.py              # Dual-Pass OCR Engine (Natural vs Adaptive)
+│       ├── llm.py              # AI Brain & Categorization Guardrails
+│       ├── fake_detector.py    # Atwater Physics Math Validator
+│       ├── label_detector.py   # Visual Image ROI & Contrast Enhancement
+│       ├── hash_service.py     # Perceptual Hashing (pHash) Deduplication
+│       ├── research_engine.py  # DuckDuckGo Targeted Web Research
+│       ├── explanation_engine.py # Health Card narrative generator
+│       ├── formatter.py        # Post-processing nutrient formatting
+│       ├── duel_service.py     # Competitive product comparison logic
+│       ├── alternatives.py      # Healthier product recommendation engine
+│       ├── image.py            # Image compression & handling
+│       ├── auth.py             # Authentication backend logic
+│       ├── payments.py         # Stripe/Razorpay integration service
+│       └── __init__.py
+├── tests/ (Scripts)
+│   ├── test_critical.py        # Core stability tests
+│   ├── test_phash.py           # Duplicate detection tests
+│   └── test_poison_pill.py    # Resilience tests for bad inputs
 ```
 
 ---
