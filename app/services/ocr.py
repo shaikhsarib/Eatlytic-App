@@ -71,31 +71,46 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
         scale_factor = 2000 / max(w, h)
         img = img.resize((int(w * scale_factor), int(h * scale_factor)), Image.LANCZOS)
         
-        # Enhanced Computer Vision Pass (Deep-Scan V3)
+        # Enhanced Computer Vision Pass (Dual-Pass Strategy V4)
         import cv2
         img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
         gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
         
-        # 1. Denoise: Remove compression artifacts (Salt & Pepper noise)
-        denoised = cv2.medianBlur(gray, 3)
+        # --- PASS 1: Natural Enhancement (Best for color labels) ---
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+        res1 = get_reader_for(lang_hint).readtext(enhanced, detail=1)
         
-        # 2. Threshold: Otsu's Bitonal conversion (Perfect B&W for OCR)
-        # This separates the text cleanly from colorful backgrounds
-        _, thresholded = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        
-        # 3. Dilate/Erode (Morphology) to connect broken letters
-        kernel = np.ones((1, 1), np.uint8)
-        img_np = cv2.morphologyEx(thresholded, cv2.MORPH_OPEN, kernel)
-        
+        # --- PASS 2: Adaptive Bitonal (Fallback for dark/noisy labels) ---
+        # Only run if Pass 1 is weak
+        if len(res1) < 15:
+            thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+            res2 = get_reader_for(lang_hint).readtext(thresh, detail=1)
+            
+            # Pick the winner
+            if len(res2) > len(res1):
+                img_np = thresh
+                results = res2
+                logger.info("OCR using Pass 2 (Adaptive)")
+            else:
+                img_np = enhanced
+                results = res1
+                logger.info("OCR using Pass 1 (Natural)")
+        else:
+            img_np = enhanced
+            results = res1
+            logger.info("OCR using Pass 1 (Natural - High Confidence)")
+            
     elif max(w, h) > 2200:
         # Downscale massive 4K photos to prevent memory OOM
         ratio = 2200 / max(w, h)
         img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
         img_np = np.array(img)
+        results = get_reader_for(lang_hint).readtext(img_np, detail=1)
     else:
         img_np = np.array(img)
+        results = get_reader_for(lang_hint).readtext(img_np, detail=1)
 
-    results = get_reader_for(lang_hint).readtext(img_np, detail=1)
     boxes = results
 
     # Reconstruct logical lines by grouping boxes by their vertical (Y) position.

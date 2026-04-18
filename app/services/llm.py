@@ -492,7 +492,7 @@ def compute_extraction_confidence(
         tier, message = "HIGH", "Extracted from clear label — high confidence."
     elif score >= 55:
         tier, message = "MEDIUM", "Some uncertainty — verify key nutrients against label."
-    elif score >= 22: # Lowered threshold slightly further
+    elif score >= 18: # Relaxed further for ultra-low-res success cases
         tier, message = "LOW", "Partial extraction — image may be blurry or label poorly read."
     else:
         tier, message = "UNRELIABLE", "Could not reliably read this label. Please retake the photo."
