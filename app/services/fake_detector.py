@@ -155,25 +155,14 @@ class FakeDetector:
             return {'status': 'ERROR', 'message': f"Validation error: {str(e)}"}
 
 # Per-category Atwater tolerance overrides
-# Nutrition labels are allowed a ±20% error under most global food laws.
-# We apply a generous tolerance to avoid false blocks on valid products.
+# Global standard is ±20% for nutrition labels.
 CATEGORY_TOLERANCES: dict[str, float] = {
-    "noodle": 25.0,  "noodles": 25.0, "instant noodles": 25.0,
-    "snack":  25.0,  "chips":   25.0, "biscuit": 25.0, "cracker": 25.0,
     "spice":  30.0,  "condiment": 30.0, "sauce": 30.0,
-    "salt":   99.0,  # Salt has no macros/calories — Atwater not applicable
-    "oil":    25.0,  # Pure fat product — slight variance allowed
-    "cheese": 25.0,  # Cheese has high moisture variance
-    "nuts":   25.0,  # Nuts have high fat/protein variance
-    "dairy":  25.0,  # Dairy products have wide variance
-    "meat":   25.0,  # Meat has moisture-related variance
-    "seafood": 25.0, # Seafood can vary significantly
-    "supplement": 25.0,  # Supplements have varied compositions
-    "bread":  25.0,  "cereal": 25.0,  "chocolate": 25.0,
-    "candy":  25.0,  "beverage": 25.0,
-    "other":  25.0,  # Strict baseline for DNA safety
+    "snack":  25.0,  "noodle": 25.0, "biscuit": 25.0,
+    "salt":   99.0,  # Salt has no calories
+    "other":  20.0,
 }
-DEFAULT_TOLERANCE = 25.0   # Enforce strictness for DNA engine safety
+DEFAULT_TOLERANCE = 20.0   # Universal Floor (20% for any food/country)
 
 
 def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:

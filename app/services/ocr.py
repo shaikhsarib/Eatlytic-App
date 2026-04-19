@@ -30,15 +30,41 @@ _LANG_READERS: dict = {}
 _READERS_LOCK = threading.Lock()
 INDIAN_LANG_SET = ["en", "hi", "ta"]
 _EASYOCR_LANG_MAP = {
-    "en": ["en"],
-    "hi": INDIAN_LANG_SET,
-    "ta": INDIAN_LANG_SET,
-    "te": ["en", "te"],
-    "bn": ["en", "bn"],
-    "mr": ["en", "mr"],
-    "zh": ["en", "ch_sim"],
+    "auto": ["en"], # will be detected
+    "en": ["en"], "hi": ["en","hi"], "ta": ["en","ta"],
+    "zh": ["ch_sim","en"], "ja": ["ja","en"], "ko": ["ko","en"],
+    "ar": ["ar","en"], "th": ["th","en"], "ru": ["ru","en"],
+    "de": ["de","en"], "fr": ["fr","en"], "es": ["es","en"],
+    "pt": ["pt","en"], "it": ["it","en"], "bn": ["bn","en"],
+    "te": ["te","en"], "mr": ["mr","en"], "gu": ["gu", "en"], "pa": ["pa", "en"]
 }
 
+
+def detect_language_from_image(content: bytes) -> str:
+    """Quick script detection from image center region."""
+    try:
+        from PIL import Image
+        img = Image.open(BytesIO(content)).convert("RGB")
+        w, h = img.size
+        # Sample center region to detect primary script
+        crop = img.crop((w//4, h//4, 3*w//4, 3*h//4))
+        
+        # Use existing 'en' reader for a quick script check
+        reader = get_reader_for("en")
+        results = reader.readtext(np.array(crop), detail=0)[:8]
+        text = " ".join(results)
+
+        # Script identification via unicode ranges
+        if re.search(r'[\u4e00-\u9fff]', text): return "zh" # CJK
+        if re.search(r'[\u3040-\u30ff]', text): return "ja" # Hiragana/Katakana
+        if re.search(r'[\uac00-\ud7af]', text): return "ko" # Hangul
+        if re.search(r'[\u0600-\u06ff]', text): return "ar" # Arabic
+        if re.search(r'[\u0900-\u097f]', text): return "hi" # Devanagari
+        if re.search(r'[\u0b80-\u0bff]', text): return "ta" # Tamil
+        return "en"
+    except Exception as e:
+        logger.debug("Script detection fallback to 'en': %s", e)
+        return "en"
 
 def get_reader_for(lang_hint: str):
     langs = _EASYOCR_LANG_MAP.get(lang_hint, ["en"])
@@ -55,8 +81,11 @@ def get_reader_for(lang_hint: str):
     return _LANG_READERS[key]
 
 
-def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
-    """Extract text from image bytes. Returns text, word_count, avg_confidence."""
+def run_ocr(content: bytes, lang_hint: str = "auto") -> dict:
+    """Universal OCR with auto language detection and dual-pass enhancement."""
+    if lang_hint == "auto":
+        lang_hint = detect_language_from_image(content)
+
     cache_key = f"{hashlib.md5(content).hexdigest()}_{lang_hint}"
     cached = get_ocr_cache(cache_key)
     if cached:
@@ -65,51 +94,57 @@ def run_ocr(content: bytes, lang_hint: str = "en") -> dict:
     img = Image.open(BytesIO(content)).convert("RGB")
     w, h = img.size
     
-    # NEW: AI Super-Resolution Fallback for small thumbnails
-    # If the image is < 800px, upscale it significantly to help OCR detect tiny characters
-    if max(w, h) < 800:
-        scale_factor = min(3.0, 1200 / max(w, h)) # cap at 3x, not 10x
+    # Universal upscale (capped at 3x to prevent memory OOM)
+    if max(w, h) < 1000:
+        scale_factor = min(3.0, 1200 / max(w, h))
         img = img.resize((int(w * scale_factor), int(h * scale_factor)), Image.LANCZOS)
-        
-        # Enhanced Computer Vision Pass (Dual-Pass Strategy V4)
-        import cv2
-        img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-        
-        # --- PASS 1: Natural Enhancement (Best for color labels) ---
-        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-        enhanced = clahe.apply(gray)
-        res1 = get_reader_for(lang_hint).readtext(enhanced, detail=1)
-        
-        # --- PASS 2: Adaptive Bitonal (Fallback for dark/noisy labels) ---
-        # Only run if Pass 1 is weak
-        if len(res1) < 15:
-            thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-            res2 = get_reader_for(lang_hint).readtext(thresh, detail=1)
-            
-            # Pick the winner
-            if len(res2) > len(res1):
-                img_np = thresh
-                results = res2
-                logger.info("OCR using Pass 2 (Adaptive)")
-            else:
-                img_np = enhanced
-                results = res1
-                logger.info("OCR using Pass 1 (Natural)")
-        else:
-            img_np = enhanced
-            results = res1
-            logger.info("OCR using Pass 1 (Natural - High Confidence)")
-            
     elif max(w, h) > 2200:
-        # Downscale massive 4K photos to prevent memory OOM
         ratio = 2200 / max(w, h)
         img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
-        img_np = np.array(img)
-        results = get_reader_for(lang_hint).readtext(img_np, detail=1)
-    else:
-        img_np = np.array(img)
-        results = get_reader_for(lang_hint).readtext(img_np, detail=1)
+
+    img_np = np.array(img)
+    reader = get_reader_for(lang_hint)
+    
+    # Pass 1: Standard Enhancement (CLAHE)
+    import cv2
+    img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    
+    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+    results = reader.readtext(enhanced, detail=1)
+    
+    # ── Multi-Pass Retry Strategy for Low Confidence (v5) ──
+    def _get_avg_conf(res):
+        if not res: return 0.0
+        return sum(r[2] for r in res) / len(res)
+
+    initial_conf = _get_avg_conf(results)
+    
+    if initial_conf < 0.4 or len(results) < 8:
+        logger.info("Low OCR confidence (%.2f) — starting multi-pass retry...", initial_conf)
+        
+        passes = [
+            ("denoise", cv2.fastNlMeansDenoising(enhanced, None, 10, 7, 21)),
+            ("sharpen", cv2.filter2D(enhanced, -1, np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]]))),
+            ("binary", cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2))
+        ]
+        
+        best_results = results
+        best_conf = initial_conf
+        
+        for name, processed in passes:
+            try:
+                temp_results = reader.readtext(processed, detail=1)
+                temp_conf = _get_avg_conf(temp_results)
+                if temp_conf > best_conf and len(temp_results) >= len(best_results):
+                    best_conf = temp_conf
+                    best_results = temp_results
+                    logger.info("Pass '%s' improved confidence to %.2f", name, best_conf)
+            except Exception as e:
+                logger.warning("OCR Pass %s failed: %s", name, e)
+        
+        results = best_results
 
     boxes = results
 
@@ -210,8 +245,9 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
         r"place\s*away|direct\s*heat|sunlight|green\s*dot|red\s*dot|fpo|license\s*no)"
     )
 
+    # Universal metric pattern (covers any language: digits followed by unit)
     unit_pattern = (
-        r"\b\d+(\.\d+)?\s*(g|mg|kcal|kj|kjoules|kilojoule|kilojoules|gm|gms|ml|iu|%)(\b|/)"
+        r"\b\d+([\.,]\d+)?\s*(g|mg|kcal|kj|cal|gm|gms|ml|iu|mcg|µg|%|千卡|克|毫克|エネルギー|蛋白质|脂肪)(\b|/)"
     )
 
     header_line_count = 0

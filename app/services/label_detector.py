@@ -45,89 +45,69 @@ def _score_region(gray_crop: np.ndarray) -> float:
 
 def get_nutrition_table_roi(image_np: np.ndarray) -> np.ndarray:
     """
-    Find the nutrition facts table in a real-world product photo.
-    Returns the best candidate crop, or full image on failure.
+    Find the most text-dense region (Maximally Stable Extremal Regions) — 
+    works for any label worldwide regardless of color/layout.
     """
     try:
-        # UPSCALE FIRST — critical for WhatsApp thumbnails and small crops
         h, w = image_np.shape[:2]
-        if max(h, w) < 1000:
+
+        # Always upscale to minimum 1200px for OCR accuracy
+        if max(h, w) < 1200:
             scale = 1200 / max(h, w)
-            image_np = cv2.resize(image_np, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+            image_np = cv2.resize(image_np, None, fx=scale, fy=scale, 
+                                interpolation=cv2.INTER_LANCZOS4)
             h, w = image_np.shape[:2]
 
         gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
 
-        # ── Pass 1: look for white/light rectangular blocks (nutrition tables
-        #   are almost always printed on a white or light background panel) ──
-        # Lowered threshold to 180 (was 200) to catch off-white packaging
-        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 5))
-        closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=3)
-        cnts, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # ── Step 1: MSER detection (find candidate text characters) ──
+        # delta=5 is sensitivity, min_area avoids noise, max_area avoids large blobs
+        mser = cv2.MSER_create(_delta=5, _min_area=60, _max_area=14400)
+        regions, _ = mser.detectRegions(gray)
 
-        candidates = []
-        for c in cnts:
-            x, y, cw, ch = cv2.boundingRect(c)
-            area = cw * ch
-            if area < (h * w * 0.003):       # ≥0.3% of image (was 0.5%)
-                continue
-            if area > (h * w * 0.99):        # reject strictly full-image blobs
-                continue
-            ar = cw / float(ch)
-            if not (0.2 < ar < 8.0):        # tighter ratio range
-                continue
-            candidates.append((x, y, cw, ch))
+        if not regions:
+            logger.info("Universal ROI: No text regions detected, using full image.")
+            return image_np
 
-        # ── Pass 2: if Pass 1 found nothing, try dark-background labels ──
-        if not candidates:
-            _, thresh2 = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-            kernel2 = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 5))
-            closed2 = cv2.morphologyEx(thresh2, cv2.MORPH_CLOSE, kernel2, iterations=2)
-            cnts2, _ = cv2.findContours(closed2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for c in cnts2:
-                x, y, cw, ch = cv2.boundingRect(c)
-                area = cw * ch
-                if area < (h * w * 0.003) or area > (h * w * 0.99):
-                    continue
-                if not (0.2 < cw / float(ch) < 8.0):
-                    continue
-                candidates.append((x, y, cw, ch))
+        # ── Step 2: Build text density heatmap ──
+        heatmap = np.zeros(gray.shape, dtype=np.uint8)
+        for region in regions:
+            # Convex hull of the region helps fill the heatmap accurately
+            hull = cv2.convexHull(region.reshape(-1, 1, 2))
+            cv2.fillConvexPoly(heatmap, hull, 255)
 
-        # ── Score each candidate and pick best ────────────────────────────
-        best_score = -1.0
-        best_roi = image_np
-        for (x, y, cw, ch) in candidates:
-            # Add a small margin
-            pad = 8
+        # ── Step 3: Gaussian Blur to merge nearby text clusters into blocks ──
+        heatmap = cv2.GaussianBlur(heatmap, (51, 51), 0)
+
+        # ── Step 4: Find the densest cluster (the nutrition facts table) ──
+        _, thresh = cv2.threshold(heatmap, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        if contours:
+            # The nutrition table is usually the largest dense text block on the packet
+            largest = max(contours, key=cv2.contourArea)
+            x, y, cw, ch = cv2.boundingRect(largest)
+
+            # Add 20% margin to prevent cutting off labels at the edges
+            pad = int(max(cw, ch) * 0.15)
             x1 = max(0, x - pad);  y1 = max(0, y - pad)
             x2 = min(w, x + cw + pad);  y2 = min(h, y + ch + pad)
-            crop = image_np[y1:y2, x1:x2]
-            gray_crop = gray[y1:y2, x1:x2]
-            score = _score_region(gray_crop)
-            if score > best_score:
-                best_score = score
-                best_roi = crop
 
-        # Only use crop if score is meaningful — low scores mean no clear table found
-        # Lowered confidence threshold to 0.015 (was 0.03)
-        if best_score < 0.015:
-            logger.info("No confident ROI found (score=%.3f), using full image", best_score)
-            return image_np
-        
-        # Sanity check: the crop should be at least 5% of the full image area
-        # to avoid returning a tiny irrelevant region
-        if best_roi.shape[0] * best_roi.shape[1] < h * w * 0.05:
-            logger.info("ROI too small (%.1f%%), using full image", 
-                       best_roi.shape[0]*best_roi.shape[1]/(h*w)*100)
-            return image_np
+            roi = image_np[y1:y2, x1:x2]
+            
+            # Sanity check: Ensure ROI is at least 15% of the original image area
+            if roi.shape[0] * roi.shape[1] > h * w * 0.15:
+                logger.info("Universal ROI found: %dx%d (%.1f%% of image)", 
+                           cw, ch, (roi.shape[0]*roi.shape[1])/(h*w)*100)
+                return roi
 
-        logger.info("ROI found (score=%.3f)", best_score)
-        return best_roi
+        logger.info("Universal ROI: No valid cluster found, using full image.")
+        return image_np
 
     except Exception as e:
-        logger.warning("ROI detection failed: %s — using full image", e)
+        logger.error("Universal ROI detection failed: %s — using full image", e)
         return image_np
+
 
 
 def deskew_image(image_np: np.ndarray) -> np.ndarray:

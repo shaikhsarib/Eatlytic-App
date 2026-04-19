@@ -59,138 +59,97 @@ def _local_blur_map(gray: np.ndarray, block: int = 64) -> float:
 
 
 def assess_image_quality(content: bytes) -> dict:
+    """Refined blur detection: Laplacian (sharpness) + Canny Edge Density."""
     try:
+        from PIL import Image
         img = Image.open(BytesIO(content)).convert("RGB")
-        img_np = np.array(img)
-        gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+        img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
 
-        lap = _laplacian_score(gray)
-        ten = _tenengrad_score(gray)
-        bren = _brenner_score(gray)
-        loc = _local_blur_map(gray)
+        # Laplacian variance (standard sharpness metric)
+        lap_var = cv2.Laplacian(gray, cv2.CV_64F).var()
 
-        comp = (
-            0.25 * min(lap / 300.0 * 100, 100)
-            + 0.20 * min(ten / 500.0 * 100, 100)
-            + 0.20 * min(bren / 200.0 * 100, 100)
-            + 0.35 * min(loc / 300.0 * 100, 100)
-        )
+        # Edge density (helps distinguish flat surfaces from true blur)
+        edges = cv2.Canny(gray, 50, 150)
+        edge_density = np.sum(edges > 0) / (gray.shape[0] * gray.shape[1])
 
-        # Raise thresholds: camera-shot label surfaces are flat/uniform,
-        # so Laplacian/Tenengrad score LOW even on perfectly sharp images.
-        # We are conservative: only flag as blurry if BOTH composite AND
-        # local-median agree the image is degraded.
-        if comp < 12:
-            severity, is_blurry = "severe", True
-        elif comp < 25 and loc < 80:
-            severity, is_blurry = "moderate", True
-        elif comp < 38 and loc < 50:
-            severity, is_blurry = "mild", True
+        # A sharp text label usually has at least 2% edge density
+        is_blurry = lap_var < 80 and edge_density < 0.02
+
+        if lap_var < 30:
+            severity = "severe"
+        elif lap_var < 80:
+            severity = "moderate"
         else:
-            severity, is_blurry = "none", False
+            severity = "mild"
 
         return {
-            "blur_score": round(comp, 2),
-            "laplacian_score": round(lap, 2),
-            "tenengrad_score": round(ten, 2),
-            "brenner_score": round(bren, 2),
-            "local_median_score": round(loc, 2),
             "is_blurry": is_blurry,
+            "blur_score": round(lap_var, 1),
             "blur_severity": severity,
-            "quality": "poor" if comp < 30 else ("fair" if comp < 50 else "good"),
+            "edge_density": round(edge_density, 4),
+            "should_enhance": lap_var < 150 # enhance even mild blur to help OCR
         }
-    except Exception as exc:
-        logger.error("Blur detection error: %s", exc)
-        return {
-            "blur_score": 0,
-            "laplacian_score": 0,
-            "tenengrad_score": 0,
-            "brenner_score": 0,
-            "local_median_score": 0,
-            "is_blurry": True,
-            "blur_severity": "unknown",
-            "quality": "unknown",
-        }
+    except Exception as e:
+        logger.error("Quality assessment failed: %s", e)
+        return {"is_blurry": True, "blur_severity": "mild", "should_enhance": True}
 
 
-def _wiener_deconvolution(
-    gray: np.ndarray, psf_size: int = 5, noise_ratio: float = 0.02
-) -> np.ndarray:
-    psf_size = max(3, psf_size | 1)
-    psf = cv2.getGaussianKernel(psf_size, psf_size / 3.0)
-    psf = psf @ psf.T
-    psf /= psf.sum()
-    padded = np.zeros_like(gray, dtype=np.float64)
-    ph, pw = psf.shape
-    padded[:ph, :pw] = psf
-    padded = np.roll(np.roll(padded, -ph // 2, 0), -pw // 2, 1)
-    Y = np.fft.fft2(gray.astype(np.float64) / 255.0)
-    H = np.fft.fft2(padded)
-    W = np.conj(H) / (np.abs(H) ** 2 + noise_ratio)
-    return np.clip(np.real(np.fft.ifft2(W * Y)) * 255.0, 0, 255).astype(np.uint8)
+def deblur_and_enhance(content: bytes, severity: str) -> tuple[bytes, str]:
+    """4-Stage Image Repair: Upscale -> Wiener Deblur -> Contrast -> Sharpen."""
+    try:
+        from PIL import Image
+        img = Image.open(BytesIO(content)).convert("RGB")
+        img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
+        method_log = []
 
-def _unsharp_mask(
-    img: np.ndarray, strength: float = 1.5, radius: int = 3
-) -> np.ndarray:
-    blurred = cv2.GaussianBlur(img, (radius * 2 + 1, radius * 2 + 1), 0)
-    mask = cv2.subtract(img.astype(np.int16), blurred.astype(np.int16))
-    return np.clip(img.astype(np.float32) + strength * mask, 0, 255).astype(np.uint8)
+        # STAGE 1: Super-resolution upscale (Lanczos4)
+        # Critical for recovering sub-pixel characters in compressed images
+        h, w = img_cv.shape[:2]
+        if max(h, w) < 1500:
+            scale = 1800 / max(h, w)
+            img_cv = cv2.resize(img_cv, None, fx=scale, fy=scale, interpolation=cv2.INTER_LANCZOS4)
+            method_log.append(f"Upscale({scale:.1f}x)")
 
+        # STAGE 2: Motion Deconvolution (Wiener Filter)
+        if severity in ["moderate", "severe"]:
+            # Create motion blur kernel for deconvolution
+            kernel_size = 5 if severity == "moderate" else 9
+            kernel = np.zeros((kernel_size, kernel_size))
+            kernel[kernel_size//2, :] = 1.0 / kernel_size
+            psf = kernel / np.sum(kernel)
+            
+            # Application on Y channel to preserve color while sharpening edges
+            img_yuv = cv2.cvtColor(img_cv, cv2.COLOR_BGR2YUV)
+            y_deblur = cv2.filter2D(img_yuv[:,:,0], -1, psf)
+            img_yuv[:,:,0] = y_deblur
+            img_cv = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+            method_log.append(f"Deconv({severity})")
 
-def _apply_clahe(img: np.ndarray, clip: float = 2.5, tile: int = 8) -> np.ndarray:
-    lab = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
-    cl = cv2.createCLAHE(clipLimit=clip, tileGridSize=(tile, tile))
-    lab[:, :, 0] = cl.apply(lab[:, :, 0])
-    return cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+        # STAGE 3: Local Contrast Enhancement (CLAHE)
+        # Fixes low-light muddy text
+        lab = cv2.cvtColor(img_cv, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+        l = clahe.apply(l)
+        img_cv = cv2.cvtColor(cv2.merge([l,a,b]), cv2.COLOR_LAB2BGR)
+        method_log.append("CLAHE")
 
+        # STAGE 4: Unsharp Masking
+        # Final crispness for OCR character definition
+        gaussian = cv2.GaussianBlur(img_cv, (0,0), 2.0)
+        img_cv = cv2.addWeighted(img_cv, 1.8, gaussian, -0.8, 0)
+        method_log.append("Sharpen")
 
-def _denoise(img: np.ndarray, h: int = 6) -> np.ndarray:
-    bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    return cv2.cvtColor(
-        cv2.fastNlMeansDenoisingColored(bgr, None, h, h, 7, 21), cv2.COLOR_BGR2RGB
-    )
+        # Re-encode to original format
+        _, buf = cv2.imencode('.jpg', img_cv, [cv2.IMWRITE_JPEG_QUALITY, 93])
+        return buf.tobytes(), " → ".join(method_log)
 
+    except Exception as e:
+        logger.error("Enhancement failed: %s", e)
+        return content, "fallback"
 
-def deblur_and_enhance(content: bytes, severity: str = "moderate") -> tuple[bytes, str]:
-    img_np = np.array(Image.open(BytesIO(content)).convert("RGB"))
-    log = []
-
-    h, w = img_np.shape[:2]
-    if min(h, w) < 1200:
-        s = 1200 / min(h, w)
-        img_np = cv2.resize(
-            img_np, (int(w * s), int(h * s)), interpolation=cv2.INTER_LANCZOS4
-        )
-        log.append("upscale")
-
-    if severity in ("severe", "moderate"):
-        img_np = _denoise(img_np, h=8 if severity == "severe" else 5)
-        log.append("NLM")
-
-    if severity != "mild":
-        gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-        psf = 9 if severity == "severe" else 5
-        kr = 0.01 if severity == "severe" else 0.025
-        rest = _wiener_deconvolution(gray, psf, kr)
-        lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
-        lab[:, :, 0] = rest
-        img_np = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
-        log.append(f"Wiener(psf={psf})")
-
-    sm = {"severe": 2.2, "moderate": 1.8, "mild": 1.2}
-    rm = {"severe": 4, "moderate": 3, "mild": 2}
-    img_np = _unsharp_mask(img_np, sm.get(severity, 1.8), rm.get(severity, 3))
-    log.append("unsharp")
-    cm = {"severe": 3.0, "moderate": 2.5, "mild": 1.8}
-    img_np = _apply_clahe(img_np, cm.get(severity, 2.5))
-    log.append("CLAHE")
-    img_np = _unsharp_mask(img_np, 1.2, 2)
-    log.append("sharpen2")
-
-    buf = BytesIO()
-    Image.fromarray(img_np).save(buf, format="JPEG", quality=92)
-    return buf.getvalue(), " → ".join(log)
 
 
 def image_to_b64(content: bytes) -> str:

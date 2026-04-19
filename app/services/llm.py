@@ -41,7 +41,9 @@ MEDICAL_DISCLAIMER = (
 LANGUAGE_MAP = {
     "en": "English", "zh": "Simplified Chinese", "es": "Spanish",
     "ar": "Arabic",  "fr": "French",             "hi": "Hindi (हिन्दी)",
-    "pt": "Portuguese", "de": "German",
+    "pt": "Portuguese", "de": "German", "ja": "Japanese", "ko": "Korean",
+    "it": "Italian", "ru": "Russian", "th": "Thai", "bn": "Bengali",
+    "ta": "Tamil", "te": "Telugu", "mr": "Marathi", "gu": "Gujarati", "pa": "Punjabi"
 }
 
 
@@ -245,46 +247,23 @@ def build_super_prompt(
                 "and has been AI-enhanced. OCR may have minor errors — use context clues."
             )
         else:
-            blur_context = (
-                f"NOTE: Image has some blur ({blur_info.get('severity','mild')}). "
-                "OCR results may be slightly ambiguous — use context to infer values."
-            )
+             return f"""\
+You are a universal "Nutrition Label Specialist". Your goal is to extract every nutrient row from ANY food label worldwide (any language, any layout) and provide a professional, deep nutritional analysis.
 
-    return f"""\
-You are the Eatlytic "Nutrition Label Analysis and Card Generation Specialist".
-You are a world-class food scientist with expertise across global food standards.
+## GLOBAL EXTRACTION RULES
+1. **UNIVERSAL LANGUAGE SUPPORT**: Character sets vary (English, Arabic, Kanji, Devanagari). Extract the exact text from the label for nutrient names.
+2. **COLUMN HIERARCHY**: 
+   - Prefer "Per 100g" or "Per 100ml" column. 
+   - If only "Per Serve" or "Per Package" exists, extract those but note the serving size.
+   - If multiple columns exist, extract ONLY ONE COLUMN (the 100g one). NEVER add them.
+3. **METRIC EXTRACTION**: Look for any number followed by a unit (g, mg, kcal, kJ, cal, %, µg, etc.). 
+   - Extract EVERY row that contains a nutrient value. Do not skip vitamins, minerals, or trace elements.
+4. **OCR CORRECTIONS**: Correct obvious errors based on food context (e.g., "1" misread as "l", "0" as "O").
 
-## CRITICAL: CATEGORIZATION SAFETY
-1. **NO MEAT HALLUCINATIONS**: If ingredients include Cocoa, Sugar, Milk Solids, or Chocolate, the product is **Confectionery/Dairy**. It can NEVER be Meat.
-2. **BRAND AWARENESS**:
-   - Cadbury, Amul, Nestlé, Hershey's, Ferrero, Mars, Mondelez → Always **Sweet/Dairy**.
-   - Britannia, Parle, Sunfeast → Always **Bakery/Biscuits**.
-   - NEVER classify these brands as "Meat" or "Vegetable".
-3. **CONFLICT RESOLUTION**: If the OCR text says "Cadbury" but the web search result talks about "Processed Meat", you MUST ignore the search and trust the OCR image.
-
-## STEP 1 — READ THE LABEL (Blind Photocopier)
-1. **Extract ALL nutritional rows** present on the label EXACTLY as printed.
-   - **RULE 0 (COLUMN ISOLATION)**: If the label has multiple columns (e.g. "Per 100g" and "Per Serve"), **NEVER SUM THEM**. Extract ONLY the "Per 100g" / "Per 100ml" column. 
-   - Prefer "Per 100g" / "Per 100ml" column. If ONLY "Per Serve" exists, use that and note it.
-   - **Multi-column labels** (Indian format): If the table has columns like
-     "Per 100g | Per Serve | %GDA" — extract ONLY the "Per 100g" column values.
-     The OCR text may mix columns using tabs or spaces — the FIRST number after
-     the nutrient name is usually Per 100g. Example:
-       "Energy (kcal)\t389\t272\t14%" → extract 389
-       "Protein (g)\t8.2\t5.7\t11%" → extract 8.2
-   - Include EVERY row without exception: Energy (kcal/kJ), Protein, Total Carbohydrate,
-     of which Sugars, of which Added Sugars, Dietary Fibre/Fiber, Total Fat,
-     of which Saturated Fat, of which Trans Fat, of which Mono-unsaturated Fat,
-     of which Poly-unsaturated Fat, Cholesterol, Sodium/Salt, Potassium, Calcium,
-     Iron, Magnesium, Iodine, Selenium, Vitamins (A/B1/B2/B6/B12/C/D/E/K),
-     Moisture, Ash — EVERYTHING visible in the nutrition table.
-   - Do NOT skip any row. Do NOT hallucinate rows not present on the label.
-   - If 7 rows are on the label → 7 nutrient cards. If 14 → 14. NEVER force a template.
-   - OCR errors: numbers like "l3.5" (letter l) = 13.5, "O.1" (letter O) = 0.1.
-     Use nutritional context to identify and correct obvious OCR character errors.
-2. **Product name**: Read from label text. If not explicit, infer from ingredients
-   or product type. NEVER output "Unknown Product" or leave blank.
-3. **Ingredients**: Transcribe the complete ingredients list if printed on the label.
+## CATEGORIZATION & BRAND BRAIN
+- If ingredients include Cocoa, Sugar, or Milk Solids → **Confectionery/Dairy**.
+- Use brand context: Cadbury (Chocolate), Nestlé (Dairy/Cereal), Britannia (Biscuits), Kellogg's (Cereal), Coca-Cola (Soft Drink).
+- {blur_context}
 
 ## STEP 2 — ANALYZE (use global health standards)
 Respond text fields ENTIRELY in {lang_name}.
@@ -292,22 +271,20 @@ PERSONA: {persona}
 NOVA LEVEL: {nova_level} (1=whole food, 4=ultra-processed)
 RISK FLAGS: {flags_text}
 {safe_research or ""}
-{blur_context}
 
-SCORING RUBRIC (score 1-10, REQUIRED, NEVER default to 5):
-  9-10 → Whole/minimally processed. Sugar <2g/100g, Sodium <200mg/100g.
-  7-8  → Moderately processed. Sugar <5g, Sodium <400mg.
-  5-6  → Processed. Sugar 5-15g OR Sodium 400-700mg.
-  3-4  → High sugar (>15g) OR high sodium (>700mg) OR poor nutritional profile.
-  1-2  → Ultra-processed (NOVA 4) OR very high sugar/sodium/saturated fat.
-  HARD CAPS: NOVA 4 → max score 4. Sodium >1000mg/100g → max score 5.
+SCORING RUBRIC (score 1-10, REQUIRED):
+  9-10 → Minimal processing. Low Sugar (<2g), Low Sodium (<200mg).
+  7-8  → Balanced processing. Low-Mod Sugar/Sodium.
+  5-6  → Processed. Watch Sugar (5-15g) or Sodium (400-700mg).
+  3-4  → High Sugar (>15g) OR High Sodium (>700mg) OR NOVA 4.
+  1-2  → Very high Sugar/Sodium/Sat Fat OR high addictive chemical additives.
 
 [LABEL TEXT]:
 {safe_label_text}
 
-Return ONLY this single JSON object (no markdown, no extra text):
+Return ONLY this JSON object:
 {{
-  "product_name": "string — REQUIRED, infer from context, NEVER 'Unknown Product'",
+  "product_name": "string (infer from label/context, NEVER 'Unknown')",
   "product_category": "Snack|Dairy|Beverage|Cereal|Noodle|Biscuit|Supplement|Spice|Oil|Sauce|Salt|Cheese|Nuts|Bread|Chocolate|Candy|Meat|Seafood|Fruit|Vegetable|Other",
   "serving_size": "string or null",
   "calories": <number or null>,
@@ -323,20 +300,12 @@ Return ONLY this single JSON object (no markdown, no extra text):
   "potassium_mg": <number or null>,
   "calcium_mg": <number or null>,
   "iron_mg": <number or null>,
-  "ingredients_raw": "full ingredients text or empty string",
   "nutrients": [
-    {{"name": "ENERGY", "value": 384.0, "unit": "kcal", "rating": "caution", "impact": "High energy density."}},
-    {{"name": "PROTEIN", "value": 8.2, "unit": "g", "rating": "moderate", "impact": "Decent protein."}},
-    {{"name": "TOTAL CARBOHYDRATE", "value": 59.6, "unit": "g", "rating": "moderate", "impact": "Moderate carbs."}},
-    {{"name": "  of which SUGARS", "value": 1.8, "unit": "g", "rating": "good", "impact": "Low sugar."}},
-    {{"name": "  of which DIETARY FIBRE", "value": 2.0, "unit": "g", "rating": "moderate", "impact": "Some fiber."}},
-    {{"name": "TOTAL FAT", "value": 12.5, "unit": "g", "rating": "moderate", "impact": "Moderate fat."}},
-    {{"name": "  of which SATURATES", "value": 8.2, "unit": "g", "rating": "caution", "impact": "High sat fat."}},
-    {{"name": "  of which TRANS FAT", "value": 0.13, "unit": "g", "rating": "caution", "impact": "Trace trans fat."}},
-    {{"name": "SODIUM", "value": 1000.0, "unit": "mg", "rating": "bad", "impact": "Dangerously high sodium."}}
+    {{"name": "EXACT TEXT FROM LABEL", "value": 12.5, "unit": "g", "rating": "good|moderate|caution|bad", "impact": "one sentence"}}
   ],
-  "better_alternative": "string — suggest a healthier alternative product or category",
-  "score": <integer 1-10, REQUIRED — use scoring rubric above>,
+  "ingredients_raw": "exact full ingredients text",
+  "better_alternative": "suggest a 100% healthier universal brand/category",
+  "score": <integer 1-10>,
   "verdict": "<Two-word verdict in {lang_name}>",
   "summary": "<2-sentence professional summary in {lang_name}>",
   "eli5_explanation": "<Child-friendly 1-sentence with emoji in {lang_name}>",
@@ -352,15 +321,14 @@ Return ONLY this single JSON object (no markdown, no extra text):
   "molecular_insight": "<1 sentence on biochemical impact in {lang_name}>",
   "chart_data": [<Safe%>, <Moderate%>, <Risky%>],
   "ingredients_spotlight": [
+  ],
+  "ingredients_spotlight": [
     {{"name": "<ingredient>", "type": "natural|additive|preservative|emulsifier|vitamin|seasoning", "safety_rating": "safe|moderate|concern", "what_it_is": "<one sentence>", "health_impact": "<one sentence>", "curiosity_fact": "<interesting fact>"}}
   ]
 }}
 - nutrients array: include EVERY row visible in the label text — no skipping.
   Add "rating" (good|moderate|caution|bad) and "impact" on EACH nutrient entry.
-  Nutrient names MUST be in CAPITALS (e.g. "ENERGY", "TOTAL FAT", "OF WHICH SUGARS").
-- product_name: REQUIRED. Infer if not explicit. NEVER output "Unknown Product".
-- better_alternative: REQUIRED. Suggest a 100% healthier alternative (e.g. "Try 100% Whole Wheat Oats" instead of "Maida Noodles").
-- score MUST reflect actual nutritional values using the rubric above. NEVER default to 5.
+- better_alternative: REQUIRED. Suggest a 100% healthier alternative.
 - chart_data: [Safe%, Moderate%, Risky%] must sum to exactly 100.
 - ingredients_spotlight: TOP 8 notable ingredients. NEVER return empty if ingredients exist.
 - verdict, summary, eli5_explanation: MUST be in {lang_name}.

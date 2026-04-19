@@ -1,30 +1,33 @@
-# Eatlytic — The Ultimate Food Label Intelligence Platform
+# Eatlytic — Universal Nutrition Intelligence Platform
 
-Eatlytic is a high-performance, AI-native nutritional analysis engine designed to transform blurry packaging photos into verifiable health intelligence. It is specifically optimized for the Indian market, featuring **Dual-Pass OCR**, **Atwater Physics Validation**, and **Cultural Benchmarking**.
+Eatlytic is a high-performance, AI-native nutritional analysis engine designed to transform blurry packaging photos into verifiable health intelligence. It is a **Universal engine** capable of processing food labels from any country, language, or format using advanced computer vision and script-aware OCR.
 
 ---
 
 ## 🚀 The Eatlytic Intelligence Pipeline
 
-The system processes images through a sophisticated multi-stage pipeline:
+The system processes images through a sophisticated, multi-pass pipeline:
 
 ### **1. Visual Hardening & Detection**
 - **Deduplication**: Uses Perceptual Hashing (pHash) in `hash_service.py` to identify returning images and serve cached results instantly, skipping expensive OCR and AI calls.
-- **ROI Targeting**: `label_detector.py` automatically crops the the nutrition table (Region of Interest) and performs contrast-limiting adaptive histogram equalization (CLAHE) to make text stand out.
+- **MSER ROI Targeting**: `label_detector.py` uses Maximally Stable Extremal Regions to detect text density heatmaps. This allows the system to find nutrition tables on any material (shiny, dark, or transparent) without relying on hardcoded color panels.
 
-### **2. Dual-Pass OCR Engine (`ocr.py`)**
-To handle high-resolution photos and blurry WhatsApp thumbnails, the engine uses two scanning modes:
-- **Pass 1 (Natural Enhancement)**: Preserves gradients and antialiasing, perfect for high-quality camera photos.
-- **Pass 2 (Adaptive Bitonal)**: Converts the image to a Gaussian adaptive black-and-white mask. This "cuts through" background noise on low-resolution or dark-light packaging (e.g., light text on dark purple wrappers).
+### **2. "Never Reject" Blur Repair (`image.py`)**
+ Eatlytic is designed to read "real-world" photos, including blurry WhatsApp thumbnails:
+- **Repair Pipeline**: Triggers a 4-stage repair sequence for blurry images: **Lanczos4 Upscale (1800px)** → **Motion Deconvolution** → **Local Contrast (CLAHE)** → **Unsharp Masking**.
+- **Result**: Drastically improves success rates for compressed or low-light photos that standard OCR would reject.
 
-### **3. The Analysis Brain (`llm.py`)**
-- **Categorization Guardrails (V4)**: Hardcoded logical gates ensure that common brands (Cadbury, Amul, Nestlé) are never misidentified. 
-- **Live Search Fallback**: If the OCR is messy, `research_engine.py` performs a targeted web search for the specific brand's verified nutrition table.
+### **3. Global script-aware OCR (`ocr.py`)**
+- **Auto-Language Detection**: Identifies the script (Arabic, CJK, Hindi, European) from the image center before running full OCR.
+- **Multilingual Support**: Expanded to support **18+ languages** including Thai, Korean, Japanese, Russian, and Arabic.
+- **Multi-Pass Retry**: If confidence is low, the system automatically retries with dedicated Denoise, Sharpen, and Binary processing passes.
 
-### **4. Verification & Insights**
-- **Atwater Physics Validator (`fake_detector.py`)**: Checks the physics of the label. If `(Protein * 4) + (Fat * 9) + (Carb * 4)` does not match the stated Calories, the system flags the label as unreliable.
-- **ICMR 2020 RDA (`explanation_engine.py`)**: Benchmarks all data against Indian Adult RDA standards.
-- **Cultural Equivalents**: Converts abstract calories into relatable Indian foods (e.g., "This biscuit is equivalent to 1.5 Samosas in calories").
+### **4. Universal Analysis Brain (`llm.py`)**
+- **Global Extraction**: A universalized "Super-Prompt" instructs the AI to act as a global nutrition specialist, extracting 15+ rich data fields (Molecular Insight, ELI5, Age Warnings) regardless of regional naming conventions.
+- **Research Fallback**: If OCR is messy, `research_engine.py` performs a targeted web search for verified manufacturer data.
+
+### **5. Physics & Validation**
+- **Universal Atwater Gate (`fake_detector.py`)**: Checks the physics of the label. If `(Protein * 4) + (Fat * 9) + (Carb * 4)` does not match the stated Calories (within a 20% universal tolerance), the system flags the data as unreliable.
 
 ---
 
@@ -32,57 +35,36 @@ To handle high-resolution photos and blurry WhatsApp thumbnails, the engine uses
 
 ```text
 Eatlytic-App-main/
-├── .github/
-│   └── workflows/
-│       └── sync_to_huggingface.yml    # CI/CD: Auto-deploy to HF Spaces
 ├── app/
 │   ├── models/
-│   │   ├── db.py                    # SQLite & Supabase persistence
-│   │   └── __init__.py
-│   ├── routes/
-│   │   ├── auth.py                  # User Auth & Token Management
-│   │   ├── benchmarks.py            # Performance stats & monitoring
-│   │   ├── food_db.py               # Analytics & Scan History
-│   │   ├── payments.py              # Billing & Quota management
-│   │   └── __init__.py
+│   │   └── db.py                    # SQLite & Persistence core
 │   └── services/
-│       ├── ocr.py                   # Dual-Pass OCR Engine
-│       ├── llm.py                   # AI Brain & Categorization
-│       ├── fake_detector.py         # Atwater Physics Validator
-│       ├── duel_service.py          # Product Comparison Logic
-│       ├── alternatives.py           # Healthy Swap Matrix
-│       ├── explanation_engine.py      # ICMR RDA Benchmarking
-│       ├── label_detector.py        # CV ROI & Enhancement
-│       ├── hash_service.py          # Perceptual Hashing
-│       ├── formatter.py             # Post-processing & WhatsApp Tiers
-│       ├── image.py                 # Image processing utilities
-│       ├── auth.py                  # Backend auth logic
-│       ├── payments.py              # Payment integration logic
+│       ├── ocr.py                   # Multi-Pass Global OCR Engine
+│       ├── llm.py                   # Universal AI Brain
+│       ├── fake_detector.py         # Universal Atwater Physics Validator
+│       ├── label_detector.py        # MSER Vision & ROI Targeting
+│       ├── image.py                 # "Never Reject" Blur Repair Pipeline
+│       ├── duel_service.py          # Persona-Weighted Comparison
+│       ├── alternatives.py           # Global Healthy Swap Matrix
+│       ├── hash_service.py          # Perceptual Hashing (pHash)
 │       ├── research_engine.py       # Live Web Research (DDG)
-│       └── __init__.py
-├── data/
-│   ├── eatlytic.db                  # Primary SQLite Database
-│   ├── ai_cache.json                # AI Response Cache (local)
-│   ├── ocr_cache.json               # OCR Text Cache (local)
-│   └── scan_limits.json             # Quota persistence (local)
-├── maintenance/ (Tests & Scripts)
-│   ├── flush_cache.py               # Utility: Clear failed scans
-│   ├── scrub_meat.py                # Utility: Fix categorization
-│   ├── inspect_db.py                # Utility: View database
-│   ├── conftest.py                  # Test configuration
-│   ├── test_critical.py             # Stability tests
-│   ├── test_phash.py                # Deduplication tests
-│   └── test_poison_pill.py          # Input resilience tests
-├── deployment/
-│   ├── Dockerfile                   # Production Docker Image
-│   ├── docker-compose.yml           # Local orchestration
-│   └── deploy.sh                    # Manual deployment script
-├── .env                             # Environment variables
-├── index.html                       # Web Frontend Entry Point
-├── main.py                          # FastAPI Application Core
-├── README.md                        # Platform Documentation
+│       ├── formatter.py             # Post-processing & WhatsApp Tiers
+│       ├── explanation_engine.py      # ICMR/Global RDA Benchmarking
+│       ├── auth.py                  # API Authentication
+│       └── payments.py              # Quota & Payment logic
+├── main.py                          # FastAPI Production Endpoint
+├── index.html                       # Web Front-end
+├── test_critical.py                 # Core Stability Testing
+├── test_phash.py                   # Deduplication Testing
+├── test_poison_pill.py             # Security & Resilience Testing
+├── flush_cache.py                   # Maintenance: Cache Clearing
+├── inspect_db.py                    # Maintenance: DB Inspection
+├── scrub_meat.py                    # Maintenance: Categorization Repair
+├── Dockerfile                       # Production Containerization
+├── docker-compose.yml               # Local Orchestration
 ├── requirements.txt                 # System Dependencies
-└── Eatlytic-12Week-Roadmap.md      # Long-term strategy
+├── .env                             # Environment Config
+└── Eatlytic-12Week-Roadmap.md      # Strategic Growth Plan
 ```
 
 ---
@@ -90,24 +72,18 @@ Eatlytic-App-main/
 ## ⚡ Key Specialty Features
 
 ### **The Duel Engine**
-Located in `duel_service.py`, this module allows head-to-head product comparisons. Unlike generic score comparison, it uses a **Persona-Weighted Matrix**:
-- **Muscle Mode**: Favors protein density.
-- **Diabetic Mode**: Penalizes sugar and refined carbs (Maida) with a -5.0 multiplier.
-- **Weight Loss Mode**: Strongly penalizes calorie-to-satiety ratios.
+Located in `duel_service.py`, this module allows head-to-head product comparisons. Unlike generic score comparison, it uses a **Persona-Weighted Matrix** (Muscle Mode, Diabetic Mode, Weight Loss Mode).
 
-### **Product Alternatives**
-The `alternatives.py` module uses an **Ingredient-Pivot** matrix specifically for the Indian diet, recommending local healthy swaps like roasted Makhana (fox nuts) for chips, or Poha/Sevai for instant noodles.
-
-### **INS Additive Scanner**
-`explanation_engine.py` contains a built-in database of INS/E numbers (e.g., 621, 150d) that scans the ingredients list to warn users about flavor enhancers, synthetic colors, and preservatives.
+### **Universal Product Alternatives**
+The `alternatives.py` module uses an **Ingredient-Pivot** matrix that recommends healthy swaps locally and globally (e.g., roasted Makhana for chips, or Poha for instant noodles).
 
 ---
 
 ## 🛠️ Performance & Scalability
 - **Quota Logic**: Built-in scan tracking in `main.py` prevents API abuse.
-- **Cache Safety Valve**: Automatically discards any cached results with 0 macronutrients to ensure users never see "dead" data.
-- **Docker-Ready**: Optimized `Dockerfile` for deployment on Hugging Face Spaces with specialized memory management for EasyOCR.
+- **Cache Safety Valve**: Automatically discards results with 0 macronutrients.
+- **HuggingFace Ready**: Memory-optimized deployment for HF Spaces.
 
 ---
 
-*Built with ❤️ for a Healthier India.*
+*Built for Global Nutrition Intelligence.*

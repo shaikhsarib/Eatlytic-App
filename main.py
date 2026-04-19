@@ -252,7 +252,8 @@ async def analyze_product(
         }
         working_content = content
 
-        if quality["is_blurry"]:
+        # NEVER REJECT: If should_enhance is true, try to fix it and proceed
+        if quality["should_enhance"]:
             try:
                 enhanced_bytes, method_log = deblur_and_enhance(
                     content, quality["blur_severity"]
@@ -260,9 +261,10 @@ async def analyze_product(
                 working_content = enhanced_bytes
                 blur_info["deblurred"] = True
                 blur_info["method_log"] = method_log
-                blur_info["ocr_source"] = "deblurred"
+                blur_info["ocr_source"] = "enhanced"
+                logger.info("Enhanced blurry image: %s", method_log)
             except Exception as e:
-                logger.warning(f"Deblurring failed: {e}")
+                logger.warning(f"Enhancement failed, using original: {e}")
 
         # P0 Architecture: Perceptual Hashing Cache (Duplicate Prevention)
         # We calculate the hash of the image and check if we've seen it before.
@@ -365,6 +367,12 @@ async def analyze_product(
             result["scan_id"] = scan_id
         except Exception as e:
             logger.error("Failed to save scan: %s", e)
+
+        if quality["is_blurry"]:
+            result["image_quality_note"] = (
+                f"Photo was {quality['blur_severity']} blurry — enhanced automatically. "
+                "For best results, hold steady and use good lighting."
+            )
 
         return result
 
