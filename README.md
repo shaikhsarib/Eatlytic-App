@@ -4,85 +4,99 @@ Eatlytic is a high-performance, AI-native nutritional analysis engine designed t
 
 ---
 
-## 🚀 The Eatlytic Intelligence Pipeline
+## 🚀 The Eatlytic "Grand Tour" Architecture
 
-The system processes images through a sophisticated, multi-pass pipeline:
+The system is organized into a modular, horizontally scalable architecture:
 
-### **1. Visual Hardening & Detection**
-- **Deduplication**: Uses Perceptual Hashing (pHash) in `hash_service.py` to identify returning images and serve cached results instantly, skipping expensive OCR and AI calls.
-- **MSER ROI Targeting**: `label_detector.py` uses Maximally Stable Extremal Regions to detect text density heatmaps. This allows the system to find nutrition tables on any material (shiny, dark, or transparent) without relying on hardcoded color panels.
+### **1. The Intelligence Services (`app/services/`)**
+The "Brain" of Eatlytic, where raw pixels become data:
+- **`ocr.py`**: The Multi-Pass Global OCR Engine. Features auto-script detection and 3-pass retry (Denoise/Sharpen/Binary).
+- **`llm.py`**: The Universal AI Brain. Merges OCR text with global knowledge to produce high-fidelity JSON (Molecular Insight, ELI5, Age Warnings).
+- **`label_detector.py`**: CV ROI targeting using **MSER (Maximally Stable Extremal Regions)** text-density heatmaps.
+- **`image.py`**: The **"Never Reject"** repair pipeline (Upscale, Wiener deconvolution, CLAHE).
+- **`fake_detector.py`**: The Atwater Physics Validator (Universal 20% tolerance floor).
+- **`duel_service.py`**: Head-to-head persona-weighted product comparison logic.
+- **`alternatives.py`**: Global healthy swap matrix (Ingredient-Pivot logic).
+- **`hash_service.py`**: Perceptual Hashing (pHash) for instant deduplication.
+- **`research_engine.py`**: Live Web Research (DDG) for messy-label fallback.
+- **`explanation_engine.py`**: Global/ICMR RDA benchmarking and INS/E-number scanner.
+- **`formatter.py`**: Result post-processing and text-tiering for WhatsApp/Web.
 
-### **2. "Never Reject" Blur Repair (`image.py`)**
- Eatlytic is designed to read "real-world" photos, including blurry WhatsApp thumbnails:
-- **Repair Pipeline**: Triggers a 4-stage repair sequence for blurry images: **Lanczos4 Upscale (1800px)** → **Motion Deconvolution** → **Local Contrast (CLAHE)** → **Unsharp Masking**.
-- **Result**: Drastically improves success rates for compressed or low-light photos that standard OCR would reject.
+### **2. The API Layer (`app/routes/`)**
+Handles user interaction, security, and business logic:
+- **`auth.py`**: User authentication, session management, and Supabase security integration.
+- **`benchmarks.py`**: Internal performance tracking (Latency, accuracy, and ROI stats).
+- **`food_db.py`**: Analytics and Scan History (The backbone of the "History" tab).
+- **`payments.py`**: Quota management and **Razorpay** integration for Pro activation.
 
-### **3. Global script-aware OCR (`ocr.py`)**
-- **Auto-Language Detection**: Identifies the script (Arabic, CJK, Hindi, European) from the image center before running full OCR.
-- **Multilingual Support**: Expanded to support **18+ languages** including Thai, Korean, Japanese, Russian, and Arabic.
-- **Multi-Pass Retry**: If confidence is low, the system automatically retries with dedicated Denoise, Sharpen, and Binary processing passes.
+### **3. The Persistence Layer (`app/models/`)**
+The source of truth for the platform:
+- **`db.py`**: Hybrid persistence engine. Uses **Supabase** for production clusters and **SQLite (WAL mode)** for local development and offline caching.
 
-### **4. Universal Analysis Brain (`llm.py`)**
-- **Global Extraction**: A universalized "Super-Prompt" instructs the AI to act as a global nutrition specialist, extracting 15+ rich data fields (Molecular Insight, ELI5, Age Warnings) regardless of regional naming conventions.
-- **Research Fallback**: If OCR is messy, `research_engine.py` performs a targeted web search for verified manufacturer data.
-
-### **5. Physics & Validation**
-- **Universal Atwater Gate (`fake_detector.py`)**: Checks the physics of the label. If `(Protein * 4) + (Fat * 9) + (Carb * 4)` does not match the stated Calories (within a 20% universal tolerance), the system flags the data as unreliable.
+### **4. Maintenance & CLI Tooling (Root)**
+Scripts for system upkeep and data repair:
+- **`flush_cache.py`**: Clears broken or 0-nutrient cache entries.
+- **`scrub_meat.py`**: Repairs categorization errors across the database.
+- **`inspect_db.py`**: Terminal-based dashboard for viewing live scans and quotas.
+- **`deploy.sh`**: Manual deployment script for server environments.
 
 ---
 
-## 📂 Exact File Structure
+## 📂 Exhaustive File Structure
 
 ```text
 Eatlytic-App-main/
+├── .github/
+│   └── workflows/
+│       └── sync_to_huggingface.yml    # CI/CD: HF Spaces sync
 ├── app/
 │   ├── models/
-│   │   └── db.py                    # SQLite & Persistence core
+│   │   └── db.py                    # Persistence: Supabase/SQLite hybrid
+│   ├── routes/
+│   │   ├── auth.py                  # API: User Auth & Tokens
+│   │   ├── benchmarks.py            # API: Performance Monitoring
+│   │   ├── food_db.py               # API: History & Analytics
+│   │   └── payments.py              # API: Razorpay & Quotas
 │   └── services/
-│       ├── ocr.py                   # Multi-Pass Global OCR Engine
-│       ├── llm.py                   # Universal AI Brain
-│       ├── fake_detector.py         # Universal Atwater Physics Validator
-│       ├── label_detector.py        # MSER Vision & ROI Targeting
-│       ├── image.py                 # "Never Reject" Blur Repair Pipeline
-│       ├── duel_service.py          # Persona-Weighted Comparison
-│       ├── alternatives.py           # Global Healthy Swap Matrix
-│       ├── hash_service.py          # Perceptual Hashing (pHash)
-│       ├── research_engine.py       # Live Web Research (DDG)
-│       ├── formatter.py             # Post-processing & WhatsApp Tiers
-│       ├── explanation_engine.py      # ICMR/Global RDA Benchmarking
-│       ├── auth.py                  # API Authentication
-│       └── payments.py              # Quota & Payment logic
-├── main.py                          # FastAPI Production Endpoint
-├── index.html                       # Web Front-end
-├── test_critical.py                 # Core Stability Testing
-├── test_phash.py                   # Deduplication Testing
-├── test_poison_pill.py             # Security & Resilience Testing
-├── flush_cache.py                   # Maintenance: Cache Clearing
-├── inspect_db.py                    # Maintenance: DB Inspection
-├── scrub_meat.py                    # Maintenance: Categorization Repair
-├── Dockerfile                       # Production Containerization
-├── docker-compose.yml               # Local Orchestration
-├── requirements.txt                 # System Dependencies
-├── .env                             # Environment Config
-└── Eatlytic-12Week-Roadmap.md      # Strategic Growth Plan
+│       ├── ocr.py                   # Logic: Global OCR (18+ Scripts)
+│       ├── llm.py                   # Logic: Universal AI Brain
+│       ├── label_detector.py        # Vision: MSER ROI Targeting
+│       ├── image.py                 # Vision: "Never Reject" Repair
+│       ├── fake_detector.py         # Physics: Atwater Validation
+│       ├── duel_service.py          # Feature: Persona-Weighted Duels
+│       ├── alternatives.py           # Feature: Ingredient Swaps
+│       ├── hash_service.py          # Performance: pHash Deduplication
+│       ├── research_engine.py       # Fallback: Live Web Research
+│       ├── formatter.py             # UX: Post-processing & Formatting
+│       ├── explanation_engine.py    # Science: RDA & INS Scanning
+│       ├── auth.py                  # Logic: Backend Security
+│       └── payments.py              # Logic: Quota Verification
+├── data/
+│   ├── eatlytic.db                  # Local Persistence (fallback)
+│   ├── ai_cache.json                # Local AI result cache 
+│   └── ocr_cache.json               # Local OCR heatmap cache
+├── main.py                          # Application Core (FastAPI)
+├── index.html                       # Frontend Entry Point
+├── test_critical.py                 # Stability: Pipeline stress tests
+├── test_phash.py                   # Logic: Deduplication verification
+├── test_poison_pill.py             # Security: Input resilience tests
+├── conftest.py                      # Testing: Framework config
+├── flush_cache.py                   # Maintenance: Cache Repair
+├── inspect_db.py                    # Maintenance: DB Explorer
+├── scrub_meat.py                    # Maintenance: Data Repair
+├── Dockerfile                       # Infrastructure: Docker Image
+├── docker-compose.yml               # Infrastructure: Local orchestration
+├── requirements.txt                 # Dependencies: System packages
+├── .env                             # Configuration: API Keys/URLs
+└── Eatlytic-12Week-Roadmap.md      # Strategy: Future Growth
 ```
 
 ---
 
-## ⚡ Key Specialty Features
-
-### **The Duel Engine**
-Located in `duel_service.py`, this module allows head-to-head product comparisons. Unlike generic score comparison, it uses a **Persona-Weighted Matrix** (Muscle Mode, Diabetic Mode, Weight Loss Mode).
-
-### **Universal Product Alternatives**
-The `alternatives.py` module uses an **Ingredient-Pivot** matrix that recommends healthy swaps locally and globally (e.g., roasted Makhana for chips, or Poha for instant noodles).
-
----
-
-## 🛠️ Performance & Scalability
-- **Quota Logic**: Built-in scan tracking in `main.py` prevents API abuse.
-- **Cache Safety Valve**: Automatically discards results with 0 macronutrients.
-- **HuggingFace Ready**: Memory-optimized deployment for HF Spaces.
+## ⚡ Performance & Compliance
+- **DPDP Compliant**: Built-in data erasure (`/api/v1/user/delete`) and retention management in `db.py`.
+- **HuggingFace Ready**: Auto-deploy via `.github/workflows` with tailored memory management for C-based vision libraries.
+- **Cache Safety Valve**: Automatically discards suspect entries to ensure 100% data integrity.
 
 ---
 
