@@ -14,6 +14,7 @@ and cuts total latency by ~40%.
 import os
 import re
 import json
+import time
 import logging
 import asyncio
 import hashlib
@@ -247,8 +248,13 @@ def build_super_prompt(
                 "and has been AI-enhanced. OCR may have minor errors — use context clues."
             )
         else:
-             return f"""\
-You are a universal "Nutrition Label Specialist". Your goal is to extract every nutrient row from ANY food label worldwide (any language, any layout) and provide a professional, deep nutritional analysis.
+            blur_context = (
+                f"NOTE: Image was blurry ({blur_info.get('severity','moderate')}). "
+                "For best results, keep the camera steady."
+            )
+
+    return f"""\
+You are a universal "Nutrition Label Specialist". Your goal is to extract every nutrient row from ANY food label worldwide (any language, any layout) and provide a professional, deep nutritional analysis in JSON format.
 
 ## GLOBAL EXTRACTION RULES
 1. **UNIVERSAL LANGUAGE SUPPORT**: Character sets vary (English, Arabic, Kanji, Devanagari). Extract the exact text from the label for nutrient names.
@@ -265,9 +271,21 @@ You are a universal "Nutrition Label Specialist". Your goal is to extract every 
 - Use brand context: Cadbury (Chocolate), Nestlé (Dairy/Cereal), Britannia (Biscuits), Kellogg's (Cereal), Coca-Cola (Soft Drink).
 - {blur_context}
 
+## INDIAN BRAND GUARDRAILS (Phase 2 Hardening)
+You have special awareness of these brands:
+- **Haldiram's/Bikano**: Often high in Palm Oil and Sodium even if labeled 'Healthy'.
+- **Amul**: High quality dairy, but watch for 'Ice Cream' vs 'Frozen Dessert' (Vegetable Oil).
+- **Britannia/Parle**: Check for 'Maida' (Refined Wheat) masking in 'Whole Wheat' biscuits.
+- **Ketchup/Sauces (Kissan/Maggi)**: Extremely high hidden sugar (often 30%+).
+- **'Diet' Namkeens**: Usually still deep-fried; confirm if 'Roasted' is true.
+
+## THE SAFETY COMPANION ROLE
+You are analyzing this for a user with the following HEALTH CONDITION: {persona}
+Your absolute priority is to determine if this product is SAFE or DANGEROUS for that specific condition.
+
 ## STEP 2 — ANALYZE (use global health standards)
 Respond text fields ENTIRELY in {lang_name}.
-PERSONA: {persona}
+PERSONA/CONDITION: {persona}
 NOVA LEVEL: {nova_level} (1=whole food, 4=ultra-processed)
 RISK FLAGS: {flags_text}
 {safe_research or ""}
@@ -278,6 +296,11 @@ SCORING RUBRIC (score 1-10, REQUIRED):
   5-6  → Processed. Watch Sugar (5-15g) or Sodium (400-700mg).
   3-4  → High Sugar (>15g) OR High Sodium (>700mg) OR NOVA 4.
   1-2  → Very high Sugar/Sodium/Sat Fat OR high addictive chemical additives.
+
+SAFETY VERDICT RULES (REQUIRED):
+- 🟢 **Safe**: Zero to negligible impact on the user's condition.
+- 🟡 **Limit**: Occasional use only. Portion control critical.
+- 🔴 **Avoid**: High risk of spike, inflammation, or adverse reaction for {persona}.
 
 [LABEL TEXT]:
 {safe_label_text}
@@ -306,7 +329,10 @@ Return ONLY this JSON object:
   "ingredients_raw": "exact full ingredients text",
   "better_alternative": "suggest a 100% healthier universal brand/category",
   "score": <integer 1-10>,
-  "verdict": "<Two-word verdict in {lang_name}>",
+  "safety_tier": "Safe|Limit|Avoid",
+  "safety_verdict": "<2-word verdict in {lang_name}, e.g. 'Safe' or 'High Risk'>",
+  "safety_reason": "<1-sentence specifically explaining the impact on {persona} in {lang_name}>",
+  "verdict": "<Short summary verdict in {lang_name}>",
   "summary": "<2-sentence professional summary in {lang_name}>",
   "eli5_explanation": "<Child-friendly 1-sentence with emoji in {lang_name}>",
   "pros": ["<benefit 1>", "<benefit 2>", "<benefit 3>"],
@@ -382,7 +408,7 @@ Rules:
 2. INVALID only if it is PURELY marketing text with zero numbers or nutrient words.
 3. When in doubt → respond VALID.
 
-Return ONLY:
+Return ONLY this JSON object:
 {{"status": "VALID" | "INVALID", "cleaned_text": "<relevant text or empty>"}}
 """
     try:
@@ -499,21 +525,40 @@ async def unified_analyze_flow(
       7. Assemble final output
     """
 
-    # Step 1: fallback OCR if image passed directly
+    # ── Track pipeline start time (fixes NameError at line ~854) ──
+    t_pipeline_start = time.time()
+
+    # ── Safety: normalize extracted_text to avoid NoneType crashes ──────────────
+    extracted_text = extracted_text or ""
+
+    # ── GATE: Non-food label detection ──────────────────────────────────────────
+    # Before spending LLM tokens, check if this is a food label at all.
+    from app.services.label_classifier import classify_label_type
+    label_type = classify_label_type(extracted_text)
+    if label_type["is_non_food"]:
+        return {
+            "error": "non_food_label",
+            "message": (
+                f"⚠️ This looks like a {label_type['detected_type']} label, not a food label. "
+                "Eatlytic analyzes food & beverage nutrition labels. "
+                "Please photograph the nutrition facts panel on a food or drink product."
+            ),
+            "detected_type": label_type["detected_type"],
+        }
+
+    # Step 1: fallback OCR — triggered when main.py discards junk text and passes image_content
     if image_content and not extracted_text:
         from app.services.ocr import run_ocr
-        logger.warning("image_content passed — OCR should be done in caller.")
-        cropped = process_image_for_ocr(image_content)
-        ocr_res = run_ocr(cropped, language)
-        extracted_text = ocr_res["text"]
+        logger.info("No usable OCR text — running Vision Fallback via image_content...")
+        # Jump straight to vision fallback (skip slow local OCR since we already know it fails)
 
-    # Step 2: Cache check
-    # BUG FIX: Use image hash and full extracted_text to prevent collisions.
+    # Step 2: Cache check (only when we have real text)
     cache_key = hashlib.md5(
         f"v7:{extracted_text[:500]}:{persona}:{language}:{blur_info.get('score',0)}".encode()
     ).hexdigest()
     cached = get_ai_cache(cache_key)
-    if cached and "error" not in cached and cached.get("confidence_tier") != "UNRELIABLE":
+    cached_tier = (cached or {}).get("extraction_confidence", {}).get("tier", "")
+    if cached and "error" not in cached and cached_tier != "UNRELIABLE" and extracted_text:
         cached["scan_meta"] = {"cached": True, "scans_remaining": 0, "is_pro": False}
         return cached
 
@@ -521,25 +566,127 @@ async def unified_analyze_flow(
     from app.services.ocr import universal_label_filter, run_ocr
     filter_result = universal_label_filter(extracted_text)
 
-    # Fallback: try full image OCR
-    if not filter_result["is_valid"] and image_content:
-        logger.info("Crop OCR failed — retrying on full image...")
-        full_ocr = run_ocr(image_content, language)
-        ff = universal_label_filter(full_ocr["text"])
-        if ff["is_valid"]:
-            filter_result = ff
-            extracted_text = full_ocr["text"]
-        else:
-            ai_rec = await recover_label_with_ai(full_ocr["text"])
-            if ai_rec["is_valid"]:
-                filter_result = {"is_valid": True, "clean_text": ai_rec["clean_text"] or full_ocr["text"]}
-                extracted_text = filter_result["clean_text"]
+    # Only attempt expensive OCR retries if we have SOME text to work with.
+    # When main.py discarded junk text (conf < 0.30), extracted_text is "" —
+    # skip straight to the Vision Fallback instead of burning Groq calls.
+    if extracted_text and len(extracted_text.strip()) > 20:
+        # Fallback: try full image OCR
+        if not filter_result["is_valid"] and image_content:
+            logger.info("Crop OCR failed — retrying on full image...")
+            full_ocr = run_ocr(image_content, language)
+            ff = universal_label_filter(full_ocr["text"])
+            if ff["is_valid"]:
+                filter_result = ff
+                extracted_text = full_ocr["text"]
+            else:
+                ai_rec = await recover_label_with_ai(full_ocr["text"])
+                if ai_rec["is_valid"]:
+                    filter_result = {"is_valid": True, "clean_text": ai_rec["clean_text"] or full_ocr["text"]}
+                    extracted_text = filter_result["clean_text"]
 
-    # Fallback: AI recovery on already-extracted text
-    if not filter_result["is_valid"] and extracted_text and len(extracted_text) > 30:
-        ai_rec2 = await recover_label_with_ai(extracted_text)
-        if ai_rec2["is_valid"]:
-            filter_result = {"is_valid": True, "clean_text": ai_rec2["clean_text"] or extracted_text}
+        # Fallback: AI recovery on already-extracted text
+        if not filter_result["is_valid"] and extracted_text and len(extracted_text) > 30:
+            ai_rec2 = await recover_label_with_ai(extracted_text)
+            if ai_rec2["is_valid"]:
+                filter_result = {"is_valid": True, "clean_text": ai_rec2["clean_text"] or extracted_text}
+    else:
+        logger.info("No usable OCR text — skipping retries, going straight to Vision Fallback.")
+
+    if not filter_result["is_valid"]:
+        # ── VISION FALLBACK: Try Groq vision first (free), Together AI as secondary ──
+        # Groq is already configured and working — use it first.
+        groq_key = os.environ.get("GROQ_API_KEY", "")
+        together_key = os.environ.get("TOGETHER_API_KEY", "")
+
+        vision_text = ""
+
+        # --- PRIMARY: Groq Vision (free, uses existing GROQ_API_KEY) ---
+        if image_content and groq_key and not vision_text:
+            import base64, requests as _req
+
+            GROQ_VISION_MODELS = [
+                "llama-3.2-11b-vision-preview",
+                "llama-3.2-90b-vision-preview",
+            ]
+            b64_img = base64.b64encode(image_content).decode("utf-8")
+            vision_prompt = (
+                "Extract ALL text from this food product label image. Focus on the nutrition facts table, "
+                "ingredients list, and any nutritional information. "
+                "Return ONLY the raw text as it appears — preserve all numbers, units (g, mg, kcal, kJ), "
+                "and row labels. Do NOT summarize or interpret."
+            )
+
+            def _call_groq_vision(model: str) -> str:
+                resp = _req.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": [
+                            {"type": "text", "text": vision_prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}},
+                        ]}],
+                        "max_tokens": 1500,
+                        "temperature": 0.0,
+                    },
+                    timeout=30,
+                )
+                if resp.status_code == 200:
+                    return resp.json()["choices"][0]["message"]["content"] or ""
+                else:
+                    logger.warning("Groq vision model %s returned %d: %s", model, resp.status_code, resp.text[:300])
+                    return ""
+
+            for vision_model in GROQ_VISION_MODELS:
+                try:
+                    logger.info("Trying Groq vision model: %s", vision_model)
+                    vision_text = await asyncio.to_thread(_call_groq_vision, vision_model)
+                    if vision_text and len(vision_text) > 50:
+                        logger.info("Groq vision success (%s): %d chars extracted", vision_model, len(vision_text))
+                        break
+                    else:
+                        vision_text = ""
+                except Exception as groq_vision_err:
+                    logger.warning("Groq vision model %s exception: %s", vision_model, groq_vision_err)
+                    vision_text = ""
+
+        # --- SECONDARY: Together AI (if Groq vision also fails) ---
+        if image_content and together_key and not vision_text:
+            logger.info("Groq vision failed — trying Together AI vision fallback...")
+            try:
+                import base64, requests as _req
+                b64_img = base64.b64encode(image_content).decode("utf-8")
+                vision_resp = _req.post(
+                    "https://api.together.xyz/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {together_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": "meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
+                        "messages": [{"role": "user", "content": [
+                            {"type": "text", "text": "Extract all text from this food nutrition label image. Return only raw text with numbers and units."},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}},
+                        ]}],
+                        "max_tokens": 1500, "temperature": 0.0,
+                    },
+                    timeout=30,
+                )
+                if vision_resp.status_code == 200:
+                    vision_text = vision_resp.json()["choices"][0]["message"]["content"] or ""
+                    logger.info("Together AI vision success: %d chars", len(vision_text))
+                else:
+                    logger.warning("Together AI vision fallback failed: %s", vision_resp.text)
+            except Exception as vision_err:
+                logger.warning("Together AI vision fallback exception: %s", vision_err)
+
+        # Apply vision text if we got something from any model
+        if vision_text and len(vision_text) > 50:
+            vision_filter = universal_label_filter(vision_text)
+            # Trust the Vision model if it extracted >100 chars, even if filter is unsure
+            if vision_filter["is_valid"] or len(vision_text) > 100:
+                filter_result = vision_filter
+                if not filter_result["is_valid"]:
+                    filter_result = {"is_valid": True, "clean_text": vision_text}
+                extracted_text = vision_text
+                logger.info("Vision fallback accepted: %d chars, valid=%s", len(vision_text), filter_result["is_valid"])
 
     if not filter_result["is_valid"]:
         return {
@@ -727,10 +874,10 @@ async def unified_analyze_flow(
             n["impact"]  = r["impact"]
 
     # Step 10: Final score
-    # BUG FIX: dna_res uses key "score" not "base_score" — was always defaulting to 4
     dna_flags = dna_res.get("extra_flags", [])
     if dna_res["action"] == "OVERRIDE":
-        final_score = dna_res.get("score") or dna_res.get("base_score") or 4
+        # DNA override always uses "score" key (apply_dna_overrides returns score=2 for fake claims)
+        final_score = int(dna_res.get("score") or 2)
         dna_flags   = [dna_res.get("reason", "")] + dna_flags
     elif result_data.get("score"):
         try:
@@ -825,12 +972,19 @@ async def unified_analyze_flow(
                     "curiosity_fact": "Check the full ingredients list for details."
                 })
 
+    # Step 11: Assemble output
+    latency_ms = int((time.time() - t_pipeline_start) * 1000)
+    logger.info("Pipeline Latency: %d ms | Product: %s", latency_ms, product_name)
+
     final_output = {
         "product_name":          product_name,
         "product_category":      category,
         "serving_size":          result_data.get("serving_size"),
         "score":                 final_score,
         "score_color":           score_color,
+        "safety_tier":           result_data.get("safety_tier", "Limit"),
+        "safety_verdict":        result_data.get("safety_verdict", "Unknown"),
+        "safety_reason":         result_data.get("safety_reason", ""),
         "verdict":               verdict,
         "summary":               summary,
         "nutrient_breakdown":    nutrient_breakdown,
@@ -847,6 +1001,7 @@ async def unified_analyze_flow(
         "better_alternative":    get_healthy_alternative(category, persona),
         "whatsapp_content":      {},
         "disclaimer":            MEDICAL_DISCLAIMER,
+        "perf_metrics":          {"latency_ms": latency_ms}
     }
 
     try:
@@ -869,7 +1024,9 @@ async def unified_analyze_flow(
         logger.warning("Data Flywheel persistence failed: %s", db_err)
 
     # Only cache if successful and reliable
-    if "error" not in final_output and final_output.get("confidence_tier") != "UNRELIABLE":
+    # BUG FIX: key is extraction_confidence.tier, not confidence_tier
+    _out_tier = final_output.get("extraction_confidence", {}).get("tier", "")
+    if "error" not in final_output and _out_tier != "UNRELIABLE":
         cacheable = {k: v for k, v in final_output.items() if k != "scan_meta"}
         set_ai_cache(cache_key, cacheable)
     

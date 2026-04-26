@@ -134,7 +134,7 @@ class TestLabelDetection:
 # ══ 4. AUTH TOKEN LIFECYCLE ═══════════════════════════════════════════
 class TestAuthTokenLifecycle:
     def test_create_and_validate_session(self):
-        from app.services.auth import create_session, get_user_from_token
+        from app.services.user_auth import create_session, get_user_from_token
         from app.models.db import db_conn
 
         # Create a user first
@@ -154,12 +154,12 @@ class TestAuthTokenLifecycle:
         assert user["id"] == user_id
 
     def test_invalid_token_returns_none(self):
-        from app.services.auth import get_user_from_token
+        from app.services.user_auth import get_user_from_token
 
         assert get_user_from_token("totally_fake_token") is None
 
     def test_revoked_token_returns_none(self):
-        from app.services.auth import (
+        from app.services.user_auth import (
             create_session,
             revoke_session,
             get_user_from_token,
@@ -178,7 +178,7 @@ class TestAuthTokenLifecycle:
         assert get_user_from_token(token) is None
 
     def test_otp_verify_creates_user(self):
-        from app.services.auth import send_email_otp, verify_email_otp
+        from app.services.user_auth import send_email_otp, verify_email_otp
 
         otp = send_email_otp("newuser@test.com")
         user = verify_email_otp("newuser@test.com", otp)
@@ -186,7 +186,7 @@ class TestAuthTokenLifecycle:
         assert user["email"] == "newuser@test.com"
 
     def test_wrong_otp_returns_none(self):
-        from app.services.auth import send_email_otp, verify_email_otp
+        from app.services.user_auth import send_email_otp, verify_email_otp
 
         send_email_otp("wrong@test.com")
         result = verify_email_otp("wrong@test.com", "000000")
@@ -202,7 +202,7 @@ class TestScanQuota:
             conn.execute("INSERT INTO users(id,email) VALUES(?,?)", (user_id, email))
 
     def test_free_user_gets_10_scans(self):
-        from app.services.auth import check_and_increment_scan_user
+        from app.services.user_auth import check_and_increment_scan_user
 
         self._make_user("u1", "a@t.com")
         for i in range(10):
@@ -213,7 +213,7 @@ class TestScanQuota:
         assert result["allowed"] is False
 
     def test_pro_user_unlimited(self):
-        from app.services.auth import check_and_increment_scan_user
+        from app.services.user_auth import check_and_increment_scan_user
         from app.models.db import db_conn
 
         self._make_user("u2", "b@t.com")
@@ -353,7 +353,7 @@ class TestStreakTracking:
             )
 
     def test_consecutive_days_increments_streak(self):
-        from app.services.auth import update_streak_user
+        from app.services.user_auth import update_streak_user
         from app.models.db import db_conn
 
         self._make_user("streak_user_1")
@@ -374,7 +374,7 @@ class TestStreakTracking:
         assert row["streak_days"] == 1
 
     def test_missed_day_resets_streak(self):
-        from app.services.auth import update_streak_user
+        from app.services.user_auth import update_streak_user
         from app.models.db import db_conn
 
         self._make_user("streak_user_2")

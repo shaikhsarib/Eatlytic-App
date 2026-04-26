@@ -155,8 +155,21 @@ def init_db() -> None:
                 result_json TEXT NOT NULL,
                 created_at  TEXT DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS research_cache (
+                query       TEXT PRIMARY KEY,
+                result      TEXT NOT NULL,
+                created_at  TEXT DEFAULT (datetime('now'))
+            );
             
             -- Keep other tables for consistency
+            CREATE TABLE IF NOT EXISTS sessions (
+                token       TEXT PRIMARY KEY,
+                user_id     TEXT REFERENCES users(id),
+                expires_at  TEXT NOT NULL,
+                device_hint TEXT DEFAULT ''
+            );
+            
             CREATE TABLE IF NOT EXISTS daily_logs (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id     TEXT REFERENCES users(id),
@@ -166,6 +179,30 @@ def init_db() -> None:
                 calories    REAL DEFAULT 0,
                 logged_at   TEXT DEFAULT (datetime('now'))
             );
+            
+            CREATE TABLE IF NOT EXISTS food_products (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                name         TEXT NOT NULL,
+                brand        TEXT DEFAULT '',
+                category     TEXT DEFAULT '',
+                barcode      TEXT UNIQUE,
+                calories_100g REAL DEFAULT 0,
+                protein_100g  REAL DEFAULT 0,
+                carbs_100g    REAL DEFAULT 0,
+                fat_100g      REAL DEFAULT 0,
+                sodium_100g   REAL DEFAULT 0,
+                fiber_100g    REAL DEFAULT 0,
+                sugar_100g    REAL DEFAULT 0,
+                eatlytic_score INTEGER DEFAULT 0,
+                verified      INTEGER DEFAULT 0,
+                verified_by   TEXT DEFAULT NULL,
+                verified_at   TEXT DEFAULT NULL,
+                scan_count    INTEGER DEFAULT 0,
+                created_at    TEXT DEFAULT (datetime('now')),
+                updated_at    TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_fp_barcode ON food_products(barcode);
+            CREATE INDEX IF NOT EXISTS idx_fp_name    ON food_products(name);
         """)
         # Migrations for existing DBs
         try: conn.execute("ALTER TABLE scans ADD COLUMN metadata_json TEXT DEFAULT '{}'")
@@ -225,6 +262,24 @@ def set_image_fingerprint(hash_key: str, value: dict):
         except: pass
     with db_conn() as c:
         c.execute("INSERT OR REPLACE INTO image_fingerprints(hash_key, result_json) VALUES(?,?)", (hash_key, json.dumps(value)))
+
+# ── Research Cache (Phase 2 Latency Optimization) ─────────────────────
+def get_research_cache(query: str):
+    if _supabase:
+        try:
+            res = _supabase.table("research_cache").select("*").eq("query", query).execute()
+            if res.data: return res.data[0]["result"]
+        except Exception: pass
+    with db_conn() as c:
+        row = c.execute("SELECT result FROM research_cache WHERE query=?", (query,)).fetchone()
+    return row["result"] if row else None
+
+def set_research_cache(query: str, result: str):
+    if _supabase:
+        try: _supabase.table("research_cache").upsert({"query": query, "result": result}).execute()
+        except: pass
+    with db_conn() as c:
+        c.execute("INSERT OR REPLACE INTO research_cache(query, result) VALUES(?,?)", (query, result))
 
 
 def check_and_increment_scan(device_key: str, limit: int = 10, increment: bool = True) -> dict:

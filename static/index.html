@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Eatlytic — AI Nutrition Scanner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=Nunito:wght@400;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <!-- ── SCAN SCREEN (The Portal) -->
+  <div class="screen active" id="s-scan">
+    <div class="app-header">
+      <div class="app-logo">E<em>a</em>tlytic</div>
+      <div style="display:flex;gap:10px">
+        <div class="quota-pill">
+          <div class="quota-dot" id="qdot"></div>
+          <span id="quota-text">...</span>
+        </div>
+        <button class="header-pill" id="theme-toggle" onclick="toggleDark()">🌙</button>
+      </div>
+    </div>
+
+    <div class="scroll-inner" style="padding:0 20px">
+      <div class="portal-section">
+        <div class="scan-eyebrow">Select Persona</div>
+        <div class="chip-row" id="persona-row">
+          <div class="chip active" data-persona="General Adult">🧘 Default</div>
+          <div class="chip" data-persona="Muscle Builder">💪 Builder</div>
+          <div class="chip" data-persona="Weight Loss">🔥 Fat Burn</div>
+          <div class="chip" data-persona="Diabetic Friendly">🩸 Sugar-Free</div>
+        </div>
+
+        <div class="portal-wrap">
+          <div class="portal-ring"></div>
+          <div class="portal-ring"></div>
+          <div class="portal-ring"></div>
+          <div class="portal-orbit">
+            <div class="portal-orbit-dot"></div>
+          </div>
+          <div class="portal-orbit">
+            <div class="portal-orbit-dot"></div>
+          </div>
+
+          <div class="portal-core" id="portal-core" onclick="handlePortalTap()" ondragover="onDragOver(event)" ondragleave="onDragLeave()" ondrop="onDrop(event)">
+            <div class="portal-icon">📸</div>
+            <div class="portal-cta-text">TAP TO SCAN</div>
+          </div>
+
+          <div class="portal-preview-wrap" id="portal-preview-wrap">
+            <img id="preview-img" src="" alt="Preview">
+            <div class="portal-preview-badge" id="preview-badge">Ready</div>
+          </div>
+        </div>
+
+        <div class="quality-strip" id="quality-strip">
+          <div class="qs-label" id="qs-label">Checking quality...</div>
+          <div class="qs-bar">
+            <div class="qs-fill" id="qs-fill"></div>
+          </div>
+          <div class="qs-badge" id="qs-badge">...</div>
+        </div>
+
+        <button class="analyse-cta" id="analyse-cta" onclick="runAnalysis()">✦ Analyse this Label →</button>
+
+        <div class="scan-btn-row">
+          <button class="scan-btn" onclick="openCamera()"><span>📷</span> Camera</button>
+          <button class="scan-btn" onclick="triggerUpload()"><span>📂</span> Upload</button>
+        </div>
+
+        <button class="voice-btn" id="voice-btn" onclick="toggleVoice()">
+          <span id="voice-icon">🎤</span>
+          <span class="voice-transcript" id="voice-transcript">Say what you ate...</span>
+        </button>
+
+        <div class="section-label" style="text-align:center;margin-top:10px">Quick Tips</div>
+        <div class="scan-tips">
+          <div class="tip-pill">Bright Light 💡</div>
+          <div class="tip-pill">Hold Steady ⚖️</div>
+          <div class="tip-pill">Back Label Only 🏷️</div>
+        </div>
+      </div>
+      <div class="pad-bottom"></div>
+    </div>
+  </div>
+
+  <!-- ── CAMERA SCREEN -->
+  <div class="screen" id="s-camera">
+    <div class="camera-viewport">
+      <video id="camera-video" autoplay playsinline muted></video>
+      <div class="camera-reticle" id="camera-reticle">
+        <div class="reticle-corner rc-tl"></div>
+        <div class="reticle-corner rc-tr"></div>
+        <div class="reticle-corner rc-bl"></div>
+        <div class="reticle-corner rc-br"></div>
+        <div class="reticle-scan-line"></div>
+      </div>
+      <div class="camera-overlay-pill" id="cam-overlay-pill">Point at a food label</div>
+    </div>
+
+    <div class="camera-mode-row">
+      <button class="cam-mode-btn active" id="cam-mode-scan" onclick="setCamMode('scan')">Nutrition Scan</button>
+    </div>
+
+    <div class="camera-controls">
+      <button class="cam-ctrl-btn" onclick="goTo('scan')">✕</button>
+      <button class="capture-btn" onclick="captureFrame()"></button>
+      <div style="display:flex;gap:12px">
+        <button class="cam-ctrl-btn" id="torch-btn" onclick="toggleTorch()">🔦</button>
+        <button class="cam-ctrl-btn" onclick="flipCamera()">🔄</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── READING SCREEN (VINE LOADER) -->
+  <div class="screen" id="s-reading">
+    <div class="reading-wrap">
+      <div class="reading-title">E<em>a</em>tlytic is <span>reading...</span></div>
+      <div class="vine-wrap">
+        <div class="vine-track"></div>
+        <div class="vine-fill" id="vine-fill"></div>
+        <div class="vine-nodes" id="vine-nodes"></div>
+      </div>
+      <div class="reading-text" id="reading-text"></div>
+      <button class="rac-btn" style="margin-top:40px;opacity:0.6" onclick="cancelAnalysis()">Stop Analysis</button>
+    </div>
+  </div>
+
+  <!-- ── REVEAL SCREEN (RESULTS) -->
+  <div class="screen" id="s-reveal">
+    <div class="app-header">
+      <button class="header-pill" onclick="goTo('scan')">← Back</button>
+      <div class="app-logo" style="font-size:1.1rem">Scan Results</div>
+      <button class="header-pill" onclick="shareResult()">📤</button>
+    </div>
+    <div class="reveal-scroll" id="reveal-scroll">
+      <!-- Generated via JS -->
+    </div>
+    <div class="pad-bottom"></div>
+  </div>
+
+  <!-- ── HISTORY SCREEN -->
+  <div class="screen" id="s-history">
+    <div class="app-header">
+      <div class="app-logo">History</div>
+      <button class="header-pill" onclick="clearHistory()">🗑 Clear</button>
+    </div>
+    <div class="scroll-inner" style="padding:0 18px">
+      <div class="streak-card">
+        <div class="streak-num">🔥 0</div>
+        <div>
+          <div class="streak-label">Day Streak</div>
+          <div class="streak-text">Scan daily to build your streak!</div>
+        </div>
+      </div>
+
+      <div class="section-label">Your Badges</div>
+      <div class="badges-row" id="badges-row">
+        <!-- Generated via JS -->
+      </div>
+
+      <div class="section-label">Past Scans</div>
+      <div class="history-list" id="history-container">
+        <!-- Generated via JS -->
+      </div>
+
+      <div class="hist-empty" id="history-empty" style="display:none">
+        <div class="hist-empty-icon">📂</div>
+        <div style="font-weight:900;font-size:1.1rem;margin-bottom:4px">No Scans Yet</div>
+        <div>Your analysed foods will appear here.</div>
+      </div>
+      <div class="pad-bottom"></div>
+    </div>
+  </div>
+
+  <!-- ── DUEL SCREEN -->
+  <div class="screen" id="s-duel">
+    <div class="app-header">
+      <button class="header-pill" onclick="goTo('history')">← Back</button>
+      <div class="app-logo">Food ⚔️ Duel</div>
+      <div style="width:40px"></div>
+    </div>
+    <div class="duel-header">
+      <div class="duel-vs">VS</div>
+    </div>
+    <div class="duel-split">
+      <div class="duel-side" id="duel-side-a"></div>
+      <div class="duel-side" id="duel-side-b" style="border-left:2px solid var(--ink)"></div>
+    </div>
+    <div class="edge-box" id="duel-winner-box"></div>
+    <div class="pad-bottom"></div>
+  </div>
+
+  <!-- ── MAP SCREEN -->
+  <div class="screen" id="s-map">
+    <div class="app-header">
+      <div class="app-logo">Constellation Map</div>
+      <button class="header-pill" onclick="goTo('reveal')">✕</button>
+    </div>
+    <div class="map-header-inner">
+      <div>
+        <div class="map-title" id="map-prod-name">Ingredient Galaxy</div>
+        <div class="map-subtitle">Tap an orb to inspect molecular impact</div>
+      </div>
+      <div class="map-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#00C896"></div>Natural</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#FF2D78"></div>Additive</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#C084FC"></div>Vitamin</div>
+      </div>
+    </div>
+    <canvas id="constellation-canvas"></canvas>
+    <div class="pad-bottom"></div>
+  </div>
+
+  <!-- ── PROFILE SCREEN -->
+  <div class="screen" id="s-profile">
+    <div class="app-header">
+      <div class="app-logo">Profile</div>
+      <button class="header-pill" onclick="saveProfile()">Save</button>
+    </div>
+    <div class="scroll-inner" style="padding:0 18px">
+      <div class="profile-header">
+        <div class="profile-avatar" id="profile-avatar">🌿</div>
+        <div>
+          <div class="profile-name-disp" id="profile-name-disp">Guest User</div>
+          <div class="profile-plan">Free Plan</div>
+        </div>
+      </div>
+
+      <div class="tdee-card" id="tdee-card" style="display:none">
+        <div class="tdee-label">Your Daily Energy Target</div>
+        <div class="tdee-val" id="tdee-val">0 kcal</div>
+        <div class="tdee-sub" id="tdee-sub">Maintenance calories</div>
+      </div>
+
+      <div class="macro-targets" id="macro-targets" style="display:none">
+        <div class="mt-chip"><div class="mt-val" id="mt-protein">0g</div><div class="mt-label">Protein</div></div>
+        <div class="mt-chip"><div class="mt-val" id="mt-carbs">0g</div><div class="mt-label">Carbs</div></div>
+        <div class="mt-chip"><div class="mt-val" id="mt-fat">0g</div><div class="mt-label">Fat</div></div>
+      </div>
+
+      <div class="section-label" id="today-progress" style="display:none">Today's Progress</div>
+      <div class="macro-rings">
+        <div class="macro-ring-wrap">
+          <div class="macro-ring">
+            <svg width="56" height="56"><circle class="macro-ring-bg" cx="28" cy="28" r="22.5"/><circle class="macro-ring-fill" id="ring-cal" cx="28" cy="28" r="22.5"/></svg>
+            <div class="macro-ring-text" id="ring-cal-text">0</div>
+          </div>
+          <div class="macro-ring-label">Kcal</div>
+        </div>
+        <div class="macro-ring-wrap">
+          <div class="macro-ring">
+            <svg width="56" height="56"><circle class="macro-ring-bg" cx="28" cy="28" r="22.5"/><circle class="macro-ring-fill" id="ring-prot" cx="28" cy="28" r="22.5"/></svg>
+            <div class="macro-ring-text" id="ring-prot-text">0g</div>
+          </div>
+          <div class="macro-ring-label">Prot</div>
+        </div>
+        <div class="macro-ring-wrap">
+          <div class="macro-ring">
+            <svg width="56" height="56"><circle class="macro-ring-bg" cx="28" cy="28" r="22.5"/><circle class="macro-ring-fill" id="ring-carb" cx="28" cy="28" r="22.5"/></svg>
+            <div class="macro-ring-text" id="ring-carb-text">0g</div>
+          </div>
+          <div class="macro-ring-label">Carb</div>
+        </div>
+        <div class="macro-ring-wrap">
+          <div class="macro-ring">
+            <svg width="56" height="56"><circle class="macro-ring-bg" cx="28" cy="28" r="22.5"/><circle class="macro-ring-fill" id="ring-fat" cx="28" cy="28" r="22.5"/></svg>
+            <div class="macro-ring-text" id="ring-fat-text">0g</div>
+          </div>
+          <div class="macro-ring-label">Fat</div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Personal Data</div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label class="form-label">Full Name</label>
+          <input type="text" class="form-input" id="pf-name" placeholder="How should we call you?">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Age</label>
+            <input type="number" class="form-input" id="pf-age" placeholder="25">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Gender</label>
+            <select class="form-select" id="pf-gender">
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Body Metrics</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Weight (kg)</label>
+            <input type="number" class="form-input" id="pf-weight" placeholder="70">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Height (cm)</label>
+            <input type="number" class="form-input" id="pf-height" placeholder="175">
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:12px">
+          <label class="form-label">Activity Level</label>
+          <select class="form-select" id="pf-activity">
+            <option value="1.2">Sedentary (No exercise)</option>
+            <option value="1.375">Light (1-3 days/week)</option>
+            <option value="1.55" selected>Moderate (3-5 days/week)</option>
+            <option value="1.725">Active (6-7 days/week)</option>
+            <option value="1.9">Elite (2x training/day)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-label">Your Goal</div>
+      <div class="chip-row" id="goal-row">
+        <div class="chip" data-goal="lose">📉 Weight Loss</div>
+        <div class="chip active" data-goal="maintain">⚖️ Maintenance</div>
+        <div class="chip" data-goal="gain">💪 Muscle Gain</div>
+      </div>
+
+      <button class="save-profile-btn" onclick="saveProfile()">✓ Save Profile</button>
+      <div class="pad-bottom"></div>
+    </div>
+  </div>
+
+  <!-- ── BOTTOM NAV -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <div class="nav-btn active" id="nav-scan" onclick="goTo('scan')">
+      <div class="nav-icon">📸</div>
+      <div class="nav-label">Scan</div>
+    </div>
+    <div class="nav-btn" id="nav-history" onclick="goTo('history')">
+      <div class="nav-icon">📂</div>
+      <div class="nav-label">Logs</div>
+    </div>
+    <div class="nav-btn" id="nav-profile" onclick="goTo('profile')">
+      <div class="nav-icon">👤</div>
+      <div class="nav-label">Me</div>
+    </div>
+  </nav>
+
+  <!-- ── OVERLAYS & MODALS -->
+  <div class="ingr-tooltip" id="ingr-tooltip">
+    <div class="tt-name" id="tt-name">Ingredient</div>
+    <div class="tt-type" id="tt-type">NATURAL</div>
+    <div class="tt-desc" id="tt-desc">Loading...</div>
+  </div>
+
+  <div class="sat-expand" id="sat-expand">
+    <div class="sat-expand-handle" onclick="closeSatellite()"></div>
+    <div class="sat-expand-close" onclick="closeSatellite()">✕</div>
+    <div class="sat-expand-name" id="se-name">Nutrient</div>
+    <div class="sat-expand-val" id="se-val">0g</div>
+    <div class="sat-expand-desc" id="se-desc">Loading description...</div>
+  </div>
+
+  <div class="ing-detail-overlay" id="ing-detail-overlay" onclick="closeIngDetail()">
+    <div class="ing-detail-sheet" onclick="event.stopPropagation()">
+      <div class="ing-handle" onclick="closeIngDetail()"></div>
+      <div class="ing-detail-name" id="ing-detail-name">Ingredient Name</div>
+      <div class="ing-detail-risk" id="ing-detail-risk">Ingredient</div>
+      <div class="ing-section-lbl">What is it?</div>
+      <div class="ing-detail-text" id="ing-detail-what">...</div>
+      <div class="ing-section-lbl">Health Impact</div>
+      <div class="ing-detail-text" id="ing-detail-impact">...</div>
+      <div class="ing-fact-box">
+        <div class="ing-fact-lbl">Curiosity Fact</div>
+        <div class="ing-fact-text" id="ing-detail-fact">...</div>
+      </div>
+      <button class="save-profile-btn" style="margin-top:24px;background:var(--bg);color:var(--ink)" onclick="closeIngDetail()">Close Detail</button>
+    </div>
+  </div>
+
+  <div class="paywall-overlay" id="paywall-overlay">
+    <div class="paywall-sheet">
+      <div class="pw-handle" onclick="closePaywall()"></div>
+      <div class="pw-title">Go <em>Pro</em> for ∞ Scans</div>
+      <div class="pw-sub" id="pw-sub">Unlock unlimited scanning, advanced chemical insights, and deep historical trends.</div>
+      <div class="pw-features">
+        <div class="pw-feat">✨ Unlimited Daily Scans</div>
+        <div class="pw-feat">🧬 Chemical Risk Analysis</div>
+        <div class="pw-feat">📊 Personal Nutrition Tracking</div>
+      </div>
+      <button class="pw-cta" onclick="activatePro()">Upgrade to Pro — $4.99/mo</button>
+      <button class="pw-dismiss" onclick="closePaywall()">Maybe Later</button>
+    </div>
+  </div>
+
+  <div class="scan-flash" id="scan-flash"></div>
+  <div class="toast" id="toast">Toast Message</div>
+
+  <canvas id="capture-canvas" style="display:none"></canvas>
+  <input type="file" id="file-input" accept="image/*" onchange="handleFile(event)">
+
+  <!-- ── SCRIPTS -->
+  <script src="app.js"></script>
+
+</body>
+
+</html>

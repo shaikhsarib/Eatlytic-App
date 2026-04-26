@@ -62,7 +62,7 @@ def get_nutrition_table_roi(image_np: np.ndarray) -> np.ndarray:
 
         # ── Step 1: MSER detection (find candidate text characters) ──
         # delta=5 is sensitivity, min_area avoids noise, max_area avoids large blobs
-        mser = cv2.MSER_create(_delta=5, _min_area=60, _max_area=14400)
+        mser = cv2.MSER_create(5, 60, 14400)
         regions, _ = mser.detectRegions(gray)
 
         if not regions:
@@ -120,11 +120,18 @@ def deskew_image(image_np: np.ndarray) -> np.ndarray:
         if len(coords) < 10:
             return image_np
         angle = cv2.minAreaRect(coords)[-1]
-        if angle > 45:
-            angle = angle - 90
-        # Only deskew small angles — large angles are probably real rotations
-        if abs(angle) > 20:
-            return image_np
+        
+        # Handle 90 degree rotations specifically
+        if angle < -45:
+            angle = -(90 + angle)
+        else:
+            angle = -angle
+            
+        if abs(angle) > 45:
+            # If it's a massive angle, it might be exactly 90 degrees.
+            # Let's trust the rotation matrix to handle it.
+            pass
+            
         (h, w) = image_np.shape[:2]
         center = (w // 2, h // 2)
         M = cv2.getRotationMatrix2D(center, -angle, 1.0)
@@ -138,26 +145,36 @@ def deskew_image(image_np: np.ndarray) -> np.ndarray:
 def enhance_for_ocr(image_np: np.ndarray) -> np.ndarray:
     """
     Improve contrast and sharpness for OCR on a label crop.
-    Optimized for shiny plastic packets using CLAHE + Bilateral Denoising.
+    Optimized for shiny plastic packets using CLAHE + Shadow Removal + Denoising.
     """
     try:
-        # 1. Bilateral Filter: Denoise while preserving edges (glare reduction)
-        denoised = cv2.bilateralFilter(image_np, 9, 75, 75)
+        # 1. Shadow Removal (Luminance Balancing)
+        # Using a large morphological closing to estimate background illumination
+        lab = cv2.cvtColor(image_np, cv2.COLOR_RGB2LAB)
+        l, a, b = cv2.split(lab)
         
-        # 2. CLAHE for local contrast enhancement in LAB space
-        lab = cv2.cvtColor(denoised, cv2.COLOR_RGB2LAB)
-        l_ch, a_ch, b_ch = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-        l_ch = clahe.apply(l_ch)
-        enhanced = cv2.merge([l_ch, a_ch, b_ch])
-        enhanced = cv2.cvtColor(enhanced, cv2.COLOR_LAB2RGB)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (33, 33))
+        background = cv2.morphologyEx(l, cv2.MORPH_CLOSE, kernel)
+        l = cv2.divide(l, background, scale=255)
+        
+        # 2. Refined CLAHE (Glare Reduction)
+        # Lower clipLimit (2.0 instead of 3.0) prevents over-amplifying glare highlights
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        l = clahe.apply(l)
+        
+        lab = cv2.merge((l, a, b))
+        image_enhanced = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
 
-        # 3. Mild unsharp mask for sharpness
-        blurred = cv2.GaussianBlur(enhanced, (0, 0), 2)
-        sharp = cv2.addWeighted(enhanced, 1.5, blurred, -0.5, 0)
+        # 3. Bilateral Filter: Denoise while preserving critical text edges
+        denoised = cv2.bilateralFilter(image_enhanced, 7, 50, 50)
+        
+        # 4. Sharpening (Unsharp Mask)
+        blurred = cv2.GaussianBlur(denoised, (0, 0), 3)
+        sharp = cv2.addWeighted(denoised, 1.5, blurred, -0.5, 0)
+        
         return sharp
     except Exception as e:
-        logger.warning("Enhancement failed: %s", e)
+        logger.warning("Hardened Enhancement failed: %s", e)
         return image_np
 
 

@@ -83,16 +83,17 @@ def assess_image_quality(content: bytes) -> dict:
         else:
             severity = "mild"
 
+        # Ensure pure Python primitives to prevent FastAPI serialization errors
         return {
-            "is_blurry": is_blurry,
-            "blur_score": round(lap_var, 1),
-            "blur_severity": severity,
-            "edge_density": round(edge_density, 4),
-            "should_enhance": lap_var < 150 # enhance even mild blur to help OCR
+            "is_blurry": bool(is_blurry),
+            "blur_score": round(float(lap_var), 1),
+            "blur_severity": str(severity),
+            "edge_density": round(float(edge_density), 4),
+            "should_enhance": bool(lap_var < 80) # only enhance truly blurry images
         }
     except Exception as e:
         logger.error("Quality assessment failed: %s", e)
-        return {"is_blurry": True, "blur_severity": "mild", "should_enhance": True}
+        return {"is_blurry": True, "blur_score": 0.0, "blur_severity": "mild", "edge_density": 0.0, "should_enhance": True}
 
 
 def deblur_and_enhance(content: bytes, severity: str) -> tuple[bytes, str]:

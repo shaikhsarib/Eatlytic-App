@@ -25,15 +25,26 @@ _CACHE = {}
 def get_live_search(query: str, max_results: int = 3) -> str:
     """
     Search the web for ingredient/brand health info to provide context to the LLM.
-    Includes simple in-memory caching to stay within DDG rate limits.
+    Uses a 2-tier cache: L1 (In-Memory) -> L2 (Persistent DB).
     """
     if not _DDGS_AVAILABLE:
-        return "Web research is currently unavailable (duckduckgo_search not installed)."
+        return "Web research is currently unavailable."
     
-    # Simple TTL cache (24 hours) to prevent DDG blocking
-    if query in _CACHE and time.time() - _CACHE[query][0] < 86400:
+    # Tier 1: L1 In-Memory (fastest)
+    if query in _CACHE and time.time() - _CACHE[query][0] < 3600:
         return _CACHE[query][1]
 
+    # Tier 2: L2 Persistent DB (Phase 2 Hardening)
+    try:
+        from app.models.db import get_research_cache, set_research_cache
+        db_res = get_research_cache(query)
+        if db_res:
+            _CACHE[query] = (time.time(), db_res)
+            return db_res
+    except Exception as e:
+        logger.debug("L2 Cache lookup failed: %s", e)
+
+    # Fallback: Live Web Search
     try:
         with DDGS() as ddgs:
             results = [
@@ -46,7 +57,11 @@ def get_live_search(query: str, max_results: int = 3) -> str:
         else:
             result_str = "\n---\n".join(results)
 
+        # Update both caches
         _CACHE[query] = (time.time(), result_str)
+        try: set_research_cache(query, result_str)
+        except: pass
+        
         return result_str
 
     except Exception as e:

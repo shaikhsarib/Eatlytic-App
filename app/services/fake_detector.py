@@ -395,7 +395,7 @@ def apply_dna_overrides(
 
     return {
         "action": "PASS",
-        "score": score,
+        "score": score,        # NOVA4 cap of 3 is intentional
         "reason": math_ok.get("reason"),
         "extra_flags": final_verdicts,
     }

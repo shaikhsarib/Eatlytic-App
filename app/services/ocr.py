@@ -40,28 +40,34 @@ _EASYOCR_LANG_MAP = {
 }
 
 
+def detect_language_from_text(text: str) -> str:
+    """Detect script/language from already-extracted text. Zero extra OCR cost."""
+    if re.search(r'[\u4e00-\u9fff]', text): return "zh"   # CJK
+    if re.search(r'[\u3040-\u30ff]', text): return "ja"   # Hiragana/Katakana
+    if re.search(r'[\uac00-\ud7af]', text): return "ko"   # Hangul
+    if re.search(r'[\u0600-\u06ff]', text): return "ar"   # Arabic
+    if re.search(r'[\u0900-\u097f]', text): return "hi"   # Devanagari (Hindi)
+    if re.search(r'[\u0b80-\u0bff]', text): return "ta"   # Tamil
+    if re.search(r'[\u0c00-\u0c7f]', text): return "te"   # Telugu
+    if re.search(r'[\u0a80-\u0aff]', text): return "gu"   # Gujarati
+    if re.search(r'[\u0a00-\u0a7f]', text): return "pa"   # Punjabi (Gurmukhi)
+    if re.search(r'[\u0980-\u09ff]', text): return "bn"   # Bengali
+    if re.search(r'[\u0400-\u04ff]', text): return "ru"   # Cyrillic
+    if re.search(r'[\u0e00-\u0e7f]', text): return "th"   # Thai
+    return "en"
+
+
 def detect_language_from_image(content: bytes) -> str:
-    """Quick script detection from image center region."""
+    """BUG FIX: Run a SINGLE cheap first-pass OCR with English-only reader, 
+    then detect script from the extracted text — no second full OCR pass."""
     try:
-        from PIL import Image
         img = Image.open(BytesIO(content)).convert("RGB")
         w, h = img.size
-        # Sample center region to detect primary script
         crop = img.crop((w//4, h//4, 3*w//4, 3*h//4))
-        
-        # Use existing 'en' reader for a quick script check
         reader = get_reader_for("en")
-        results = reader.readtext(np.array(crop), detail=0)[:8]
+        results = reader.readtext(np.array(crop), detail=0)[:10]
         text = " ".join(results)
-
-        # Script identification via unicode ranges
-        if re.search(r'[\u4e00-\u9fff]', text): return "zh" # CJK
-        if re.search(r'[\u3040-\u30ff]', text): return "ja" # Hiragana/Katakana
-        if re.search(r'[\uac00-\ud7af]', text): return "ko" # Hangul
-        if re.search(r'[\u0600-\u06ff]', text): return "ar" # Arabic
-        if re.search(r'[\u0900-\u097f]', text): return "hi" # Devanagari
-        if re.search(r'[\u0b80-\u0bff]', text): return "ta" # Tamil
-        return "en"
+        return detect_language_from_text(text)
     except Exception as e:
         logger.debug("Script detection fallback to 'en': %s", e)
         return "en"
@@ -315,10 +321,6 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
 
     clean_text = "\n".join(clean_lines)
 
-    # FINAL GATE (v5): Valid if extraction has BOTH:
-    #   A) High-strength nutrition header/keywords found, AND
-    #   B) At least 2 numerical values extracted.
-    # This prevents stylized mockups with zero numbers from passing as valid labels.
     high_strength_header = bool(re.search(
         r"(nutrition\s*facts|amount\s*per\s*serving|information\s*per|serving\s*size|"
         r"calories\s+from|daily\s+value|percent\s+daily|per\s+100\s*g|per\s+100\s*ml|"
@@ -328,7 +330,10 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
         r"per\s+portion|per\s+serving|kj\s+\d|kcal\s+\d|\d+\s*kcal|\d+\s*kj|energy\s*\d|protein\s*\d)",
         raw_ocr_text.lower()
     ))
-    is_valid = (number_count >= 2) and high_strength_header
+    # FINAL GATE (v6): Valid if extraction has BOTH:
+    #   A) High-strength nutrition header/keywords found, AND
+    #   B) At least 4 numerical values extracted.
+    is_valid = (number_count >= 4) and high_strength_header
 
     return {"is_valid": is_valid, "clean_text": clean_text}
 
@@ -339,7 +344,7 @@ def strip_marketing_fluff(raw_ocr_text: str) -> str:
     return result["clean_text"]
 
 
-OCR_CONFIDENCE_THRESHOLD = 0.25
+OCR_CONFIDENCE_THRESHOLD = 0.35
 
 
 def passes_confidence_gate(ocr_result: dict) -> tuple[bool, str]:

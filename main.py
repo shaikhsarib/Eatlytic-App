@@ -26,6 +26,7 @@ except ImportError:
 from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Security, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
 from groq import Groq
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -90,7 +91,7 @@ app.add_middleware(
 init_db()
 
 # --- SCAN LIMITS & API KEYS ---
-FREE_SCAN_LIMIT = 3  # CEO Order: 3 scans, not 10
+FREE_SCAN_LIMIT = int(os.environ.get("FREE_SCAN_LIMIT", "10"))
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB limit for stability
 
 # --- API KEY AUTH ---
@@ -108,7 +109,9 @@ def verify_api_key(api_key: str = Security(api_key_header)):
 
 
 # --- ADMIN AUTH ---
-ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "eatlytic_master_key")
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
+if not ADMIN_TOKEN:
+    logger.warning("⚠️ ADMIN_TOKEN not set! Admin endpoints will be blocked.")
 
 def verify_admin(request: Request):
     token = request.headers.get("X-Admin-Token")
@@ -155,7 +158,7 @@ else:
 
 @app.get("/")
 async def home():
-    return FileResponse("index.html")
+    return FileResponse("static/index.html")
 
 
 @app.post("/check-image")
@@ -305,14 +308,35 @@ async def analyze_product(
             from app.services.label_detector import process_image_for_ocr
             cropped_content = process_image_for_ocr(working_content)
             ocr_result = run_ocr(cropped_content, language)
-            # If crop gave fewer words than full image, fall back to full image OCR
-            if ocr_result.get("word_count", 0) < 10:
-                ocr_result_full = run_ocr(working_content, language)
-                if ocr_result_full.get("word_count", 0) > ocr_result.get("word_count", 0):
-                    ocr_result = ocr_result_full
             extracted_text = ocr_result["text"]
-            logger.info("Scan Metrics: words=%d, conf=%.2f, source=%s", 
-                ocr_result.get("word_count", 0), ocr_result.get("avg_confidence", 0.0), blur_info["ocr_source"])
+            word_count = ocr_result.get("word_count", 0)
+            avg_conf = ocr_result.get("avg_confidence", 0.0)
+
+            # HARDENING: If crop OCR is poor, try the full image
+            if avg_conf < 0.30 or word_count < 40:
+                logger.info("Crop OCR confidence too low (%.2f) — trying full image...", avg_conf)
+                ocr_result_full = run_ocr(working_content, language)
+                full_conf = ocr_result_full.get("avg_confidence", 0.0)
+                full_words = ocr_result_full.get("word_count", 0)
+                # Take whichever is better
+                if full_conf > avg_conf or full_words > word_count:
+                    ocr_result = ocr_result_full
+                    extracted_text = ocr_result["text"]
+                    avg_conf = full_conf
+                    word_count = full_words
+                    logger.info("Full image OCR better: conf=%.2f words=%d", avg_conf, word_count)
+
+            # VISION DISCARD: If still poor after both attempts, discard text.
+            # This forces the Vision AI fallback inside unified_analyze_flow.
+            if avg_conf < 0.30 or word_count < 30:
+                logger.warning(
+                    "All local OCR failed (conf=%.2f, words=%d). "
+                    "Discarding text — Vision AI will take over.", avg_conf, word_count
+                )
+                extracted_text = None
+
+            logger.info("Scan Metrics: words=%d, conf=%.2f, source=%s",
+                word_count, avg_conf, blur_info["ocr_source"])
 
         result = await unified_analyze_flow(
             extracted_text=extracted_text,
@@ -324,7 +348,10 @@ async def analyze_product(
             blur_info=blur_info,
             label_confidence="high",
             front_text=front_text,
-            # image_content intentionally NOT passed — OCR already done above.
+            # BUG FIX: Pass image_content so vision fallback can activate when OCR fails.
+            # Previously this was intentionally None — but that blocked any recovery
+            # when the text-OCR filter returned is_valid=False (scan mismatch bug).
+            image_content=working_content,
         )
 
         if "error" in result:
@@ -414,6 +441,23 @@ async def product_duel(request: Request, scan_a_id: int = Form(...), scan_b_id: 
         raise HTTPException(status_code=404, detail="One or more products not found in history.")
         
     return run_duel(prod_a, prod_b, persona=prod_a.get("persona", "general"))
+
+
+@app.post("/api/v1/report-error")
+async def report_scan_error(request: Request, scan_id: int = Form(...), note: str = Form("")):
+    """Report an inaccurate analysis for engineering review."""
+    device_key = get_device_key(request)
+    with db_conn() as conn:
+        # Check if the scan belongs to this device
+        row = conn.execute("SELECT id FROM scans WHERE id=? AND device_key=?", (scan_id, device_key)).fetchone()
+        if not row:
+            raise HTTPException(status_code=403, detail="Unauthorized to report this scan.")
+        
+        # Mark scan as needing review
+        conn.execute("UPDATE scans SET verified=-1, correction_json=? WHERE id=?", (json.dumps({"report_note": note}), scan_id))
+    
+    logger.warning("Scan Error Reported | ID: %d | Note: %s", scan_id, note)
+    return {"status": "reported", "message": "Thank you. Our engineers will use this to improve the AI."}
 
 
 # ── ADMIN TOOLS ──────────────────────────────
@@ -1047,3 +1091,5 @@ async def test_accuracy(
             ),
         }
     return result
+
+app.mount("/", StaticFiles(directory="static"), name="static")
