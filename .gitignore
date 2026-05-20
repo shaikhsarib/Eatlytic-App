@@ -29,3 +29,8 @@ data/
 .cache/
 *.zip
 *.pth
+
+# Scratch / dev-only
+scratch/
+test_gemma.py
+static/audit_*.pdf

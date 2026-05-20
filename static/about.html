@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>About — Eatlytic</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=Nunito:wght@400;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .static-page { padding: 24px 18px; max-width: 600px; margin: 0 auto; }
+    .hero-title { font-family: 'Fraunces', serif; font-size: 2.5rem; font-weight: 900; line-height: 1; margin-bottom: 16px; color: var(--ink); }
+    .hero-title em { color: var(--yellow); font-style: italic; -webkit-text-stroke: 1px var(--ink); }
+    .content-card { background: var(--white); border: var(--border); border-radius: var(--r); padding: 24px; box-shadow: var(--shadow-card); margin-bottom: 24px; }
+    .para { font-size: 1.1rem; line-height: 1.6; margin-bottom: 18px; color: var(--ink); opacity: 0.9; }
+    .feature-tag { display: inline-block; padding: 4px 10px; background: var(--cream); border: 1.5px solid var(--ink); border-radius: 8px; font-weight: 800; font-size: 0.8rem; margin-right: 8px; margin-bottom: 8px; }
+    .back-btn { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; color: var(--ink); text-decoration: none; margin-bottom: 24px; }
+  </style>
+</head>
+<body>
+  <div class="screen active">
+    <div class="app-header">
+      <a href="/" class="back-btn">← Back</a>
+      <div class="app-logo">E<em>a</em>tlytic</div>
+      <div style="width:40px"></div>
+    </div>
+    <div class="scroll-inner">
+      <div class="static-page">
+        <h1 class="hero-title">Food transparency for <em>everyone</em>.</h1>
+        <div class="content-card">
+          <p class="para">Eatlytic was born out of a simple problem: <strong>Labels lie.</strong></p>
+          <p class="para">Most people don't have the time to audit the math on every package they buy. Brands often use marketing tricks to hide high sugar content or artificial additives behind "healthy" sounding names.</p>
+          <p class="para">We use advanced AI and Physics-based validation (Atwater Method) to scan ANY label in the world and tell you what's actually inside.</p>
+        </div>
+
+        <div class="section-label">Our Technology</div>
+        <div style="margin-bottom:24px">
+          <span class="feature-tag">Universal OCR</span>
+          <span class="feature-tag">Atwater Physics Engine</span>
+          <span class="feature-tag">DNA Overrides</span>
+          <span class="feature-tag">NOVA-4 Detection</span>
+          <span class="feature-tag">Multi-Language AI</span>
+        </div>
+
+        <div class="section-label">Our Mission</div>
+        <div class="content-card" style="background: var(--mint); color: #fff;">
+          <p class="para" style="color: #fff; font-weight: 700;">To empower 1 billion people to make data-driven dietary choices and hold the food industry accountable.</p>
+        </div>
+        
+        <div class="app-footer">
+          <div class="footer-copy">© 2026 Eatlytic · Science-First Nutrition</div>
+        </div>
+        <div class="pad-bottom"></div>
+      </div>
+    </div>
+  </div>
+  <script>
+    if(localStorage.getItem('theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  </script>
+</body>
+</html>

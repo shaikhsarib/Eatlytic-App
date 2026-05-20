@@ -80,10 +80,10 @@ class TestOCRConfidenceGate:
         assert "too low" in msg.lower()
 
     def test_threshold_boundary(self):
-        """Exactly 0.30 should pass."""
+        """Exactly 0.35 should pass."""
         from app.services.ocr import passes_confidence_gate
 
-        ocr = {"text": "test", "avg_confidence": 0.30, "word_count": 1}
+        ocr = {"text": "test", "avg_confidence": 0.35, "word_count": 1}
         passes, msg = passes_confidence_gate(ocr)
         assert passes is True
 
@@ -114,7 +114,7 @@ class TestBlurryImageRejection:
 
         quality = assess_image_quality(content)
         assert bool(quality["is_blurry"]) is True
-        assert quality["blur_severity"] == "severe"
+        assert quality["blur_severity"] == "critical"
 
     def test_solid_color_blurry(self):
         """A solid color image has zero texture — should be flagged."""
@@ -144,7 +144,15 @@ class TestToxicProductFlagging:
         """MSG product label should pass nutrition validation."""
         from app.services.ocr import universal_label_filter
 
-        text = "Nutrition Facts per 100g\nCalories 0kcal\nSodium 12000mg\nIngredients: Monosodium Glutamate (MSG)"
+        text = (
+            "Nutrition Facts per 100g\n"
+            "Energy 0kcal\n"
+            "Protein 0g\n"
+            "Carbohydrate 0g\n"
+            "Total Fat 0g\n"
+            "Sodium 12000mg\n"
+            "Ingredients: Monosodium Glutamate (MSG)"
+        )
         result = universal_label_filter(text)
         assert result["is_valid"] is True
 
@@ -333,11 +341,18 @@ class TestMultiColumnAwareness:
         # 3. Mock the third LLM response for ANALYSIS step
         analysis_json = '{"score": 3, "verdict": "Processed", "summary": "High sodium", "eli5": "Salty noodles", "pros": [], "cons": [], "age_warnings": [], "molecular_insight": ""}'
         
-        with mock.patch("app.services.llm.call_llm") as mock_call:
+        with mock.patch("app.services.llm.engine.call_llm") as mock_call:
             mock_call.side_effect = [bad_json, good_json, analysis_json]
             
             result = await unified_analyze_flow(
-                extracted_text="Nutrition Facts\nEnergy 389kcal Protein 8.2g Carbs 59.6g Fat 13.5g 14.5g",
+                extracted_text=(
+                    "Nutrition Facts\n"
+                    "Energy 389 kcal\n"
+                    "Protein 8.2 g\n"
+                    "Carbs 59.6 g\n"
+                    "Fat 13.5 g\n"
+                    "Sodium 719 mg"
+                ),
                 persona="adult",
                 age_group="adult",
                 product_category_hint="noodle",
@@ -347,7 +362,7 @@ class TestMultiColumnAwareness:
                 label_confidence="high"
             )
             
-            # Should have called LLM two times in Single-Pass architecture
+            # Should have called LLM two times in Single-Pass architecture (One bad pass, one retry pass)
             assert mock_call.call_count == 2
             assert result["score"] > 0
             # Should have the correct corrected fat

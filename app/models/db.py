@@ -177,6 +177,9 @@ def init_db() -> None:
                 log_date    TEXT NOT NULL,
                 meal_name   TEXT DEFAULT '',
                 calories    REAL DEFAULT 0,
+                protein     REAL DEFAULT 0,
+                carbs       REAL DEFAULT 0,
+                fat         REAL DEFAULT 0,
                 logged_at   TEXT DEFAULT (datetime('now'))
             );
             
@@ -203,6 +206,23 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_fp_barcode ON food_products(barcode);
             CREATE INDEX IF NOT EXISTS idx_fp_name    ON food_products(name);
+
+            CREATE TABLE IF NOT EXISTS scan_reports (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                scan_id     INTEGER,
+                device_key  TEXT,
+                note        TEXT DEFAULT '',
+                reported_at TEXT DEFAULT (datetime('now')),
+                resolved    INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_reports_scan ON scan_reports(scan_id);
+
+            CREATE TABLE IF NOT EXISTS food_products_extra (
+                id              INTEGER PRIMARY KEY,
+                sat_fat_100g    REAL DEFAULT 0,
+                ingredients_raw TEXT DEFAULT '',
+                source          TEXT DEFAULT 'llm_scan'
+            );
         """)
         # Migrations for existing DBs
         try: conn.execute("ALTER TABLE scans ADD COLUMN metadata_json TEXT DEFAULT '{}'")
@@ -399,3 +419,35 @@ def get_scan_by_id(scan_id: int):
             try: d[field] = json.loads(d[field])
             except: d[field] = {}
     return d
+
+def add_meal_log(device_key: str, data: dict):
+    """Log a meal to the daily diary."""
+    date_str = datetime.date.today().isoformat()
+    with db_conn() as conn:
+        conn.execute("""
+            INSERT INTO daily_logs (device_key, log_date, meal_name, calories, protein, carbs, fat)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            device_key, date_str, data.get("product_name", "Meal"),
+            data.get("calories", 0), data.get("protein", 0),
+            data.get("carbs", 0), data.get("fat", 0)
+        ))
+
+def get_daily_macro_totals(device_key: str):
+    """Aggregate macros for today."""
+    date_str = datetime.date.today().isoformat()
+    with db_conn() as conn:
+        row = conn.execute("""
+            SELECT SUM(calories) as total_cal, SUM(protein) as total_pro, 
+                   SUM(carbs) as total_car, SUM(fat) as total_fat
+            FROM daily_logs
+            WHERE device_key = ? AND log_date = ?
+        """, (device_key, date_str)).fetchone()
+    if not row or row["total_cal"] is None:
+        return {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
+    return {
+        "calories": row["total_cal"],
+        "protein": row["total_pro"],
+        "carbs": row["total_car"],
+        "fat": row["total_fat"]
+    }

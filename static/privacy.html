@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Privacy — Eatlytic</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=Nunito:wght@400;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .static-page { padding: 24px 18px; max-width: 600px; margin: 0 auto; }
+    .hero-title { font-family: 'Fraunces', serif; font-size: 2.5rem; font-weight: 900; line-height: 1; margin-bottom: 16px; color: var(--ink); }
+    .content-card { background: var(--white); border: var(--border); border-radius: var(--r); padding: 24px; box-shadow: var(--shadow-card); margin-bottom: 24px; }
+    .para { font-size: 1rem; line-height: 1.6; margin-bottom: 18px; color: var(--ink); opacity: 0.9; }
+    .h2 { font-family: 'Space Mono', monospace; font-size: 0.9rem; font-weight: 800; text-transform: uppercase; margin-bottom: 12px; display: block; color: var(--muted); }
+    .back-btn { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; color: var(--ink); text-decoration: none; margin-bottom: 24px; }
+  </style>
+</head>
+<body>
+  <div class="screen active">
+    <div class="app-header">
+      <a href="/" class="back-btn">← Back</a>
+      <div class="app-logo">E<em>a</em>tlytic</div>
+      <div style="width:40px"></div>
+    </div>
+    <div class="scroll-inner">
+      <div class="static-page">
+        <h1 class="hero-title">Your data is <em>yours</em>.</h1>
+        
+        <div class="content-card">
+          <span class="h2">Data Minimization</span>
+          <p class="para">We do not ask for your email, phone number, or social profiles to scan. We use a cryptographically signed <strong>Device ID</strong> stored in a secure cookie to track your free scan quota.</p>
+          
+          <span class="h2">Scan Privacy</span>
+          <p class="para">Photos you upload are processed for OCR text extraction. We store the nutritional data extracted to improve our model, but we do not link these images to your real-world identity.</p>
+
+          <span class="h2">Right to Erasure</span>
+          <p class="para">You can clear your local history and request data deletion at any time. Our servers automatically purge unlinked scan data every 90 days.</p>
+          
+          <span class="h2">DPDP Compliance</span>
+          <p class="para">We comply with the Digital Personal Data Protection (DPDP) Act. Your health data is processed solely for the purpose of providing nutritional insights.</p>
+        </div>
+
+        <div class="section-label">Contact</div>
+        <p class="para" style="font-family: 'Space Mono', monospace; font-size: 0.8rem;">privacy@eatlytic.com</p>
+
+        <div class="app-footer">
+          <div class="footer-copy">© 2026 Eatlytic · Science-First Nutrition</div>
+        </div>
+        <div class="pad-bottom"></div>
+      </div>
+    </div>
+  </div>
+  <script>
+    if(localStorage.getItem('theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  </script>
+</body>
+</html>

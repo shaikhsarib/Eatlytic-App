@@ -304,3 +304,63 @@ async def accuracy_report(request: Request):
             ],
         }
     )
+@router.post("/discrepancy-audit")
+async def discrepancy_audit(
+    request: Request,
+    product_name: str = Form(...),
+    ocr_text: str = Form(...),
+    scanned_calories: float = Form(...),
+    scanned_protein: float = Form(...),
+):
+    """
+    VIRAL FEATURE: The Discrepancy Engine.
+    Exposes gaps between Label OCR, Web Marketing, and Atwater Physics.
+    """
+    from app.services.llm import unified_analyze_flow
+    
+    # 1. Search for official nutrition info
+    search_query = f"{product_name} nutrition facts official label"
+    try:
+        from duckduckgo_search import DDGS
+        with DDGS() as ddgs:
+            results = list(ddgs.text(search_query, max_results=3))
+            web_context = "\n".join([r['body'] for r in results])
+    except Exception as e:
+        logger.warning(f"Search failed for discrepancy audit: {e}")
+        web_context = "Web search unavailable."
+
+    # 2. Run a "Verification" analysis
+    verification = await unified_analyze_flow(
+        extracted_text=ocr_text,
+        persona="Detective",
+        age_group="adult",
+        product_category_hint="general",
+        language="en",
+        web_context=web_context,
+        label_confidence="high",
+        front_text="",
+    )
+
+    # 3. Compute the Gaps
+    official_cal = verification.get("analysis_json", {}).get("official_calories_per_100g", 0)
+    
+    discrepancy_score = 0
+    gaps = []
+    
+    if official_cal and abs(scanned_calories - official_cal) > (official_cal * 0.1):
+        gaps.append(f"Label vs Web Calorie Gap: {scanned_calories} vs {official_cal}")
+        discrepancy_score += 3
+        
+    # Atwater Check (Physics vs Claims)
+    theoretical_cal = (scanned_protein * 4) + (verification.get("carbs", 0) * 4) + (verification.get("fat", 0) * 9)
+    if abs(scanned_calories - theoretical_cal) > 20:
+        gaps.append(f"Physics Violation: Atwater sum is {theoretical_cal}, but label says {scanned_calories}")
+        discrepancy_score += 5
+
+    return {
+        "product": product_name,
+        "discrepancy_score": discrepancy_score,
+        "gaps": gaps,
+        "verdict": "BUSTED" if discrepancy_score > 5 else "SUSPICIOUS" if discrepancy_score > 2 else "VERIFIED",
+        "details": verification.get("summary")
+    }

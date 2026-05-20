@@ -6,28 +6,28 @@ import logging
 import hashlib
 from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import JSONResponse
-from app.services.auth import get_user_from_token
+from app.services.user_auth import get_user_from_token
 from app.models.db import db_conn
 from app.services.payments import create_order, activate_pro_after_payment, get_payment_status
+from app.utils import get_device_key
+from fastapi import Response
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/payments", tags=["payments"])
 
 
-def _get_user_or_device(request: Request) -> tuple:
+async def _get_user_or_device(request: Request, response: Response) -> tuple:
     auth       = request.headers.get("Authorization", "")
     token      = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else None
     user       = get_user_from_token(token) if token else None
     user_id    = user["id"] if user else None
-    ip         = request.client.host if request.client else "unknown"
-    ua         = request.headers.get("user-agent", "")
-    device_key = hashlib.md5(f"{ip}:{ua}".encode()).hexdigest()[:16]
+    device_key = get_device_key(request, response)
     return user_id, device_key
 
 
 @router.post("/create-order")
-async def create_order_endpoint(request: Request):
-    user_id, device_key = _get_user_or_device(request)
+async def create_order_endpoint(request: Request, response: Response):
+    user_id, device_key = await _get_user_or_device(request, response)
     if not user_id:
         raise HTTPException(status_code=401,
             detail="Login required to create payment order. POST /auth/request-otp first.")

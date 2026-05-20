@@ -136,22 +136,25 @@ Runtime:     os.environ.get() — NO hardcoded fallbacks
 
 | # | Control | Priority | Status |
 |---|---------|----------|--------|
-| 1 | No secrets in git | P0 | ✅ Fixed (BFG needed for history) |
-| 2 | API key rotation quarterly | P0 | ⚠️ Rotate NOW |
-| 3 | CORS exact origins only | P0 | ⚠️ Wildcard `*.hf.space` active |
+| 1 | No secrets in git | P0 | ✅ Fixed |
+| 2 | API key rotation quarterly | P0 | ⚠️ Scheduled |
+| 3 | CORS exact origins + regex | P0 | ✅ Done (Whitelist + HF Regex) |
 | 4 | Rate limiting per-endpoint | P0 | ✅ Done (slowapi) |
-| 5 | Admin auth env-var only | P0 | ✅ Fixed (no default) |
+| 5 | Admin auth env-var only | P0 | ✅ Done |
 | 6 | Payment HMAC verification | P0 | ✅ Done |
-| 7 | Input sanitization | P1 | ❌ Missing |
-| 8 | Cookie-based device IDs | P1 | ❌ Using MD5(IP+UA) |
-| 9 | DPDP compliance | P1 | 🟡 Partial |
+| 7 | Input sanitization | P1 | ✅ Done (Null-byte stripping + length caps) |
+| 8 | Signed Secure Cookies | P1 | ✅ Done (HMAC-signed UUIDs) |
+| 9 | DPDP compliance | P1 | 🟡 Partial (Right to Erasure Done) |
 | 10 | HTTPS enforcement | P0 | ✅ Via HF Spaces |
 | 11 | Dependency scanning | P2 | ❌ No Dependabot |
 | 12 | Container non-root user | P1 | ❌ Missing |
 
-### 2.3 Device Authentication (Current → Target)
+### 2.3 Device Authentication (Implemented)
 
-**Current:** `MD5(IP + UserAgent)[:16]` — trivially bypassable
+**Strategy:** HMAC-signed UUID stored in an HTTP-only, Secure, SameSite=Strict cookie.
+- **Verification:** `hmac.compare_digest` used to prevent tampering.
+- **Privacy:** UUID is random (UUID4), not derived from IP/UA.
+- **Persistence:** 1-year expiry on the signed cookie.
 
 **Target:**
 ```python
@@ -320,13 +323,11 @@ llm.py (51KB) → Split into:
 
 | Channel | Status | Strategy |
 |---------|--------|----------|
-| Web app | ✅ Live | SEO for "food label scanner India" |
-| WhatsApp | ✅ Built | Beta groups → viral sharing |
-| Instagram/Reels | ❌ | "We caught [brand] lying" videos |
-| YouTube | ❌ | Label accuracy expose series |
-| Reddit/Quora | ❌ | Organic nutrition answers |
-| Gym partnerships | ❌ | QR codes at gyms |
-| Nutritionist referrals | ❌ | Referral program |
+| B2B API | ✅ Hardened | **Primary Revenue:** Offer to food startups for self-audit. |
+| Web app | ✅ Live | **Wedge:** User acquisition & viral content tool. |
+| WhatsApp | ✅ Built | Family group distribution. |
+| Instagram/Reels | ❌ | **Viral Hook:** "We caught [Brand] lying" series. |
+| Reddit/Quora | ❌ | Exposing label fraud in r/India & r/FitnessIndia. |
 
 ### 8.2 Viral Content Ideas
 

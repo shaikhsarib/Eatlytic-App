@@ -21,7 +21,6 @@ from PIL import Image
 from io import BytesIO
 from app.models.db import get_ocr_cache, set_ocr_cache
 
-logger = logging.getLogger(__name__)
 DATA_DIR = os.path.join(os.getcwd(), "data")
 CACHE_DIR = os.environ.get("HF_HOME", os.path.join(os.getcwd(), ".cache"))
 MODEL_DIR = os.path.join(CACHE_DIR, "easyocr_models")
@@ -61,20 +60,20 @@ def detect_language_from_image(content: bytes) -> str:
     """BUG FIX: Run a SINGLE cheap first-pass OCR with English-only reader, 
     then detect script from the extracted text — no second full OCR pass."""
     try:
-        img = Image.open(BytesIO(content)).convert("RGB")
+        img: Image.Image = Image.open(BytesIO(content)).convert("RGB")
         w, h = img.size
-        crop = img.crop((w//4, h//4, 3*w//4, 3*h//4))
+        crop: Image.Image = img.crop((w//4, h//4, 3*w//4, 3*h//4))
         reader = get_reader_for("en")
-        results = reader.readtext(np.array(crop), detail=0)[:10]
-        text = " ".join(results)
+        results: list[str] = reader.readtext(np.array(crop), detail=0)[:10]
+        text: str = " ".join(results)
         return detect_language_from_text(text)
     except Exception as e:
         logger.debug("Script detection fallback to 'en': %s", e)
         return "en"
 
 def get_reader_for(lang_hint: str):
-    langs = _EASYOCR_LANG_MAP.get(lang_hint, ["en"])
-    key = "_".join(sorted(langs))
+    langs: list[str] = _EASYOCR_LANG_MAP.get(lang_hint, ["en"])
+    key: str = "_".join(sorted(langs))
     if key not in _LANG_READERS:
         with _READERS_LOCK:
             if key not in _LANG_READERS:
@@ -92,57 +91,57 @@ def run_ocr(content: bytes, lang_hint: str = "auto") -> dict:
     if lang_hint == "auto":
         lang_hint = detect_language_from_image(content)
 
-    cache_key = f"{hashlib.md5(content).hexdigest()}_{lang_hint}"
-    cached = get_ocr_cache(cache_key)
+    cache_key: str = f"{hashlib.md5(content).hexdigest()}_{lang_hint}"
+    cached: dict = get_ocr_cache(cache_key)
     if cached:
         return cached
 
-    img = Image.open(BytesIO(content)).convert("RGB")
+    img: Image.Image = Image.open(BytesIO(content)).convert("RGB")
     w, h = img.size
     
     # Universal upscale (capped at 3x to prevent memory OOM)
     if max(w, h) < 1000:
-        scale_factor = min(3.0, 1200 / max(w, h))
+        scale_factor: float = min(3.0, 1200 / max(w, h))
         img = img.resize((int(w * scale_factor), int(h * scale_factor)), Image.LANCZOS)
     elif max(w, h) > 2200:
-        ratio = 2200 / max(w, h)
+        ratio: float = 2200 / max(w, h)
         img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
 
-    img_np = np.array(img)
+    img_np: np.ndarray = np.array(img)
     reader = get_reader_for(lang_hint)
     
     # Pass 1: Standard Enhancement (CLAHE)
     import cv2
-    img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    img_cv: np.ndarray = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+    gray: np.ndarray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
     
-    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
-    results = reader.readtext(enhanced, detail=1)
+    clahe: cv2.CLAHE = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+    enhanced: np.ndarray = clahe.apply(gray)
+    results: list = reader.readtext(enhanced, detail=1)
     
     # ── Multi-Pass Retry Strategy for Low Confidence (v5) ──
-    def _get_avg_conf(res):
+    def _get_avg_conf(res: list) -> float:
         if not res: return 0.0
         return sum(r[2] for r in res) / len(res)
 
-    initial_conf = _get_avg_conf(results)
+    initial_conf: float = _get_avg_conf(results)
     
     if initial_conf < 0.4 or len(results) < 8:
         logger.info("Low OCR confidence (%.2f) — starting multi-pass retry...", initial_conf)
         
-        passes = [
+        passes: list[tuple[str, np.ndarray]] = [
             ("denoise", cv2.fastNlMeansDenoising(enhanced, None, 10, 7, 21)),
             ("sharpen", cv2.filter2D(enhanced, -1, np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]]))),
             ("binary", cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2))
         ]
         
-        best_results = results
-        best_conf = initial_conf
+        best_results: list = results
+        best_conf: float = initial_conf
         
         for name, processed in passes:
             try:
-                temp_results = reader.readtext(processed, detail=1)
-                temp_conf = _get_avg_conf(temp_results)
+                temp_results: list = reader.readtext(processed, detail=1)
+                temp_conf: float = _get_avg_conf(temp_results)
                 if temp_conf > best_conf and len(temp_results) >= len(best_results):
                     best_conf = temp_conf
                     best_results = temp_results
@@ -152,58 +151,48 @@ def run_ocr(content: bytes, lang_hint: str = "auto") -> dict:
         
         results = best_results
 
-    boxes = results
+    boxes: list = results
 
     # Reconstruct logical lines by grouping boxes by their vertical (Y) position.
-    # Each result: (box_coords, text, confidence)
-    # box_coords is a list of 4 [x,y] corners. We use the average Y of the box.
-    # Dynamic band size: ~1.5% of image height (scales with image resolution)
-    # Minimum 8px, maximum 22px — handles both tiny crops and full-res photos
     img_h, img_w = img_np.shape[:2]
-    band_px = max(8, min(22, int(img_h * 0.015)))
+    band_px: int = max(8, min(22, int(img_h * 0.015)))
 
     line_groups: dict[int, list[tuple[float, str, float]]] = {}
     for box, text, conf in boxes:
         if not text.strip():
             continue
-        avg_x = sum(pt[0] for pt in box) / 4.0
-        avg_y = sum(pt[1] for pt in box) / 4.0
-        avg_h = abs(box[2][1] - box[0][1])   # box height in pixels
-        # Use the larger of the dynamic band or half the text box height
-        # so tall characters don't bleed into the wrong row
-        effective_band = max(band_px, int(avg_h * 0.6))
-        band = int(round(avg_y / effective_band))
+        avg_x: float = sum(pt[0] for pt in box) / 4.0
+        avg_y: float = sum(pt[1] for pt in box) / 4.0
+        avg_h: float = abs(box[2][1] - box[0][1])   # box height in pixels
+        effective_band: int = max(band_px, int(avg_h * 0.6))
+        band: int = int(round(avg_y / effective_band))
         line_groups.setdefault(band, []).append((avg_x, text, conf))
 
-    # Sort bands top-to-bottom, then words within each band left-to-right
-    sorted_lines = []
+    sorted_lines: list[str] = []
     for band in sorted(line_groups.keys()):
-        words_sorted = sorted(line_groups[band], key=lambda x: x[0])
-
-        # Build line text. Use TAB as column separator only for wide gaps
-        # (actual column gap in a nutrition table is typically > 80px after resize)
-        col_gap_threshold = max(60, int(img_w * 0.05))
-        line_text = ""
-        last_x = -1
+        words_sorted: list[tuple[float, str, float]] = sorted(line_groups[band], key=lambda x: x[0])
+        col_gap_threshold: int = max(60, int(img_w * 0.05))
+        line_text: str = ""
+        last_x: float = -1
         for x, text, _ in words_sorted:
             if last_x == -1:
                 line_text = text
             else:
-                gap = x - last_x
-                sep = "\t" if gap > col_gap_threshold else " "
+                gap: float = x - last_x
+                sep: str = "\t" if gap > col_gap_threshold else " "
                 line_text += f"{sep}{text}"
-            last_x = x + (len(text) * 7)   # ~7px per char estimate
+            last_x = x + (len(text) * 7)
 
         sorted_lines.append(line_text)
 
-    all_text = "\n".join(sorted_lines)
-    flat_text = " ".join(sorted_lines)
+    all_text: str = "\n".join(sorted_lines)
+    flat_text: str = " ".join(sorted_lines)
 
-    confidences = [max(r[2], 0.05) if r[1].strip() else 0.0 for r in boxes]
-    word_count = len(flat_text.split())
-    avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
+    confidences: list[float] = [float(max(r[2], 0.05)) if r[1].strip() else 0.0 for r in boxes]
+    word_count: int = len(flat_text.split())
+    avg_conf: float = sum(confidences) / len(confidences) if confidences else 0.0
 
-    result = {
+    result: dict = {
         "text": all_text,
         "flat_text": flat_text,
         "word_count": word_count,
@@ -218,20 +207,12 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
     """
     THE TRASH COMPACTOR (v4 — permissive, context-aware):
     Strips out Indian legal text (FSSAI, MRP) and keeps only nutrition data.
-
-    KEY FIXES in v4:
-    - Expanded nutrition_words to catch serving size, daily value, etc.
-    - High-strength header check now catches ANY of: "Nutrition Facts",
-      "Serving Size", "Total Fat", "Saturated Fat", "Daily Value",
-      "Per 100g", "Total Carb", "Dietary Fiber".
-    - This ensures stylized product mockups (peanut butter label mockups, etc.)
-      are NEVER falsely rejected — if the image has nutrition keywords, it passes.
     """
-    lines = raw_ocr_text.split("\n")
-    clean_lines = []
-    number_count = 0
+    lines: list[str] = raw_ocr_text.split("\n")
+    clean_lines: list[str] = []
+    number_count: int = 0
 
-    nutrition_words = (
+    nutrition_words: str = (
         r"(energy|calorie|calories|protein|protien|fat|carb|sugar|sodium|fibre|fiber|"
         r"salt|per\s*100\s*g|per\s*100\s*ml|per\s*serve|per\s*serving|serving|"
         r"trans\s*fat|saturated|unsaturated|mono.unsaturated|poly.unsaturated|"
@@ -243,7 +224,7 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
         r"kj|kilojoule|kilojoules|kcal|kilo\s*calorie|oleic|starch|glycogen|"
         r"nutrient|nutrients|per\s*portion|reference\s*intake|ri|\%\s*ri)"
     )
-    garbage_words = (
+    garbage_words: str = (
         r"(fssai|lic\.?|net\s*wt|net\s*qty|mrp|customer\s*care|batch\s*no|"
         r"best\s*before|mfd|date\s*of|packed\s*on|manufactured\s*by|marketed\s*by|"
         r"imported\s*by|country\s*of|origin|www\.|toll\s*free|tel\.|e-mail|"
@@ -251,77 +232,64 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
         r"place\s*away|direct\s*heat|sunlight|green\s*dot|red\s*dot|fpo|license\s*no)"
     )
 
-    # Universal metric pattern (covers any language: digits followed by unit)
-    unit_pattern = (
+    unit_pattern: str = (
         r"\b\d+([\.,]\d+)?\s*(g|mg|kcal|kj|cal|gm|gms|ml|iu|mcg|µg|%|千卡|克|毫克|エネルギー|蛋白质|脂肪)(\b|/)"
     )
 
-    header_line_count = 0
-    max_header_lines = 5
+    header_line_count: int = 0
+    max_header_lines: int = 5
 
     for idx, line in enumerate(lines):
-        line_l = line.lower().strip()
+        line_l: str = line.lower().strip()
         if not line_l:
             continue
 
-        has_nutrition_keyword = bool(re.search(nutrition_words, line_l))
-        has_garbage = bool(re.search(garbage_words, line_l))
-        has_number_unit = bool(re.search(unit_pattern, line_l))
+        has_nutrition_keyword: bool = bool(re.search(nutrition_words, line_l))
+        has_garbage: bool = bool(re.search(garbage_words, line_l))
+        has_number_unit: bool = bool(re.search(unit_pattern, line_l))
 
-        coherent_words = [w for w in line_l.split() if len(w) >= 2]
-        substantial_words = [w for w in line_l.split() if len(w) >= 4]
+        coherent_words: list[str] = [w for w in line_l.split() if len(w) >= 2]
+        substantial_words: list[str] = [w for w in line_l.split() if len(w) >= 4]
         
-        # RELAXED QUALITY: If we already found a nutrition keyword, lower the bar
-        has_min_quality = len(coherent_words) >= 1
+        has_min_quality: bool = len(coherent_words) >= 1
         if not has_nutrition_keyword:
              has_min_quality = len(coherent_words) >= 2 and len(substantial_words) >= 1
 
-        # HEADER PRESERVATION: keep first N non-garbage lines with minimum quality
         if header_line_count < max_header_lines and not has_garbage and has_min_quality:
             header_line_count += 1
             clean_lines.append(line)
-            if has_number_unit:
-                number_count += 1
-            if re.search(r"\b\d+(\.\d+)?\b", line_l):
+            if has_number_unit or re.search(r"\b\d+(\.\d+)?\b", line_l):
                 number_count += 1
             continue
 
-        # KEYWORD PRIORITY: nutrition lines are never discarded
         if has_nutrition_keyword:
             clean_lines.append(line)
-            if has_number_unit:
-                number_count += 1
-            # Also count bare numbers on nutrition lines (e.g. "Protein 9.2")
-            if re.search(r"\b\d+(\.\d+)?\b", line_l):
+            if has_number_unit or re.search(r"\b\d+(\.\d+)?\b", line_l):
                 number_count += 1
             continue
 
-        # CONTEXT PRESERVATION: keep "Ingredients" or "Information" lines
         if re.search(r"(ingredient|information|nutritional|nutrition info|serving)", line_l):
             clean_lines.append(line)
             if re.search(r"\b\d+(\.\d+)?\b", line_l):
                 number_count += 1
             continue
 
-        # Skip pure garbage lines (no nutrition keyword present)
         if has_garbage:
             continue
 
-        # METRIC PRIORITY: any line with a number followed by a unit is KEPT
         if has_number_unit:
             clean_lines.append(line)
             number_count += 1
             continue
 
-        # RELAXED NUMBER GATE: captures rows like "Energy (kcal) per 100g 384"
         if re.search(r"\b\d+(\.\d+)?\b", line_l) and len(line_l.split()) <= 15:
             clean_lines.append(line)
             number_count += 1
             continue
 
-    clean_text = "\n".join(clean_lines)
+    clean_text: str = "\n".join(clean_lines)
 
-    high_strength_header = bool(re.search(
+    high_strength_header: bool = bool(re.search(
         r"(nutrition\s*facts|amount\s*per\s*serving|information\s*per|serving\s*size|"
         r"calories\s+from|daily\s+value|percent\s+daily|per\s+100\s*g|per\s+100\s*ml|"
         r"total\s+fat|total\s+carb|dietary\s+fiber|dietary\s+fibre|"
@@ -330,27 +298,24 @@ def universal_label_filter(raw_ocr_text: str) -> dict:
         r"per\s+portion|per\s+serving|kj\s+\d|kcal\s+\d|\d+\s*kcal|\d+\s*kj|energy\s*\d|protein\s*\d)",
         raw_ocr_text.lower()
     ))
-    # FINAL GATE (v6): Valid if extraction has BOTH:
-    #   A) High-strength nutrition header/keywords found, AND
-    #   B) At least 4 numerical values extracted.
-    is_valid = (number_count >= 4) and high_strength_header
+    is_valid: bool = (number_count >= 4) and high_strength_header
 
     return {"is_valid": is_valid, "clean_text": clean_text}
 
 
 def strip_marketing_fluff(raw_ocr_text: str) -> str:
     """Wrapper to easily call the filter from the LLM flow."""
-    result = universal_label_filter(raw_ocr_text)
+    result: dict = universal_label_filter(raw_ocr_text)
     return result["clean_text"]
 
 
-OCR_CONFIDENCE_THRESHOLD = 0.35
+OCR_CONFIDENCE_THRESHOLD: float = 0.35
 
 
 def passes_confidence_gate(ocr_result: dict) -> tuple[bool, str]:
     """Check if OCR confidence meets minimum threshold."""
-    avg_conf = ocr_result.get("avg_confidence", 0.0)
-    word_count = ocr_result.get("word_count", 0)
+    avg_conf: float = float(ocr_result.get("avg_confidence", 0.0))
+    word_count: int = int(ocr_result.get("word_count", 0))
     if avg_conf < OCR_CONFIDENCE_THRESHOLD and word_count < 15:
         return False, (
             f"Image quality too low (confidence: {avg_conf:.0%}). "

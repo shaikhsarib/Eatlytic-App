@@ -1,7 +1,7 @@
 """
 app/services/research_engine.py
 Live web research using DuckDuckGo Search.
-Import is guarded — module loads safely even if duckduckgo_search is not installed.
+Import is guarded — module loads safely even if ddgs is not installed.
 """
 
 import logging
@@ -9,14 +9,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 try:
-    from duckduckgo_search import DDGS
-    import warnings
-    warnings.filterwarnings("ignore", module="duckduckgo_search")
+    from ddgs import DDGS
     _DDGS_AVAILABLE = True
 except ImportError:
     DDGS = None
     _DDGS_AVAILABLE = False
-    logger.warning("duckduckgo-search not installed — web research disabled.")
+    logger.warning("ddgs not installed — web research disabled.")
 
 import time
 

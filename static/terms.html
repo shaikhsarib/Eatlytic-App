@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Terms — Eatlytic</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=Nunito:wght@400;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .static-page { padding: 24px 18px; max-width: 600px; margin: 0 auto; }
+    .hero-title { font-family: 'Fraunces', serif; font-size: 2.5rem; font-weight: 900; line-height: 1; margin-bottom: 16px; color: var(--ink); }
+    .content-card { background: var(--white); border: var(--border); border-radius: var(--r); padding: 24px; box-shadow: var(--shadow-card); margin-bottom: 24px; }
+    .para { font-size: 1rem; line-height: 1.6; margin-bottom: 18px; color: var(--ink); opacity: 0.9; }
+    .h2 { font-family: 'Space Mono', monospace; font-size: 0.9rem; font-weight: 800; text-transform: uppercase; margin-bottom: 12px; display: block; color: var(--muted); }
+    .back-btn { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; color: var(--ink); text-decoration: none; margin-bottom: 24px; }
+  </style>
+</head>
+<body>
+  <div class="screen active">
+    <div class="app-header">
+      <a href="/" class="back-btn">← Back</a>
+      <div class="app-logo">E<em>a</em>tlytic</div>
+      <div style="width:40px"></div>
+    </div>
+    <div class="scroll-inner">
+      <div class="static-page">
+        <h1 class="hero-title">The <em>Rules</em>.</h1>
+        
+        <div class="content-card">
+          <span class="h2">Medical Disclaimer</span>
+          <p class="para" style="color: var(--red); font-weight: 800;">Eatlytic is NOT a medical device. The information provided is for educational purposes only. Always consult a licensed physician or dietitian before making health decisions.</p>
+          
+          <span class="h2">Acceptable Use</span>
+          <p class="para">You agree not to use Eatlytic for any commercial purpose without an API license. Automated scanning or scraping of our service is strictly prohibited.</p>
+
+          <span class="h2">Subscription & Refunds</span>
+          <p class="para">Pro subscriptions are billed monthly or annually via Razorpay. You can cancel at any time. Refunds are processed according to the Razorpay standard policy for digital services.</p>
+          
+          <span class="h2">Accuracy</span>
+          <p class="para">While we use Atwater validation and advanced AI, OCR can occasionally misread labels. We provide a "Confidence Score" for every scan—please verify results against the physical label.</p>
+        </div>
+
+        <div class="app-footer">
+          <div class="footer-copy">© 2026 Eatlytic · Science-First Nutrition</div>
+        </div>
+        <div class="pad-bottom"></div>
+      </div>
+    </div>
+  </div>
+  <script>
+    if(localStorage.getItem('theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  </script>
+</body>
+</html>

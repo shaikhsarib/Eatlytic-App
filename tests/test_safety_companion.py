@@ -11,7 +11,7 @@ async def test_safety_companion_diabetes_avoid():
     """Verify that high-sugar labels trigger 🔴 Avoid for Diabetics."""
     
     # Simulated high-sugar OCR text
-    label_text = "Nutrition Facts\nPer 100g\nSugar: 45g\nCarbohydrates: 80g\nEnergy: 400kcal"
+    label_text = "Nutrition Facts\nPer 100g\nSugar: 45g\nCarbohydrates: 80g\nEnergy: 400kcal\nFat: 5g"
     
     # Mock LLM response including the new Safety Companion fields
     mock_llm_json = {
@@ -38,7 +38,7 @@ async def test_safety_companion_diabetes_avoid():
         "better_alternative": "Plain Oats"
     }
 
-    with patch("app.services.llm.call_llm", return_value=json.dumps(mock_llm_json)):
+    with patch("app.services.llm.engine.call_llm", return_value=json.dumps(mock_llm_json)):
         result = await unified_analyze_flow(
             extracted_text=label_text,
             persona="Diabetes Care",
@@ -60,7 +60,7 @@ async def test_safety_companion_diabetes_avoid():
 async def test_safety_companion_hypertension_avoid():
     """Verify that high-sodium labels trigger 🔴 Avoid for Hypertension patients."""
     
-    label_text = "Nutrition Facts\nPer 100g\nSodium: 1200mg\nSalt: 3g"
+    label_text = "Nutrition Facts\nPer 100g\nSodium: 1200mg\nSalt: 3g\nEnergy: 500kcal\nFat: 30g"
     
     mock_llm_json = {
         "product_name": "Salted Chips",
@@ -86,7 +86,7 @@ async def test_safety_companion_hypertension_avoid():
         "better_alternative": "Unsalted Nuts"
     }
 
-    with patch("app.services.llm.call_llm", return_value=json.dumps(mock_llm_json)):
+    with patch("app.services.llm.engine.call_llm", return_value=json.dumps(mock_llm_json)):
         result = await unified_analyze_flow(
             extracted_text=label_text,
             persona="Blood Pressure (Hypertension)",
@@ -107,7 +107,7 @@ async def test_safety_companion_hypertension_avoid():
 async def test_safety_companion_general_health_safe():
     """Verify that a healthy product triggers 🟢 Safe for general users."""
     
-    label_text = "Nutrition Facts\nPer 100g\nSugar: 0g\nProtein: 15g\nFiber: 8g"
+    label_text = "Nutrition Facts\nPer 100g\nSugar: 0g\nProtein: 15g\nFiber: 8g\nFat: 1g"
     
     mock_llm_json = {
         "product_name": "Lentils",
@@ -133,7 +133,7 @@ async def test_safety_companion_general_health_safe():
         "better_alternative": "None"
     }
 
-    with patch("app.services.llm.call_llm", return_value=json.dumps(mock_llm_json)):
+    with patch("app.services.llm.engine.call_llm", return_value=json.dumps(mock_llm_json)):
         result = await unified_analyze_flow(
             extracted_text=label_text,
             persona="General Health",

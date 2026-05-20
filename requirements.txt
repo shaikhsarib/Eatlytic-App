@@ -20,7 +20,7 @@ easyocr
 # AI / LLM
 groq
 tenacity>=8.2.0
-duckduckgo-search
+ddgs
 
 # Supabase (production database)
 supabase
