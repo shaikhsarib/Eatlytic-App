@@ -1,0 +1,151 @@
+:root {
+  /* ── Light mode (default) ── */
+  --white: #FFFFFF;
+  --ink: #0A0A0A;
+  --bg: #F5F3EE;
+  --yellow: #FFD600;
+  --pink: #FF2D78;
+  --blue: #0047FF;
+  --mint: #00C896;
+  --orange: #FF6B00;
+  --lilac: #C084FC;
+  --red: #FF1744;
+  --cream: #FFF8E8;
+  --muted: #777;
+  --green: #00A878;
+  --shadow-sticker: 3px 4px 0px var(--ink);
+  --shadow-card: 4px 6px 0px rgba(10, 10, 10, 0.14);
+  --shadow-sm: 2px 3px 0px rgba(10, 10, 10, 0.12);
+  --border: 2px solid var(--ink);
+  --r: 16px;
+  --r-pill: 100px;
+  /* nav height + iOS safe area */
+  --nav-h: 60px;
+  --nav-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ── Dark mode token overrides ── */
+[data-theme="dark"] {
+  --white: #1A1A1A;
+  --ink: #F0EDE6;
+  --bg: #111111;
+  --cream: #1E1C18;
+  --muted: #8A8A8A;
+  --shadow-sticker: 3px 4px 0px rgba(240, 237, 230, 0.15);
+  --shadow-card: 4px 6px 0px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 2px 3px 0px rgba(0, 0, 0, 0.4);
+  --border: 2px solid rgba(240, 237, 230, 0.18);
+}
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg)
+}
+
+body {
+  font-family: 'Nunito', sans-serif;
+  color: var(--ink)
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none
+}
+
+/* halftone dot texture */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  background-image: radial-gradient(circle, rgba(10, 10, 10, 0.05) 1px, transparent 1px);
+  background-size: 16px 16px
+}
+
+/* screen system */
+.screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.96) translateY(12px);
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.2, 0.64, 1);
+  will-change: opacity, transform;
+  backface-visibility: hidden
+}
+
+.screen.active {
+  opacity: 1;
+  pointer-events: all;
+  transform: scale(1) translateY(0)
+}
+
+/* app header */
+.app-header {
+  flex-shrink: 0;
+  padding: 12px 18px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg);
+  border-bottom: var(--border);
+  z-index: 5
+}
+
+.app-logo {
+  font-family: 'Fraunces', serif;
+  font-weight: 900;
+  font-size: 1.5rem;
+  letter-spacing: -2px;
+  color: var(--ink)
+}
+
+.app-logo em {
+  color: var(--yellow);
+  font-style: italic;
+  -webkit-text-stroke: 1px var(--ink)
+}
+
+.scroll-inner {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none
+}
+
+.scroll-inner::-webkit-scrollbar {
+  display: none
+}
+
+.section-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px
+}
+
+[data-theme="dark"] body::after {
+  background-image: radial-gradient(circle, rgba(240, 237, 230, 0.04) 1px, transparent 1px);
+}
