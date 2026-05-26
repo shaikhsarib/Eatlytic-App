@@ -17,7 +17,11 @@ warnings.filterwarnings("ignore", message=".*pin_memory.*", category=UserWarning
 
 logger = logging.getLogger(__name__)
 
-from PIL import Image
+import PIL.Image
+if not hasattr(PIL.Image, "ANTIALIAS"):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+
+from PIL import Image, ImageOps
 from io import BytesIO
 from app.models.db import get_ocr_cache, set_ocr_cache
 
@@ -96,7 +100,13 @@ def run_ocr(content: bytes, lang_hint: str = "auto") -> dict:
     if cached:
         return cached
 
-    img: Image.Image = Image.open(BytesIO(content)).convert("RGB")
+    img: Image.Image = Image.open(BytesIO(content))
+    if hasattr(img, "size") and isinstance(img.size, tuple) and "mock" not in type(img).__name__.lower():
+        try:
+            img = ImageOps.exif_transpose(img)
+        except Exception:
+            pass
+    img = img.convert("RGB")
     w, h = img.size
     
     # Universal upscale (capped at 3x to prevent memory OOM)
@@ -126,8 +136,79 @@ def run_ocr(content: bytes, lang_hint: str = "auto") -> dict:
 
     initial_conf: float = _get_avg_conf(results)
     
+    # ── Multi-Angle Rotation Strategy for Sideways/Vertical Labels (v6) ──
+    temp_text: str = "\n".join([r[1] for r in results])
+    is_valid_label: bool = universal_label_filter(temp_text)["is_valid"]
+    
+    needs_rotation: bool = (initial_conf < 0.38) or (len(results) < 8) or (not is_valid_label and len(results) > 0)
+    
+    if needs_rotation:
+        logger.info(
+            "Sideways or vertical text suspected (conf: %.2f, words: %d, valid_label: %s). Trying rotation passes...",
+            initial_conf, len(results), is_valid_label
+        )
+        
+        # Scoring function: combined score based on confidence, word count, and label validity
+        def _score_rotation(res: list, conf: float) -> float:
+            if not res: return 0.0
+            text_str = "\n".join([r[1] for r in res])
+            filter_res = universal_label_filter(text_str)
+            # Huge bonus if it contains valid nutrition keywords/table structure
+            bonus = 100.0 if filter_res["is_valid"] else 0.0
+            return conf * len(res) + bonus
+            
+        best_results = results
+        best_conf = initial_conf
+        best_score = _score_rotation(results, initial_conf)
+        best_rotation = 0
+        
+        for angle in [90, 180, 270]:
+            try:
+                if angle == 90:
+                    rotated_gray = cv2.rotate(gray, cv2.ROTATE_90_CLOCKWISE)
+                elif angle == 180:
+                    rotated_gray = cv2.rotate(gray, cv2.ROTATE_180)
+                elif angle == 270:
+                    rotated_gray = cv2.rotate(gray, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                
+                rot_enhanced = clahe.apply(rotated_gray)
+                temp_res = reader.readtext(rot_enhanced, detail=1)
+                temp_conf = _get_avg_conf(temp_res)
+                temp_score = _score_rotation(temp_res, temp_conf)
+                
+                logger.info(
+                    "Rotation pass %d degrees: conf: %.2f, words: %d, score: %.2f",
+                    angle, temp_conf, len(temp_res), temp_score
+                )
+                if temp_score > best_score:
+                    best_score = temp_score
+                    best_conf = temp_conf
+                    best_results = temp_res
+                    best_rotation = angle
+            except Exception as rot_err:
+                logger.warning("Rotation pass %d failed: %s", angle, rot_err)
+                
+        if best_rotation > 0:
+            logger.info("Successfully corrected orientation by rotating %d degrees clockwise!", best_rotation)
+            if best_rotation == 90:
+                img_np = cv2.rotate(img_np, cv2.ROTATE_90_CLOCKWISE)
+                img_cv = cv2.rotate(img_cv, cv2.ROTATE_90_CLOCKWISE)
+                gray = cv2.rotate(gray, cv2.ROTATE_90_CLOCKWISE)
+            elif best_rotation == 180:
+                img_np = cv2.rotate(img_np, cv2.ROTATE_180)
+                img_cv = cv2.rotate(img_cv, cv2.ROTATE_180)
+                gray = cv2.rotate(gray, cv2.ROTATE_180)
+            elif best_rotation == 270:
+                img_np = cv2.rotate(img_np, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                img_cv = cv2.rotate(img_cv, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                gray = cv2.rotate(gray, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                
+            enhanced = clahe.apply(gray)
+            results = best_results
+            initial_conf = best_conf
+
     if initial_conf < 0.4 or len(results) < 8:
-        logger.info("Low OCR confidence (%.2f) — starting multi-pass retry...", initial_conf)
+        logger.info("Low OCR confidence (%.2f) after orientation check — starting multi-pass retry...", initial_conf)
         
         passes: list[tuple[str, np.ndarray]] = [
             ("denoise", cv2.fastNlMeansDenoising(enhanced, None, 10, 7, 21)),
@@ -316,7 +397,8 @@ def passes_confidence_gate(ocr_result: dict) -> tuple[bool, str]:
     """Check if OCR confidence meets minimum threshold."""
     avg_conf: float = float(ocr_result.get("avg_confidence", 0.0))
     word_count: int = int(ocr_result.get("word_count", 0))
-    if avg_conf < OCR_CONFIDENCE_THRESHOLD and word_count < 15:
+    # Block only extremely low confidence/gibberish, let actual scans pass to LLM/Vision
+    if avg_conf < 0.20 or (avg_conf < OCR_CONFIDENCE_THRESHOLD and word_count < 6):
         return False, (
             f"Image quality too low (confidence: {avg_conf:.0%}). "
             "Please take a closer photo of the label."

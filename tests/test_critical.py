@@ -441,3 +441,33 @@ class TestAccuracyBenchmarking:
 
         score = _word_f1("wheat flour sugar", "wheat flour")
         assert 0 < score < 1.0
+
+
+# ══ 11. ENDPOINT BLUR REJECTION ═══════════════════════════════════════
+class TestEndpointBlurRejection:
+    @pytest.mark.asyncio
+    async def test_analyze_endpoint_blurry_image_blocked(self):
+        """Should block scan on /analyze and return 400 with 'blurry_image' error."""
+        from main import app
+        import httpx
+        from unittest.mock import patch
+        
+        mock_ocr = {
+            "text": "Too blurry to read",
+            "avg_confidence": 0.12,
+            "word_count": 3
+        }
+        
+        with patch("app.routes.scan.run_ocr", return_value=mock_ocr):
+            dummy_file = {"image": ("label.jpg", b"\x00\x00\x00", "image/jpeg")}
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+                resp = await ac.post(
+                    "/analyze",
+                    files=dummy_file,
+                    data={"persona": "adult", "language": "en"}
+                )
+            
+            assert resp.status_code == 400
+            result = resp.json()
+            assert result["error"] == "blurry_image"
+            assert "too low" in result["message"].lower()

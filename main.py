@@ -21,8 +21,9 @@ if not hasattr(PIL.Image, 'ANTIALIAS'):
 load_dotenv()
 
 from app.models.db import init_db
-from app.routes import scan, user, admin, b2b, payments, benchmarks
+from app.routes import scan, user, admin, b2b, payments, benchmarks, dietitian
 from app.routes import food_db
+
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
@@ -61,6 +62,8 @@ app.include_router(b2b.router)
 app.include_router(payments.router)
 app.include_router(benchmarks.router)
 app.include_router(food_db.router)
+app.include_router(dietitian.router)
+
 
 # --- Static ---
 app.mount("/static", StaticFiles(directory="static"), name="static")

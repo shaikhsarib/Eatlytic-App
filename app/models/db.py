@@ -56,6 +56,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS users (
                 id           TEXT PRIMARY KEY,
                 email        TEXT UNIQUE,
+                password_hash TEXT,
                 phone        TEXT UNIQUE,
                 name         TEXT DEFAULT '',
                 created_at   TEXT DEFAULT (datetime('now')),
@@ -223,11 +224,50 @@ def init_db() -> None:
                 ingredients_raw TEXT DEFAULT '',
                 source          TEXT DEFAULT 'llm_scan'
             );
+
+            CREATE TABLE IF NOT EXISTS payments (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id             TEXT,
+                device_key          TEXT,
+                razorpay_order_id   TEXT UNIQUE,
+                razorpay_payment_id TEXT,
+                razorpay_signature  TEXT,
+                amount_paise        INTEGER,
+                currency            TEXT DEFAULT 'INR',
+                status              TEXT,
+                paid_at             TEXT,
+                created_at          TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS dietitians (
+                code            TEXT PRIMARY KEY,
+                name            TEXT NOT NULL,
+                email           TEXT NOT NULL,
+                dietitian_key   TEXT NOT NULL,
+                created_at      TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS patient_cohorts (
+                device_key      TEXT NOT NULL,
+                dietitian_code  TEXT REFERENCES dietitians(code) ON DELETE CASCADE,
+                created_at      TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (device_key, dietitian_code)
+            );
         """)
         # Migrations for existing DBs
         try: conn.execute("ALTER TABLE scans ADD COLUMN metadata_json TEXT DEFAULT '{}'")
         except: pass
         try: conn.execute("ALTER TABLE scans ADD COLUMN correction_json TEXT DEFAULT '{}'")
+        except: pass
+        try: conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        except: pass
+        try: conn.execute("ALTER TABLE daily_logs ADD COLUMN user_id TEXT")
+        except: pass
+        try: conn.execute("ALTER TABLE daily_logs ADD COLUMN protein REAL DEFAULT 0")
+        except: pass
+        try: conn.execute("ALTER TABLE daily_logs ADD COLUMN carbs REAL DEFAULT 0")
+        except: pass
+        try: conn.execute("ALTER TABLE daily_logs ADD COLUMN fat REAL DEFAULT 0")
         except: pass
     logger.info("Database ready: %s", DB_FILE)
 
@@ -267,14 +307,28 @@ def set_ocr_cache(key: str, value: dict):
         c.execute("INSERT OR REPLACE INTO ocr_cache(cache_key,result_json) VALUES(?,?)", (key, json.dumps(value)))
 
 def get_image_fingerprint_match(hash_key: str):
-    if _supabase:
-        try:
-            res = _supabase.table("image_fingerprints").select("*").eq("hash_key", hash_key).execute()
-            if res.data: return json.loads(res.data[0]["result_json"])
-        except Exception: pass
+    if not hash_key:
+        return None
+    # 1. Try exact lookup first
     with db_conn() as c:
         row = c.execute("SELECT result_json FROM image_fingerprints WHERE hash_key=?", (hash_key,)).fetchone()
-    return json.loads(row["result_json"]) if row else None
+    if row:
+        return json.loads(row["result_json"])
+        
+    # 2. Fall back to Hamming distance scan
+    from app.services.hash_service import calculate_hamming_distance
+    with db_conn() as c:
+        rows = c.execute("SELECT hash_key, result_json FROM image_fingerprints").fetchall()
+    best_match = None
+    best_dist = 999
+    for row in rows:
+        stored_hash = row["hash_key"]
+        dist = calculate_hamming_distance(hash_key, stored_hash)
+        if dist <= 6:
+            if dist < best_dist:
+                best_dist = dist
+                best_match = json.loads(row["result_json"])
+    return best_match
 
 def set_image_fingerprint(hash_key: str, value: dict):
     if _supabase:
@@ -305,7 +359,6 @@ def set_research_cache(query: str, result: str):
 def check_and_increment_scan(device_key: str, limit: int = 10, increment: bool = True) -> dict:
     month_key = datetime.date.today().isoformat()[:7]
     with db_conn() as conn:
-        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT * FROM devices WHERE device_key=?", (device_key,)).fetchone()
         if not row:
             conn.execute("INSERT INTO devices(device_key, month, scan_count) VALUES(?,?,0)", (device_key, month_key))
@@ -451,3 +504,127 @@ def get_daily_macro_totals(device_key: str):
         "carbs": row["total_car"],
         "fat": row["total_fat"]
     }
+
+# ── User Authentication & Password Hashing ─────────────────────────────
+def hash_password(password: str) -> str:
+    import hashlib
+    import os
+    salt = os.urandom(16).hex()
+    pbkdf_hash = hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt.encode('utf-8'),
+        100000
+    ).hex()
+    return f"{salt}:{pbkdf_hash}"
+
+def verify_password(stored_password_hash: str, password: str) -> bool:
+    import hashlib
+    if not stored_password_hash or ":" not in stored_password_hash:
+        return False
+    salt, original_hash = stored_password_hash.split(":", 1)
+    pbkdf_hash = hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt.encode('utf-8'),
+        100000
+    ).hex()
+    return pbkdf_hash == original_hash
+
+def create_user(email: str, password: str, name: str = "", persona: str = "General Adult", language: str = "en") -> str:
+    import uuid
+    user_id = str(uuid.uuid4())
+    pw_hash = hash_password(password)
+    with db_conn() as conn:
+        conn.execute("""
+            INSERT INTO users (id, email, password_hash, name, persona, language)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user_id, email, pw_hash, name, persona, language))
+    return user_id
+
+def authenticate_user(email: str, password: str) -> dict:
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    if not row:
+        return None
+    user_dict = dict(row)
+    if verify_password(user_dict.get("password_hash"), password):
+        # strip password_hash for safety before returning
+        user_dict.pop("password_hash", None)
+        return user_dict
+    return None
+
+def create_session(user_id: str, device_hint: str = "") -> str:
+    import os
+    import datetime
+    token = os.urandom(24).hex()
+    expires_at = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
+    with db_conn() as conn:
+        conn.execute("""
+            INSERT INTO sessions (token, user_id, expires_at, device_hint)
+            VALUES (?, ?, ?, ?)
+        """, (token, user_id, expires_at, device_hint))
+    return token
+
+def get_session(token: str) -> dict:
+    import datetime
+    with db_conn() as conn:
+        row = conn.execute("""
+            SELECT s.*, u.email, u.name, u.is_pro, u.persona, u.language, u.tdee
+            FROM sessions s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.token = ?
+        """, (token,)).fetchone()
+    if not row:
+        return None
+    session_dict = dict(row)
+    if session_dict["expires_at"] < datetime.datetime.utcnow().isoformat():
+        delete_session(token)
+        return None
+    return session_dict
+
+def delete_session(token: str) -> None:
+    with db_conn() as conn:
+        conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+
+def sync_local_history(device_key: str, user_id: str) -> None:
+    with db_conn() as conn:
+        conn.execute("UPDATE scans SET user_id = ? WHERE device_key = ? AND user_id IS NULL", (user_id, device_key))
+        conn.execute("UPDATE daily_logs SET user_id = ? WHERE device_key = ? AND user_id IS NULL", (user_id, device_key))
+        conn.execute("UPDATE devices SET user_id = ? WHERE device_key = ?", (user_id, device_key))
+
+# ── B2B Developer Organization & API Keys ─────────────────────────────
+def create_organization(admin_id: str, name: str) -> str:
+    import uuid
+    org_id = str(uuid.uuid4())
+    with db_conn() as conn:
+        conn.execute("""
+            INSERT INTO organizations (id, name, admin_id)
+            VALUES (?, ?, ?)
+        """, (org_id, name, admin_id))
+    return org_id
+
+def get_org_by_admin(admin_id: str) -> dict:
+    with db_conn() as conn:
+        row = conn.execute("SELECT * FROM organizations WHERE admin_id = ?", (admin_id,)).fetchone()
+    return dict(row) if row else None
+
+def generate_api_key(client_name: str, organization_id: str, plan: str = "business") -> str:
+    import os
+    api_key = f"eatlytic_live_{os.urandom(16).hex()}"
+    with db_conn() as conn:
+        conn.execute("""
+            INSERT INTO api_keys (api_key, client_name, organization_id, plan, active)
+            VALUES (?, ?, ?, ?, 1)
+        """, (api_key, client_name, organization_id, plan))
+    return api_key
+
+def get_org_api_keys(organization_id: str) -> list:
+    with db_conn() as conn:
+        rows = conn.execute("SELECT * FROM api_keys WHERE organization_id = ? ORDER BY created_at DESC", (organization_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+def revoke_api_key(api_key: str) -> None:
+    with db_conn() as conn:
+        conn.execute("UPDATE api_keys SET active = 0 WHERE api_key = ?", (api_key,))
+

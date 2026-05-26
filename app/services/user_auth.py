@@ -115,7 +115,7 @@ def get_user_from_token(token: str):
     return dict(row) if row else None
 
 
-def check_and_increment_scan_user(user_id: str) -> dict:
+def check_and_increment_scan_user(user_id: str, increment: bool = True) -> dict:
     """
     Check if user has remaining scan quota and increment.
     Returns quota status dict.
@@ -134,12 +134,14 @@ def check_and_increment_scan_user(user_id: str) -> dict:
         else:
             count = row["scan_count_month"]
         if row["is_pro"]:
-            conn.execute("UPDATE users SET scan_count_month=scan_count_month+1 WHERE id=?", (user_id,))
-            return {"allowed": True, "scans_used": count+1, "scans_remaining": 9999, "is_pro": True}
+            if increment:
+                conn.execute("UPDATE users SET scan_count_month=scan_count_month+1 WHERE id=?", (user_id,))
+            return {"allowed": True, "scans_used": count + (1 if increment else 0), "scans_remaining": 9999, "is_pro": True}
         if count >= FREE_SCAN_LIMIT:
             return {"allowed": False, "scans_used": count, "scans_remaining": 0, "is_pro": False}
-        conn.execute("UPDATE users SET scan_count_month=scan_count_month+1 WHERE id=?", (user_id,))
-        new = count + 1
+        if increment:
+            conn.execute("UPDATE users SET scan_count_month=scan_count_month+1 WHERE id=?", (user_id,))
+        new = count + (1 if increment else 0)
         return {"allowed": True, "scans_used": new, "scans_remaining": FREE_SCAN_LIMIT - new, "is_pro": False}
 
 

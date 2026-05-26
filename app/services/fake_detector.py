@@ -366,12 +366,7 @@ def apply_dna_overrides(
     # 1. Atwater Math Check (single, correct implementation)
     math_ok = atwater_math_check(nutrients, category)
     if not math_ok["is_valid"]:
-        return {
-            "action": "BLOCK",
-            "score": 0,
-            "reason": f"❌ CANNOT SCORE: {math_ok['reason']}",
-            "extra_flags": [],
-        }
+        final_verdicts.append(f"⚠️ Calorie Math Discrepancy: {math_ok['reason']}")
 
     # 2. Lie Detector (OVERRIDE level — Score 2)
     lie_check = detect_fake_claims(full_ocr_text, ingredients_raw, front_text=front_text)

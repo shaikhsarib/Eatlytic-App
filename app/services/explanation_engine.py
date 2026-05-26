@@ -37,6 +37,9 @@ INS_DATABASE = {
     "122": "Carmoisine (Red 3). Synthetic red dye; restricted in several countries due to health concerns.",
     "127": "Erythrosine (Red 14). Iodine-based red dye often used in cherries and sweets.",
     "129": "Allura Red (Red 40). One of the most common synthetic dyes; linked to sensitivity in some kids.",
+    "536": "Anticaking agent (Potassium ferrocyanide). Safe in minute quantities, used in standard salts.",
+    "627": "Flavor enhancer (Disodium guanylate). Synthesized or extracted; best avoided by those with gout.",
+    "631": "Flavor enhancer (Disodium inosinate). Enhances savory profile; synergistic with MSG.",
 }
 
 from app.services.fake_detector import detect_nova_4
@@ -57,7 +60,7 @@ def identify_additives(ingredients_raw: str) -> list:
     # Match patterns like INS 635, E-150, or just 635 in ingredient lists
     for code, desc in INS_DATABASE.items():
         if re.search(rf"\b(ins|e)?\s*-?{code}\b", ingredients_raw.lower()):
-            found.append(f"🧪 {desc}")
+            found.append(f"🧪 INS {code.upper()}: {desc}")
     return found
 
 def get_persona_advice(nutrients: dict, ingredients: str) -> list:
@@ -176,3 +179,120 @@ def get_explanation_report(nutrients: dict, ingredients_raw: str) -> dict:
             "sodium": round(((nutrients.get("sodium_mg", 0) or nutrients.get("sodium", 0)) / INDIAN_RDA["sodium_mg"]) * 100, 1),
         }
     }
+
+def adjust_score_for_persona(score: int, nutrients: dict, ingredients: str, persona: str) -> int:
+    """
+    Dynamically scales the Eatlytic Score based on the user's active health persona.
+    """
+    if not persona:
+        return score
+    
+    p = persona.lower()
+    sugar = nutrients.get("sugar", 0.0) or 0.0
+    sodium = nutrients.get("sodium_mg", 0.0) or nutrients.get("sodium", 0.0) or 0.0
+    sat_fat = nutrients.get("saturated_fat", 0.0) or nutrients.get("sat_fat", 0.0) or 0.0
+    trans_fat = nutrients.get("trans_fat", 0.0) or 0.0
+    protein = nutrients.get("protein", 0.0) or 0.0
+    carbs = nutrients.get("carbs", 0.0) or nutrients.get("carbohydrate", 0.0) or 0.0
+    ing_lower = str(ingredients or "").lower()
+
+    # 1. Diabetic Care
+    if "diab" in p:
+        if sugar > 15:
+            score -= 3
+        elif sugar > 5:
+            score -= 1
+        if "maida" in ing_lower or "refined flour" in ing_lower or "starch" in ing_lower:
+            score -= 2
+        if carbs > 60:
+            score -= 1
+
+    # 2. Heart Health / Seniors 60+
+    elif "heart" in p or "senior" in p or "60+" in p:
+        if sodium > 700:
+            score -= 3
+        elif sodium > 400:
+            score -= 1
+        if sat_fat > 10:
+            score -= 2
+        elif sat_fat > 5:
+            score -= 1
+        if trans_fat > 0:
+            score -= 3
+
+    # 3. Fitness / Bodybuilding / Gym / Athletes
+    elif "fit" in p or "gym" in p or "athlete" in p:
+        if protein < 5:
+            score -= 2
+        elif protein >= 15:
+            score += 1
+
+    # 4. Parent / For children / Kids
+    elif "child" in p or "parent" in p or "baby" in p or "kid" in p:
+        if sodium > 600:
+            score -= 2
+        if sugar > 15:
+            score -= 2
+        # Artificial Dyes check
+        if any(d in ing_lower for d in ["e102", "e110", "e122", "e129", "tartrazine", "sunset yellow", "carmoisine", "allura red"]):
+            score -= 3
+
+    # 5. Pregnant / Maternal
+    elif "preg" in p or "matern" in p:
+        if trans_fat > 0 or "vanaspati" in ing_lower or "hydrogenated vegetable fat" in ing_lower:
+            score -= 3
+        if sodium > 600:
+            score -= 2
+        if sugar > 15:
+            score -= 1
+
+    # 6. Ketogenic Diet
+    elif "keto" in p:
+        if carbs > 10:
+            score -= 3
+        if sugar > 2:
+            score -= 2
+
+    # 7. Skin Health
+    elif "skin" in p:
+        if sugar > 15:
+            score -= 2
+        if any(d in ing_lower for d in ["e102", "e110", "e122", "e129", "tartrazine", "sunset yellow"]):
+            score -= 2
+
+    return max(1, min(10, score))
+
+
+def verify_atwater_math(nutrients: dict) -> dict:
+    """
+    Calculates calories based on 4-4-9 Atwater formula and checks variance against declared calories.
+    """
+    calories = float(nutrients.get("calories") or nutrients.get("energy") or 0.0)
+    carbs = float(nutrients.get("carbs") or nutrients.get("carbohydrates") or 0.0)
+    protein = float(nutrients.get("protein") or 0.0)
+    fat = float(nutrients.get("fat") or 0.0)
+    
+    calculated_cal = (carbs * 4.0) + (protein * 4.0) + (fat * 9.0)
+    calculated_cal = round(calculated_cal, 1)
+    
+    variance = abs(calculated_cal - calories)
+    
+    # Labeling standards allow up to 10% or +/-20 kcal deviation due to rounding
+    is_atwater_valid = False
+    if calories > 0:
+        pct_dev = (variance / calories) * 100
+        is_atwater_valid = pct_dev <= 10.0 or variance <= 20.0
+    else:
+        is_atwater_valid = calculated_cal == 0.0
+        
+    return {
+        "calculated_cal": calculated_cal,
+        "declared_cal": calories,
+        "carbs_contrib": round(carbs * 4.0, 1),
+        "protein_contrib": round(protein * 4.0, 1),
+        "fat_contrib": round(fat * 9.0, 1),
+        "variance": round(variance, 1),
+        "is_atwater_valid": is_atwater_valid
+    }
+
+

@@ -4,16 +4,205 @@ import time
 import logging
 import asyncio
 import hashlib
-from app.models.db import get_ai_cache, set_ai_cache
+from app.models.db import get_ai_cache, set_ai_cache, db_conn
 from app.services.fake_detector import apply_dna_overrides, atwater_math_check
 from app.services.alternatives import get_healthy_alternative
-from app.services.explanation_engine import get_explanation_report
+from app.services.explanation_engine import get_explanation_report, adjust_score_for_persona, verify_atwater_math
 from app.services.formatter import get_whatsapp_tiered_content
 from app.services.llm.client import call_llm, parse_llm_response
 from app.services.llm.prompts import build_super_prompt, MEDICAL_DISCLAIMER
 from app.services.llm.validators import _rule_rate, compute_rule_based_score, compute_extraction_confidence
 
 logger = logging.getLogger(__name__)
+
+def normalize_group_name(name: str) -> str:
+    if not name:
+        return ""
+    n = name.lower()
+    if "child" in n:
+        return "children"
+    if "diab" in n:
+        return "diabetics"
+    if "senior" in n or "60+" in n:
+        return "seniors"
+    if "preg" in n or "matern" in n:
+        return "pregnant"
+    if "heart" in n:
+        return "heart"
+    if "athlet" in n or "fit" in n or "gym" in n:
+        return "athletes"
+    return n
+
+def build_merged_warnings(age_warnings: list, phys_warnings: list) -> list:
+    merged = {}
+    
+    # 1. Add age warnings from LLM first (these already have nice emojis from LLM)
+    for w in age_warnings:
+        if not isinstance(w, dict) or "group" not in w:
+            continue
+        norm_key = normalize_group_name(w["group"])
+        merged[norm_key] = {
+            "group": w["group"],
+            "status": w.get("status", "good").lower(),
+            "message": w.get("message", ""),
+            "emoji": w.get("emoji", "⚠️")
+        }
+        
+    # 2. Add or merge physical advice from the explanation engine
+    for pw in phys_warnings:
+        if not isinstance(pw, dict) or "persona" not in pw:
+            continue
+        norm_key = normalize_group_name(pw["persona"])
+        pw_msg = pw.get("msg", "")
+        pw_type = pw.get("type", "caution").lower()
+        
+        if norm_key in merged:
+            existing = merged[norm_key]
+            existing_msg = existing.get("message", "")
+            # Prevent double appending
+            if pw_msg and pw_msg not in existing_msg:
+                if existing_msg:
+                    existing["message"] = f"{existing_msg}. {pw_msg}"
+                else:
+                    existing["message"] = pw_msg
+            # Update status if the new warning is more critical
+            if pw_type == "warning":
+                existing["status"] = "warning"
+            elif pw_type == "caution" and existing.get("status") not in ["warning", "avoid"]:
+                existing["status"] = "caution"
+        else:
+            emoji_map = {
+                "children": "👶",
+                "diabetics": "🩸",
+                "seniors": "👴",
+                "pregnant": "🤰",
+                "athletes": "💪",
+                "heart": "❤️"
+            }
+            emoji = emoji_map.get(norm_key, "⚠️")
+            merged[norm_key] = {
+                "group": pw["persona"],
+                "status": pw_type,
+                "message": pw_msg,
+                "emoji": emoji
+            }
+            
+    return list(merged.values())
+
+def find_db_product_match(extracted_text: str) -> dict:
+    """
+    Looks up a food product in local database based on OCR text keywords or barcode.
+    """
+    if not extracted_text or len(extracted_text.strip()) < 10:
+        return None
+        
+    lower_text = extracted_text.lower()
+    
+    # 1. Barcode check (regex matches 8 to 13 digits)
+    barcodes = re.findall(r"\b\d{8,13}\b", extracted_text)
+    if barcodes:
+        with db_conn() as conn:
+            for bc in barcodes:
+                row = conn.execute("""
+                    SELECT fp.*, fpe.sat_fat_100g, fpe.ingredients_raw, fpe.source
+                    FROM food_products fp
+                    LEFT JOIN food_products_extra fpe ON fp.id = fpe.id
+                    WHERE fp.barcode = ? AND fp.verified = 1
+                """, (bc,)).fetchone()
+                if row:
+                    return dict(row)
+                    
+    # 2. Text Keyword brand + name check
+    with db_conn() as conn:
+        rows = conn.execute("""
+            SELECT fp.*, fpe.sat_fat_100g, fpe.ingredients_raw, fpe.source
+            FROM food_products fp
+            LEFT JOIN food_products_extra fpe ON fp.id = fpe.id
+            WHERE fp.verified = 1
+        """).fetchall()
+        
+    best_match = None
+    best_score = 0
+    
+    for row in rows:
+        prod = dict(row)
+        brand = (prod.get("brand") or "").lower().strip()
+        name = (prod.get("name") or "").lower().strip()
+        
+        if not brand or not name:
+            continue
+            
+        # Brand must be present in the text
+        if brand not in lower_text:
+            continue
+            
+        # Split product name into significant words
+        name_words = [w for w in re.split(r"\W+", name) if len(w) > 2]
+        if not name_words:
+            if name in lower_text:
+                score = 10.0
+                if score > best_score:
+                    best_score = score
+                    best_match = prod
+            continue
+            
+        # Count matches
+        matches = sum(1 for w in name_words if w in lower_text)
+        match_ratio = matches / len(name_words)
+        
+        # At least 70% matching words to match
+        if match_ratio >= 0.7:
+            score = match_ratio * 10 + matches
+            if score > best_score:
+                best_score = score
+                best_match = prod
+                
+    return best_match
+
+def build_offline_match_response(db_match: dict, persona: str, language: str, t_pipeline_start: float) -> dict:
+    """
+    Constructs the exact same response schema as the LLM-based unified_analyze_flow
+    using local verified product data and offline calculations.
+    """
+    logger.info("Building offline response for verified match: %s (%s)", db_match["name"], db_match["brand"])
+    from app.services.brain import EatlyticBrain
+    brain = EatlyticBrain()
+    
+    nutrients = {
+        "calories": float(db_match.get("calories_100g") or 0.0),
+        "protein": float(db_match.get("protein_100g") or 0.0),
+        "carbs": float(db_match.get("carbs_100g") or 0.0),
+        "fat": float(db_match.get("fat_100g") or 0.0),
+        "sugar": float(db_match.get("sugar_100g") or 0.0),
+        "fiber": float(db_match.get("fiber_100g") or 0.0),
+        "saturated_fat": float(db_match.get("sat_fat_100g") or 0.0),
+        "sodium": float(db_match.get("sodium_100g") or 0.0),
+        "trans_fat": 0.0,
+        "cholesterol": 0.0,
+    }
+    ingredients_raw = db_match.get("ingredients_raw") or ""
+    
+    final_output = brain.compile_local_report(
+        product_name=db_match["name"],
+        brand=db_match["brand"],
+        category=db_match.get("category") or "unknown",
+        nutrients=nutrients,
+        ingredients_raw=ingredients_raw,
+        persona=persona,
+        eatlytic_score=int(db_match.get("eatlytic_score")) if db_match.get("eatlytic_score") is not None else None
+    )
+    
+    latency_ms = int((time.time() - t_pipeline_start) * 1000)
+    final_output["perf_metrics"] = {"latency_ms": latency_ms}
+    final_output["disclaimer"] = MEDICAL_DISCLAIMER
+    
+    try:
+        final_output["whatsapp_content"] = get_whatsapp_tiered_content(final_output)
+    except:
+        pass
+        
+    return final_output
+
 
 async def recover_label_with_ai(raw_text: str) -> dict:
     if not raw_text or len(raw_text) < 20:
@@ -75,6 +264,11 @@ async def unified_analyze_flow(
             "detected_type": label_type["detected_type"],
         }
 
+    # ENTRY POINT A: DB-First Hybrid Lookup on initial OCR text
+    db_match = find_db_product_match(extracted_text)
+    if db_match:
+        return build_offline_match_response(db_match, persona, language, t_pipeline_start)
+
     cache_key = hashlib.md5(
         f"v7:{extracted_text[:500]}:{persona}:{language}:{blur_info.get('score',0)}".encode()
     ).hexdigest()
@@ -115,7 +309,7 @@ async def unified_analyze_flow(
 
         if image_content and groq_key and not vision_text:
             import base64, requests as _req
-            GROQ_VISION_MODELS = ["llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview"]
+            GROQ_VISION_MODELS = ["meta-llama/llama-4-scout-17b-16e-instruct"]
             b64_img = base64.b64encode(image_content).decode("utf-8")
             vision_prompt = (
                 "Extract ALL text from this food product label image. Focus on the nutrition facts table, "
@@ -180,6 +374,12 @@ async def unified_analyze_flow(
         return {"error": "no_label", "message": "⚠️ No nutrition table detected. Please photograph the back of the package."}
 
     clean_text = filter_result["clean_text"]
+    
+    # ENTRY POINT B: DB-First Hybrid Lookup on enhanced/recovered OCR or vision text
+    db_match = find_db_product_match(clean_text)
+    if db_match:
+        return build_offline_match_response(db_match, persona, language, t_pipeline_start)
+
     internal_web_context = ""
     try:
         from app.services.research_engine import get_live_search
@@ -266,10 +466,49 @@ async def unified_analyze_flow(
     explanation = get_explanation_report(rich, ingredients_raw)
     nova_level = explanation["nova_level"]
 
-    llm_list = result_data.get("nutrients", [])
+    llm_list = result_data.get("nutrients") or result_data.get("nutrient_breakdown") or []
+    
+    # Filter llm_list: ensure items are dicts and have valid nutrient keywords in their 'name'
+    valid_keywords = {
+        "calorie", "energy", "kcal", "kj", "protein", "carbohydrate", "carb", "fat", "saturated", 
+        "trans", "cholesterol", "sodium", "salt", "fiber", "fibre", "sugar", "potassium", "calcium", 
+        "iron", "zinc", "vitamin", "folate", "folic", "niacin", "riboflavin", "thiamin", "biotin", 
+        "iodine", "magnesium", "phosphorus", "copper", "manganese", "selenium"
+    }
+    if isinstance(llm_list, list):
+        filtered_list = []
+        for item in llm_list:
+            if isinstance(item, dict) and "name" in item:
+                name_lower = str(item["name"]).lower()
+                if any(kw in name_lower for kw in valid_keywords):
+                    filtered_list.append(item)
+        llm_list = filtered_list
+
     if not isinstance(llm_list, list) or not llm_list:
-        _backup = [("ENERGY", "calories", "kcal"), ("PROTEIN", "protein", "g"), ("CARBS", "carbs", "g"), ("FAT", "fat", "g")]
-        llm_list = [{"name": l, "value": _float(result_data.get(k)), "unit": u} for l, k, u in _backup if result_data.get(k) is not None]
+        _backup = [
+            ("Energy", ["calories", "energy", "kcal", "energy_kcal"], "kcal"),
+            ("Protein", ["protein"], "g"),
+            ("Carbohydrates", ["carbs", "carbohydrate"], "g"),
+            ("Fat", ["fat", "total_fat"], "g"),
+            ("Sugar", ["sugar", "total_sugars"], "g"),
+            ("Fiber", ["fiber", "dietary_fiber", "fibre"], "g"),
+            ("Sodium", ["sodium_mg", "sodium", "salt"], "mg"),
+            ("Saturated Fat", ["saturated_fat", "saturated"], "g"),
+            ("Trans Fat", ["trans_fat"], "g"),
+            ("Cholesterol", ["cholesterol_mg", "cholesterol"], "mg"),
+            ("Potassium", ["potassium_mg", "potassium"], "mg"),
+            ("Calcium", ["calcium_mg", "calcium"], "mg"),
+            ("Iron", ["iron_mg", "iron"], "mg")
+        ]
+        llm_list = []
+        for label, keys, unit in _backup:
+            val = None
+            for k in keys:
+                if result_data.get(k) is not None:
+                    val = _float(result_data.get(k))
+                    break
+            if val is not None:
+                llm_list.append({"name": label, "value": val, "unit": unit})
 
     def _title_nutrient(raw_name: str) -> str:
         stripped = raw_name.strip()
@@ -299,6 +538,7 @@ async def unified_analyze_flow(
     else:
         final_score = int(result_data.get("score") or compute_rule_based_score(rich, nova_level))
         if nova_level == 4 and final_score > 4: final_score = 4
+    final_score = adjust_score_for_persona(final_score, rich, clean_text, persona)
     final_score = max(1, min(10, int(final_score or 1)))
 
     product_name = result_data.get("product_name") or ""
@@ -321,14 +561,7 @@ async def unified_analyze_flow(
     score_color = "#22c55e" if final_score >= 7 else "#f59e0b" if final_score >= 4 else "#ef4444"
 
     age_warnings, phys_warnings = result_data.get("age_warnings", []), explanation.get("persona_warnings", [])
-    merged_warnings = {w["group"].lower(): w for w in age_warnings}
-    for pw in phys_warnings:
-        key = pw["persona"].lower()
-        if key in merged_warnings:
-            merged_warnings[key]["message"] += f". {pw['msg']}"
-            if pw["type"] == "WARNING": merged_warnings[key]["status"] = "warning"
-        else:
-            merged_warnings[key] = {"group": pw["persona"], "status": pw["type"].lower(), "message": pw["msg"], "emoji": "⚠️"}
+    merged_warnings_list = build_merged_warnings(age_warnings, phys_warnings)
 
     chart_data = result_data.get("chart_data", [50, 30, 20])
     if sum(chart_data) > 0:
@@ -336,41 +569,67 @@ async def unified_analyze_flow(
         chart_data = [round(v * 100 / t) for v in chart_data]
 
     ingredients_spotlight = result_data.get("ingredients_spotlight", [])
+    if isinstance(ingredients_spotlight, list):
+        sanitized_spotlight = []
+        for ing in ingredients_spotlight:
+            if isinstance(ing, dict):
+                sanitized_spotlight.append(ing)
+            elif isinstance(ing, str) and len(ing.strip()) > 0:
+                name_title = ing.strip().title()
+                sanitized_spotlight.append({
+                    "name": name_title,
+                    "type": "natural",
+                    "safety_rating": "safe",
+                    "what_it_is": f"{name_title} is a food ingredient.",
+                    "health_impact": "Part of the product formulation.",
+                    "curiosity_fact": "Check the full ingredients list for details."
+                })
+        ingredients_spotlight = sanitized_spotlight
+    else:
+        ingredients_spotlight = []
+
     if not ingredients_spotlight and ingredients_raw:
         for ing in [i.strip() for i in re.split(r"[,;]", ingredients_raw) if i.strip()][:8]:
             if len(ing) > 2: ingredients_spotlight.append({"name": ing.title(), "type": "natural", "safety_rating": "safe", "what_it_is": f"{ing.title()} is a food ingredient.", "health_impact": "Part of the product formulation.", "curiosity_fact": "Check the full ingredients list for details."})
 
     latency_ms = int((time.time() - t_pipeline_start) * 1000)
 
-    def _extract_val(key):
-        for n in nutrient_breakdown:
-            if key in n.get("name", "").lower():
-                v = n.get("value", 0)
-                return float(v) if isinstance(v, (int, float)) else 0
-        return 0
-
-    final_output = {
-        "product_name": product_name, "product_category": category, "serving_size": result_data.get("serving_size"),
-        "score": final_score, "score_color": score_color, "safety_tier": result_data.get("safety_tier", "Limit"),
-        "safety_verdict": result_data.get("safety_verdict", "Unknown"), "safety_reason": result_data.get("safety_reason", ""),
-        "verdict": verdict, "summary": summary, "nutrient_breakdown": nutrient_breakdown, "pros": pros, "cons": cons,
-        "age_warnings": list(merged_warnings.values()), "eli5_explanation": eli5, "molecular_insight": result_data.get("molecular_insight", ""),
-        "chart_data": chart_data, "ingredients_raw": ingredients_raw, "ingredients_spotlight": ingredients_spotlight,
-        "extraction_confidence": confidence, "explanation": explanation, "better_alternative": get_healthy_alternative(category, persona),
-        "whatsapp_content": {}, "disclaimer": MEDICAL_DISCLAIMER, "perf_metrics": {"latency_ms": latency_ms},
-        "calories": _extract_val("calorie") or _extract_val("energy"),
-        "protein": _extract_val("protein"),
-        "carbs": _extract_val("carb"),
-        "fat": _extract_val("fat"),
-        "sodium": _extract_val("sodium") or _extract_val("salt"),
-        "fiber": _extract_val("fiber") or _extract_val("fibre"),
-        "sugar": _extract_val("sugar")
+    from app.services.brain import EatlyticBrain
+    brain = EatlyticBrain()
+    brain_nutrients = {
+        "calories": rich.get("calories", 0.0),
+        "protein": rich.get("protein", 0.0),
+        "carbs": rich.get("carbs", 0.0),
+        "fat": rich.get("fat", 0.0),
+        "sugar": rich.get("sugar", 0.0),
+        "fiber": rich.get("fiber", 0.0),
+        "saturated_fat": rich.get("saturated_fat", 0.0),
+        "sodium": rich.get("sodium", 0.0),
+        "trans_fat": rich.get("trans_fat", 0.0),
+        "cholesterol": rich.get("cholesterol", 0.0),
     }
-    try: final_output["whatsapp_content"] = get_whatsapp_tiered_content(final_output)
-    except: pass
+    
+    final_output = brain.compile_local_report(
+        product_name=product_name,
+        brand="",
+        category=category,
+        nutrients=brain_nutrients,
+        ingredients_raw=ingredients_raw,
+        persona=persona,
+        eatlytic_score=final_score
+    )
+    final_output["data_source"] = "llm_fallback"
+    final_output["extraction_confidence"] = confidence
+    final_output["perf_metrics"] = {"latency_ms": latency_ms}
+    final_output["disclaimer"] = MEDICAL_DISCLAIMER
 
     try:
-        upsert_food_product(name=product_name, nutrients=nutrient_breakdown, score=final_score, ingredients_raw=ingredients_raw, category=category, source="llm_scan")
+        final_output["whatsapp_content"] = get_whatsapp_tiered_content(final_output)
+    except:
+        pass
+
+    try:
+        upsert_food_product(name=product_name, nutrients=final_output["nutrient_breakdown"], score=final_output["score"], ingredients_raw=ingredients_raw, category=category, source="llm_scan")
     except Exception as dberr:
         logger.warning(f"upsert_food_product failed: {dberr}")
 

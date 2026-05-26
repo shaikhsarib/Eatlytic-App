@@ -17,7 +17,15 @@ def assess_image_quality(content: bytes) -> dict:
     img_np = np.frombuffer(content, np.uint8)
     img = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
     if img is None:
-        return {"is_blurry": True, "blur_score": 0, "blur_severity": "critical", "brightness": 0}
+        return {
+            "is_blurry": True,
+            "blur_score": 0.0,
+            "blur_severity": "critical",
+            "brightness": 0.0,
+            "is_dark": True,
+            "is_washed_out": False,
+            "should_enhance": True,
+        }
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
@@ -34,13 +42,13 @@ def assess_image_quality(content: bytes) -> dict:
     elif laplacian_var < 60: severity = "medium"
 
     return {
-        "is_blurry": is_blurry,
-        "blur_score": round(laplacian_var, 2),
+        "is_blurry": bool(is_blurry),
+        "blur_score": float(round(laplacian_var, 2)),
         "blur_severity": severity,
-        "brightness": round(brightness, 2),
-        "is_dark": brightness < 40,
-        "is_washed_out": brightness > 220,
-        "should_enhance": is_blurry or brightness < 40,
+        "brightness": float(round(brightness, 2)),
+        "is_dark": bool(brightness < 40),
+        "is_washed_out": bool(brightness > 220),
+        "should_enhance": bool(is_blurry or brightness < 40),
     }
 
 def validate_image(content: bytes) -> bytes:

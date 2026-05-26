@@ -5,7 +5,8 @@ import datetime
 from app.services.image import assess_image_quality
 from app.services.ocr import run_ocr
 from app.services.llm import unified_analyze_flow
-from app.models.db import verify_api_key, db_conn
+from app.models.db import db_conn
+from app.services.b2b_auth import get_b2b_client
 
 router = APIRouter(prefix="/api/v1", tags=["b2b"])
 
@@ -16,10 +17,8 @@ async def api_analyze(
     language: str = Form("en"),
     persona: str = Form("general adult"),
     age_group: str = Form("adult"),
-    api_key_data: dict = Security(verify_api_key),
+    api_key_data: dict = Security(get_b2b_client),
 ):
-    if not api_key_data:
-        raise HTTPException(status_code=401, detail="Invalid API key.")
     if not api_key_data.get("active"):
         raise HTTPException(status_code=403, detail="API key suspended.")
 
@@ -41,6 +40,18 @@ async def api_analyze(
     from app.services.label_detector import process_image_for_ocr
     cropped = process_image_for_ocr(content)
     ocr = run_ocr(cropped, language)
+    
+    # Enforce the OCR confidence gate to block extremely blurry/unreadable images
+    from app.services.ocr import passes_confidence_gate
+    passed, err_msg = passes_confidence_gate(ocr)
+    if not passed:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "blurry_image",
+                "message": err_msg
+            }
+        )
     
     result = await unified_analyze_flow(
         extracted_text=ocr["text"],
@@ -64,8 +75,5 @@ async def api_analyze(
         "timestamp": datetime.datetime.utcnow().isoformat(),
         "client_ref": api_key_data["client_name"]
     }
-
-    with db_conn() as conn:
-        conn.execute("UPDATE api_keys SET scans_this_month=scans_this_month+1 WHERE api_key=?", (api_key_data["api_key"],))
 
     return result
