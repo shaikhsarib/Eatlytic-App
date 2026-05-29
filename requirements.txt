@@ -3,7 +3,8 @@ fastapi
 uvicorn[standard]
 python-multipart
 requests
-httpx
+httpx>=0.27.0
+aiofiles
 pydantic
 python-dotenv
 
@@ -19,6 +20,7 @@ easyocr
 
 # AI / LLM
 groq
+google-generativeai>=0.8.0
 tenacity>=8.2.0
 ddgs
 

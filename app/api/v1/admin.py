@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException, Depends, Form
-from app.models.db import get_unverified_scans, apply_correction, db_conn
-from app.utils import verify_admin
+from app.database.connection import get_unverified_scans, apply_correction, db_conn
+from app.core.security import verify_admin
 import os
 import secrets
 import datetime

@@ -25,6 +25,29 @@ if _SUPABASE_URL and _SUPABASE_KEY:
 else:
     logger.warning("Supabase env vars missing — using SQLite fallback")
 
+def parse_utc_iso(iso_str: str) -> datetime.datetime:
+    """Safely parse timezone-aware and naive ISO strings, returning a naive UTC datetime."""
+    try:
+        # standard ISO format might have "Z" instead of "+00:00"
+        s = iso_str.replace("Z", "+00:00")
+        dt = datetime.datetime.fromisoformat(s)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+        return dt
+    except Exception:
+        # Fallback to current time if parsing fails
+        return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+def _supabase_execute_with_retry(operation_fn):
+    """Executes a Supabase query/mutation with tenacity-backed exponential backoff."""
+    from tenacity import retry, stop_after_attempt, wait_exponential
+    
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
+    def _execute():
+        return operation_fn()
+        
+    return _execute()
+
 # ── SQLite fallback (local dev only) ─────────────────────────────────
 DATA_DIR = os.path.join(os.getcwd(), "data")
 DB_FILE = os.path.join(DATA_DIR, "eatlytic.db")
@@ -253,28 +276,57 @@ def init_db() -> None:
                 created_at      TEXT DEFAULT (datetime('now')),
                 PRIMARY KEY (device_key, dietitian_code)
             );
+
+            CREATE TABLE IF NOT EXISTS genomic_profiles (
+                device_key      TEXT PRIMARY KEY,
+                genetic_snps    TEXT,
+                biomarkers      TEXT,
+                updated_at      TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS cgm_readings (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_key      TEXT NOT NULL,
+                glucose_mgdl    REAL NOT NULL,
+                recorded_at     TEXT NOT NULL,
+                sensor_state    TEXT DEFAULT 'active',
+                created_at      TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (device_key) REFERENCES devices(device_key) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_cgm_device_time ON cgm_readings (device_key, recorded_at DESC);
         """)
-        # Migrations for existing DBs
+        # Migrations for existing DBs — only ignore "duplicate column" OperationalErrors
         try: conn.execute("ALTER TABLE scans ADD COLUMN metadata_json TEXT DEFAULT '{}'")
-        except: pass
+        except sqlite3.OperationalError: pass
         try: conn.execute("ALTER TABLE scans ADD COLUMN correction_json TEXT DEFAULT '{}'")
-        except: pass
+        except sqlite3.OperationalError: pass
         try: conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
-        except: pass
+        except sqlite3.OperationalError: pass
         try: conn.execute("ALTER TABLE daily_logs ADD COLUMN user_id TEXT")
-        except: pass
+        except sqlite3.OperationalError: pass
         try: conn.execute("ALTER TABLE daily_logs ADD COLUMN protein REAL DEFAULT 0")
-        except: pass
+        except sqlite3.OperationalError: pass
         try: conn.execute("ALTER TABLE daily_logs ADD COLUMN carbs REAL DEFAULT 0")
-        except: pass
+        except sqlite3.OperationalError: pass
         try: conn.execute("ALTER TABLE daily_logs ADD COLUMN fat REAL DEFAULT 0")
-        except: pass
+        except sqlite3.OperationalError: pass
+        # Seed a default B2B Key for local development and live telemetry demo
+        try:
+            mo = datetime.date.today().isoformat()[:7]
+            conn.execute("""
+                INSERT OR IGNORE INTO api_keys (api_key, client_name, plan, scans_this_month, active, month)
+                VALUES ('eatlytic_live_testkey123', 'Eatlytic Dev Portal Live Demo', 'business', 142, 1, ?)
+            """, (mo,))
+        except Exception as e:
+            logger.error("Failed to seed default B2B dev key: %s", e)
+
     logger.info("Database ready: %s", DB_FILE)
 
 def get_ai_cache(key: str):
     if _supabase:
         try:
-            res = _supabase.table("ai_cache").select("*").eq("cache_key", key).execute()
+            res = _supabase_execute_with_retry(lambda: _supabase.table("ai_cache").select("*").eq("cache_key", key).execute())
             if res.data: return json.loads(res.data[0]["result_json"])
         except Exception: pass
     with db_conn() as c:
@@ -283,7 +335,7 @@ def get_ai_cache(key: str):
 
 def set_ai_cache(key: str, value: dict):
     if _supabase:
-        try: _supabase.table("ai_cache").upsert({"cache_key": key, "result_json": json.dumps(value)}).execute()
+        try: _supabase_execute_with_retry(lambda: _supabase.table("ai_cache").upsert({"cache_key": key, "result_json": json.dumps(value)}).execute())
         except: pass
     with db_conn() as c:
         c.execute("INSERT OR REPLACE INTO ai_cache(cache_key,result_json) VALUES(?,?)", (key, json.dumps(value)))
@@ -292,7 +344,7 @@ def set_ai_cache(key: str, value: dict):
 def get_ocr_cache(key: str):
     if _supabase:
         try:
-            res = _supabase.table("ocr_cache").select("*").eq("cache_key", key).execute()
+            res = _supabase_execute_with_retry(lambda: _supabase.table("ocr_cache").select("*").eq("cache_key", key).execute())
             if res.data: return json.loads(res.data[0]["result_json"])
         except Exception: pass
     with db_conn() as c:
@@ -301,47 +353,63 @@ def get_ocr_cache(key: str):
 
 def set_ocr_cache(key: str, value: dict):
     if _supabase:
-        try: _supabase.table("ocr_cache").upsert({"cache_key": key, "result_json": json.dumps(value)}).execute()
+        try: _supabase_execute_with_retry(lambda: _supabase.table("ocr_cache").upsert({"cache_key": key, "result_json": json.dumps(value)}).execute())
         except: pass
     with db_conn() as c:
         c.execute("INSERT OR REPLACE INTO ocr_cache(cache_key,result_json) VALUES(?,?)", (key, json.dumps(value)))
 
+_bktree = None
+_bktree_lock = None
+
+def _get_bktree():
+    global _bktree, _bktree_lock
+    if _bktree_lock is None:
+        import threading
+        _bktree_lock = threading.Lock()
+    if _bktree is None:
+        with _bktree_lock:
+            if _bktree is None:
+                from app.ai.perception.bk_tree import BKTree
+                tree = BKTree()
+                with db_conn() as c:
+                    rows = c.execute("SELECT hash_key, result_json FROM image_fingerprints").fetchall()
+                for row in rows:
+                    tree.insert(row["hash_key"], row["result_json"])
+                _bktree = tree
+    return _bktree
+
 def get_image_fingerprint_match(hash_key: str):
     if not hash_key:
         return None
-    # 1. Try exact lookup first
+    # 1. Try exact lookup first (O(1))
     with db_conn() as c:
         row = c.execute("SELECT result_json FROM image_fingerprints WHERE hash_key=?", (hash_key,)).fetchone()
     if row:
         return json.loads(row["result_json"])
         
-    # 2. Fall back to Hamming distance scan
-    from app.services.hash_service import calculate_hamming_distance
-    with db_conn() as c:
-        rows = c.execute("SELECT hash_key, result_json FROM image_fingerprints").fetchall()
-    best_match = None
-    best_dist = 999
-    for row in rows:
-        stored_hash = row["hash_key"]
-        dist = calculate_hamming_distance(hash_key, stored_hash)
-        if dist <= 6:
-            if dist < best_dist:
-                best_dist = dist
-                best_match = json.loads(row["result_json"])
-    return best_match
+    # 2. BK-Tree sub-linear Hamming search (replaces O(n) table scan)
+    tree = _get_bktree()
+    matches = tree.search(hash_key, max_distance=6)
+    if matches:
+        matches.sort(key=lambda x: x[0])
+        return json.loads(matches[0][1])
+    return None
 
 def set_image_fingerprint(hash_key: str, value: dict):
     if _supabase:
-        try: _supabase.table("image_fingerprints").upsert({"hash_key": hash_key, "result_json": json.dumps(value)}).execute()
+        try: _supabase_execute_with_retry(lambda: _supabase.table("image_fingerprints").upsert({"hash_key": hash_key, "result_json": json.dumps(value)}).execute())
         except: pass
     with db_conn() as c:
         c.execute("INSERT OR REPLACE INTO image_fingerprints(hash_key, result_json) VALUES(?,?)", (hash_key, json.dumps(value)))
+    # Synchronize BK-Tree
+    tree = _get_bktree()
+    tree.insert(hash_key, json.dumps(value))
 
 # ── Research Cache (Phase 2 Latency Optimization) ─────────────────────
 def get_research_cache(query: str):
     if _supabase:
         try:
-            res = _supabase.table("research_cache").select("*").eq("query", query).execute()
+            res = _supabase_execute_with_retry(lambda: _supabase.table("research_cache").select("*").eq("query", query).execute())
             if res.data: return res.data[0]["result"]
         except Exception: pass
     with db_conn() as c:
@@ -350,7 +418,7 @@ def get_research_cache(query: str):
 
 def set_research_cache(query: str, result: str):
     if _supabase:
-        try: _supabase.table("research_cache").upsert({"query": query, "result": result}).execute()
+        try: _supabase_execute_with_retry(lambda: _supabase.table("research_cache").upsert({"query": query, "result": result}).execute())
         except: pass
     with db_conn() as c:
         c.execute("INSERT OR REPLACE INTO research_cache(query, result) VALUES(?,?)", (query, result))
@@ -359,6 +427,7 @@ def set_research_cache(query: str, result: str):
 def check_and_increment_scan(device_key: str, limit: int = 10, increment: bool = True) -> dict:
     month_key = datetime.date.today().isoformat()[:7]
     with db_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT * FROM devices WHERE device_key=?", (device_key,)).fetchone()
         if not row:
             conn.execute("INSERT INTO devices(device_key, month, scan_count) VALUES(?,?,0)", (device_key, month_key))
@@ -368,7 +437,7 @@ def check_and_increment_scan(device_key: str, limit: int = 10, increment: bool =
 
         if u.get("is_pro") == 1:
             exp = u.get("pro_expires")
-            if exp and exp < datetime.datetime.utcnow().isoformat():
+            if exp and parse_utc_iso(exp) < datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None):
                 conn.execute("UPDATE devices SET is_pro=0 WHERE device_key=?", (device_key,))
                 u["is_pro"] = 0
 
@@ -558,7 +627,7 @@ def create_session(user_id: str, device_hint: str = "") -> str:
     import os
     import datetime
     token = os.urandom(24).hex()
-    expires_at = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
+    expires_at = (datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(days=30)).isoformat()
     with db_conn() as conn:
         conn.execute("""
             INSERT INTO sessions (token, user_id, expires_at, device_hint)
@@ -578,7 +647,7 @@ def get_session(token: str) -> dict:
     if not row:
         return None
     session_dict = dict(row)
-    if session_dict["expires_at"] < datetime.datetime.utcnow().isoformat():
+    if parse_utc_iso(session_dict["expires_at"]) < datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None):
         delete_session(token)
         return None
     return session_dict
@@ -592,6 +661,30 @@ def sync_local_history(device_key: str, user_id: str) -> None:
         conn.execute("UPDATE scans SET user_id = ? WHERE device_key = ? AND user_id IS NULL", (user_id, device_key))
         conn.execute("UPDATE daily_logs SET user_id = ? WHERE device_key = ? AND user_id IS NULL", (user_id, device_key))
         conn.execute("UPDATE devices SET user_id = ? WHERE device_key = ?", (user_id, device_key))
+    try:
+        sync_local_history_supabase(device_key, user_id)
+    except Exception as e:
+        logger.warning("Failed calling sync_local_history_supabase: %s", e)
+
+def sync_local_history_supabase(device_key: str, user_id: str) -> None:
+    """
+    Consolidates stateless history records on user registration/login.
+    Syncs SQLite local cache buffers up to the Supabase cloud cluster with retries.
+    """
+    if not _supabase:
+        return
+    from tenacity import retry, stop_after_attempt, wait_exponential
+    
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
+    def _sync():
+        _supabase.table("devices").update({"user_id": user_id}).eq("device_key", device_key).execute()
+        _supabase.table("scans").update({"user_id": user_id}).eq("device_key", device_key).execute()
+        
+    try:
+        _sync()
+        logger.info("Successfully synced device %s history to Supabase for user %s", device_key[:8], user_id[:8])
+    except Exception as e:
+        logger.warning("Failed to sync history to Supabase: %s", e)
 
 # ── B2B Developer Organization & API Keys ─────────────────────────────
 def create_organization(admin_id: str, name: str) -> str:
@@ -627,4 +720,24 @@ def get_org_api_keys(organization_id: str) -> list:
 def revoke_api_key(api_key: str) -> None:
     with db_conn() as conn:
         conn.execute("UPDATE api_keys SET active = 0 WHERE api_key = ?", (api_key,))
+
+
+# ── Genomic Profiles (Phase 5 AI Personalized Medicine) ────────────────
+def save_genomic_profile(device_key: str, genetic_snps: dict, biomarkers: dict) -> None:
+    with db_conn() as conn:
+        conn.execute("""
+            INSERT OR REPLACE INTO genomic_profiles (device_key, genetic_snps, biomarkers, updated_at)
+            VALUES (?, ?, ?, datetime('now'))
+        """, (device_key, json.dumps(genetic_snps), json.dumps(biomarkers)))
+
+def get_genomic_profile(device_key: str) -> dict:
+    with db_conn() as conn:
+        row = conn.execute("SELECT genetic_snps, biomarkers FROM genomic_profiles WHERE device_key = ?", (device_key,)).fetchone()
+    if not row:
+        return None
+    return {
+        "device_key": device_key,
+        "genetic_snps": json.loads(row["genetic_snps"]) if row["genetic_snps"] else {},
+        "biomarkers": json.loads(row["biomarkers"]) if row["biomarkers"] else {}
+    }
 

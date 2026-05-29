@@ -3,9 +3,9 @@ import re
 import pytest
 import datetime
 from unittest.mock import patch
-from app.models.db import db_conn, init_db
-import app.models.db as db_mod
-from app.services.llm.engine import find_db_product_match, unified_analyze_flow
+from app.database.connection import db_conn, init_db
+import app.database.connection as db_mod
+from app.ai.llm.engine import find_db_product_match, unified_analyze_flow
 
 # ── Self-contained fixture to redirect DB to temporary space ──────────────
 @pytest.fixture(autouse=True)
@@ -128,7 +128,7 @@ class TestDatabaseKeywordMatching:
 # ══ 2. OFFLINE PIPELINE BYPASS TESTS ══════════════════════════════════
 class TestOfflinePipelineBypass:
     @pytest.mark.asyncio
-    @patch("app.services.llm.engine.call_llm")
+    @patch("app.ai.llm.engine.call_llm")
     async def test_llm_bypass_on_amul_butter(self, mock_call_llm):
         """Verify that calling unified_analyze_flow with Amul Butter bypasses LLM entirely."""
         ocr_text = "Beautiful Golden Amul Pasteurised Butter per 100g."
@@ -155,7 +155,7 @@ class TestOfflinePipelineBypass:
         assert "%" in result["eli5_explanation"] or "verified" in result["eli5_explanation"].lower()
         
     @pytest.mark.asyncio
-    @patch("app.services.llm.engine.call_llm")
+    @patch("app.ai.llm.engine.call_llm")
     async def test_offline_additives_on_maggi_noodles(self, mock_call_llm):
         """Verify that Nestle Maggi matches offline and correctly extracts critical INS context."""
         ocr_text = "Enjoy Nestle Maggi Masala Noodles anytime!"
@@ -182,7 +182,7 @@ class TestOfflinePipelineBypass:
         assert any("Diabetics" in c for c in cons) # Maida/Sugar warning for diabetics
 
     @pytest.mark.asyncio
-    @patch("app.services.llm.engine.call_llm")
+    @patch("app.ai.llm.engine.call_llm")
     async def test_offline_jim_jam_biscuit(self, mock_call_llm):
         """Verify that Britannia Jim Jam matches offline, calculates Atwater calories, and flags diabetic and children warnings."""
         ocr_text = "Scan result: Britannia Treat Jim Jam mixed fruit cream biscuits. Barcode: 8901063029170."
@@ -219,7 +219,7 @@ class TestOfflinePipelineBypass:
         assert any("122" in ins for ins in insights) # INS 122 Carmoisine warning
 
     @pytest.mark.asyncio
-    @patch("app.services.llm.engine.call_llm")
+    @patch("app.ai.llm.engine.call_llm")
     async def test_offline_tata_salt(self, mock_call_llm):
         """Verify that Tata Salt matches offline, handles zero-calorie, and flags sodium and INS 536 warnings."""
         ocr_text = "Seeded product check: Tata Iodised Salt 1kg packet. Barcode is 8901058002313."
@@ -238,7 +238,7 @@ class TestOfflinePipelineBypass:
         assert any("536" in ins for ins in insights) # INS 536 Potassium Ferrocyanide warning
 
     @pytest.mark.asyncio
-    @patch("app.services.llm.engine.call_llm")
+    @patch("app.ai.llm.engine.call_llm")
     async def test_offline_lays_chips(self, mock_call_llm):
         """Verify that Lays Chips matches offline, calculates Atwater calories, and flags high fat and INS flavor enhancers."""
         ocr_text = "Scan: Lays India's Magic Masala Potato Chips. Barcode 8901491101837."

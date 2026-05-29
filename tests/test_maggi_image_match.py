@@ -2,8 +2,8 @@ import os
 import sqlite3
 import json
 import pytest
-from app.services.hash_service import get_image_fingerprint
-from app.models.db import get_image_fingerprint_match
+from app.ai.perception.bk_tree import get_image_fingerprint
+from app.database.connection import get_image_fingerprint_match
 
 def test_maggi_image_hash_and_db_match():
     """Verify that the Maggi back-panel image hash resolves to the seeded DB entry."""

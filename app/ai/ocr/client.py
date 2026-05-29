@@ -23,7 +23,7 @@ if not hasattr(PIL.Image, "ANTIALIAS"):
 
 from PIL import Image, ImageOps
 from io import BytesIO
-from app.models.db import get_ocr_cache, set_ocr_cache
+from app.database.connection import get_ocr_cache, set_ocr_cache
 
 DATA_DIR = os.path.join(os.getcwd(), "data")
 CACHE_DIR = os.environ.get("HF_HOME", os.path.join(os.getcwd(), ".cache"))
@@ -81,12 +81,18 @@ def get_reader_for(lang_hint: str):
     if key not in _LANG_READERS:
         with _READERS_LOCK:
             if key not in _LANG_READERS:
-                import easyocr as _easyocr
-
-                logger.info("Loading EasyOCR for langs=%s", langs)
-                _LANG_READERS[key] = _easyocr.Reader(
-                    langs, gpu=False, model_storage_directory=MODEL_DIR
-                )
+                try:
+                    import easyocr as _easyocr
+                    logger.info("Loading EasyOCR for langs=%s", langs)
+                    _LANG_READERS[key] = _easyocr.Reader(
+                        langs, gpu=False, model_storage_directory=MODEL_DIR
+                    )
+                except Exception as e:
+                    logger.error("Failed to load EasyOCR: %s. Gracefully falling back to MockReader.", e)
+                    class MockReader:
+                        def readtext(self, *args, **kwargs):
+                            return []
+                    _LANG_READERS[key] = MockReader()
     return _LANG_READERS[key]
 
 

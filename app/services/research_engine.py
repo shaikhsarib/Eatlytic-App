@@ -34,7 +34,7 @@ def get_live_search(query: str, max_results: int = 3) -> str:
 
     # Tier 2: L2 Persistent DB (Phase 2 Hardening)
     try:
-        from app.models.db import get_research_cache, set_research_cache
+        from app.database.connection import get_research_cache, set_research_cache
         db_res = get_research_cache(query)
         if db_res:
             _CACHE[query] = (time.time(), db_res)

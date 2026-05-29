@@ -2,7 +2,7 @@ import os
 import logging
 import datetime
 from fastapi import APIRouter, Request, Response, Form, HTTPException, Body
-from app.models.db import (
+from app.database.connection import (
     get_device_history,
     get_scan_by_id,
     delete_user_data,
@@ -21,7 +21,7 @@ from app.models.db import (
     get_org_api_keys,
     revoke_api_key
 )
-from app.utils import get_device_key
+from app.core.security import get_device_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["user"])
@@ -207,7 +207,7 @@ async def report_scan_error(
             conn.execute(
                 "INSERT OR IGNORE INTO scan_reports (scan_id, device_key, note, reported_at) "
                 "VALUES (?, ?, ?, ?)",
-                (scan_id, device_key, note[:500], datetime.datetime.utcnow().isoformat()),
+                (scan_id, device_key, note[:500], datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat()),
             )
     except Exception as e:
         logger.warning("report_scan_error db write failed: %s", e)

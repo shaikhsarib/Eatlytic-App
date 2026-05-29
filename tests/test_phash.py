@@ -4,7 +4,7 @@ import os
 # Add project root to path
 sys.path.append(os.getcwd())
 
-from app.services.hash_service import get_image_fingerprint, calculate_hamming_distance
+from app.ai.perception.bk_tree import get_image_fingerprint, calculate_hamming_distance
 from PIL import Image, ImageDraw
 import io
 

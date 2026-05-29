@@ -40,7 +40,7 @@ def _init_gemini():
         try:
             import google.generativeai as genai
             genai.configure(api_key=GEMINI_API_KEY)
-            _gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+            _gemini_model = genai.GenerativeModel('gemini-2.0-flash')
             _genai_module = genai
         except ImportError:
             logger.warning("google-generativeai library not installed — skipping Gemini provider")
@@ -63,33 +63,60 @@ LOCAL_SYSTEM_PROMPT = (
 )
 
 def _call_local(prompt: str, max_tokens: int) -> str | None:
-    """Call local Ollama instance (Gemma 4) with system prompt & large context."""
+    """Call local Ollama instance (Gemma 4) or self-hosted vLLM server with system prompt & large context."""
     if not LOCAL_LLM_URL:
         return None
     try:
         logger.info("🏠 Calling Local %s at %s", LOCAL_LLM_MODEL, LOCAL_LLM_URL)
-        payload = {
-            "model": LOCAL_LLM_MODEL,
-            "messages": [
-                {"role": "system", "content": LOCAL_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            "stream": False,
-            "format": "json",
-            "options": {
+        
+        # Check if using an OpenAI-compatible/vLLM endpoint
+        if "/v1/chat/completions" in LOCAL_LLM_URL.lower() or "/v1/completions" in LOCAL_LLM_URL.lower():
+            payload = {
+                "model": LOCAL_LLM_MODEL,
+                "messages": [
+                    {"role": "system", "content": LOCAL_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
                 "temperature": 0.1,
-                "num_predict": max_tokens,
-                "num_ctx": 16384,
+                "max_tokens": max_tokens,
+                "response_format": {"type": "json_object"}
             }
-        }
-        res = requests.post(LOCAL_LLM_URL, json=payload, timeout=LOCAL_LLM_TIMEOUT)
-        if res.status_code == 200:
-            content = res.json().get("message", {}).get("content", "")
-            if content and len(content.strip()) > 10:
-                return content
-            logger.warning("Local LLM returned empty response")
+            headers = {"Content-Type": "application/json"}
+            api_key = os.environ.get("LOCAL_LLM_API_KEY", "")
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            res = requests.post(LOCAL_LLM_URL, json=payload, headers=headers, timeout=LOCAL_LLM_TIMEOUT)
+            if res.status_code == 200:
+                content = res.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+                if content and len(content.strip()) > 10:
+                    return content
+                logger.warning("VLLM returned empty response")
+            else:
+                logger.warning("VLLM error %d: %s", res.status_code, res.text[:200])
         else:
-            logger.warning("Local LLM error %d: %s", res.status_code, res.text[:200])
+            # Default to standard Ollama payload format
+            payload = {
+                "model": LOCAL_LLM_MODEL,
+                "messages": [
+                    {"role": "system", "content": LOCAL_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                "stream": False,
+                "format": "json",
+                "options": {
+                    "temperature": 0.1,
+                    "num_predict": max_tokens,
+                    "num_ctx": 16384,
+                }
+            }
+            res = requests.post(LOCAL_LLM_URL, json=payload, timeout=LOCAL_LLM_TIMEOUT)
+            if res.status_code == 200:
+                content = res.json().get("message", {}).get("content", "")
+                if content and len(content.strip()) > 10:
+                    return content
+                logger.warning("Local LLM returned empty response")
+            else:
+                logger.warning("Local LLM error %d: %s", res.status_code, res.text[:200])
     except requests.exceptions.Timeout:
         logger.warning("Local LLM timed out after %ds", LOCAL_LLM_TIMEOUT)
     except Exception as e:
@@ -182,12 +209,12 @@ def _call_together(prompt: str, max_tokens: int) -> str | None:
 def call_llm(prompt: str, max_tokens: int = 4000) -> str:
     """
     Multi-provider LLM caller with automatic failover.
-    Priority: Local Gemma 4 -> Gemini -> Groq -> Together AI.
+    Priority: Local Gemma 4 -> Groq -> Gemini -> Together AI.
     """
     providers = [
         ("Local Gemma", _call_local),
-        ("Gemini", _call_gemini),
         ("Groq", _call_groq),
+        ("Gemini", _call_gemini),
         ("Together AI", _call_together),
     ]
 

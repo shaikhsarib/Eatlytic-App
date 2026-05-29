@@ -5,6 +5,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Eatlytic — Food Intelligence</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/static/sw.js')
+          .then((reg) => console.log('Service Worker registered successfully!', reg.scope))
+          .catch((err) => console.error('Service Worker registration failed:', err));
+      });
+    }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link
     href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,900;1,9..144,400;1,9..144,700&family=Nunito:wght@400;600;700;800;900&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap"
@@ -3962,6 +3972,57 @@
           </div>
         </div>
       </div>
+
+      <!-- Metabolic Genomics & Biomarkers (NEW - Phase 5) -->
+      <div class="form-section">
+        <div class="form-section-title" style="display:flex;align-items:center;gap:6px">
+          🧬 <span>Metabolic Genomics &amp; Biomarkers</span>
+        </div>
+        <div style="font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:12px">
+          Statelessly integrate DNA SNPs and biomarker ranges. No clinical data is ever stored with personal identifiers.
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" title="TCF7L2 (rs7903146) Variant (Diabetes Risk)">Diabetes Gene (TCF7L2)</label>
+            <select class="form-select" id="pf-snp-diabetes">
+              <option value="CC">CC (Baseline / Normal)</option>
+              <option value="CT">CT (Moderate Diabetes Risk)</option>
+              <option value="TT">TT (High Diabetes Risk - 2.0x GI Penalty)</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" title="AGT (rs5068) Variant (Sodium Sensitivity)">Hypertension Gene (AGT)</label>
+            <select class="form-select" id="pf-snp-hypertension">
+              <option value="AA">AA (Baseline / Normal)</option>
+              <option value="AG">AG (Moderate Sodium Sensitivity)</option>
+              <option value="GG">GG (High Sodium Sensitivity - 1000mg Limit)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" title="LCT (rs4988235) Variant (Lactase Persistence)">Lactose Gene (LCT)</label>
+            <select class="form-select" id="pf-snp-lactose">
+              <option value="AA">AA / AG (Lactase Persistent)</option>
+              <option value="GG">GG (Lactose Intolerant - Severe Warning)</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">HbA1c Level (%)</label>
+            <input class="form-input" id="pf-bio-hba1c" placeholder="5.4" type="number" step="0.1" min="3.0" max="20.0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Fasting Glucose (mg/dL)</label>
+            <input class="form-input" id="pf-bio-glucose" placeholder="90" type="number" min="40" max="500">
+          </div>
+        </div>
+      </div>
+
       <div class="form-section" style="margin-bottom:14px">
         <div class="form-section-title">Goal</div>
         <div class="chip-row" id="goal-row" style="margin-bottom:0">
@@ -4023,11 +4084,62 @@
         <div style="font-size:14px;color:var(--muted);line-height:1.7;max-width:280px">Every scan auto-logs to your
           daily tracker. Search and add foods manually too.</div>
       </div>
+      
+      <!-- Metabolic Genomics & Personalization Wizard (Step 3) -->
+      <div id="ob-step-3" class="ob-step" style="display:none; width:100%; max-width:320px;">
+        <div style="font-size:4rem;margin-bottom:14px">🧬</div>
+        <div
+          style="font-family:'Fraunces',serif;font-weight:900;font-size:1.8rem;letter-spacing:-0.5px;line-height:1.1;margin-bottom:10px">
+          Personalize Your<br><em style="color:var(--mint);-webkit-text-stroke:1px var(--ink)">Health DNA.</em></div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:16px">Select your health conditions. We will automatically map them to genetic SNP presets & biomarker limits.</div>
+        
+        <div class="onboard-conditions-list" style="display:flex; flex-direction:column; gap:8px; width:100%; margin-bottom:16px;">
+          <div class="cond-card" id="ob-cond-diabetic" onclick="toggleOnboardCondition('diabetic')" style="border:2px solid var(--ink); border-radius:12px; padding:10px 12px; display:flex; align-items:center; gap:10px; background:var(--white); cursor:pointer; text-align:left; transition: transform 0.1s, background 0.2s; box-shadow:var(--shadow-sm)">
+            <div style="font-size:1.5rem">🩸</div>
+            <div style="flex:1; min-width:0">
+              <div style="font-weight:800; font-size:13px; color:var(--ink)">Diabetic Care / Risk</div>
+              <div style="font-size:10px; color:var(--muted); text-overflow:ellipsis; overflow:hidden; white-space:nowrap">Presets TCF7L2 risk alleles + HbA1c limits</div>
+            </div>
+            <input type="checkbox" id="ob-chk-diabetic" style="pointer-events:none; accent-color:var(--ink)" onclick="event.stopPropagation()">
+          </div>
+
+          <div class="cond-card" id="ob-cond-hypertension" onclick="toggleOnboardCondition('hypertension')" style="border:2px solid var(--ink); border-radius:12px; padding:10px 12px; display:flex; align-items:center; gap:10px; background:var(--white); cursor:pointer; text-align:left; transition: transform 0.1s, background 0.2s; box-shadow:var(--shadow-sm)">
+            <div style="font-size:1.5rem">🧂</div>
+            <div style="flex:1; min-width:0">
+              <div style="font-weight:800; font-size:13px; color:var(--ink)">Hypertension / Salt Sensitive</div>
+              <div style="font-size:10px; color:var(--muted); text-overflow:ellipsis; overflow:hidden; white-space:nowrap">Presets AGT sodium sensitivity limit</div>
+            </div>
+            <input type="checkbox" id="ob-chk-hypertension" style="pointer-events:none; accent-color:var(--ink)" onclick="event.stopPropagation()">
+          </div>
+
+          <div class="cond-card" id="ob-cond-lactose" onclick="toggleOnboardCondition('lactose')" style="border:2px solid var(--ink); border-radius:12px; padding:10px 12px; display:flex; align-items:center; gap:10px; background:var(--white); cursor:pointer; text-align:left; transition: transform 0.1s, background 0.2s; box-shadow:var(--shadow-sm)">
+            <div style="font-size:1.5rem">🥛</div>
+            <div style="flex:1; min-width:0">
+              <div style="font-weight:800; font-size:13px; color:var(--ink)">Lactose Intolerant</div>
+              <div style="font-size:10px; color:var(--muted); text-overflow:ellipsis; overflow:hidden; white-space:nowrap">Presets LCT GG dairy-allergen warning</div>
+            </div>
+            <input type="checkbox" id="ob-chk-lactose" style="pointer-events:none; accent-color:var(--ink)" onclick="event.stopPropagation()">
+          </div>
+        </div>
+      </div>
+
+      <!-- Success Screen (Step 4) -->
+      <div id="ob-step-4" class="ob-step" style="display:none">
+        <div style="font-size:4.5rem;margin-bottom:20px">🎉</div>
+        <div
+          style="font-family:'Fraunces',serif;font-weight:900;font-size:2rem;letter-spacing:-1px;line-height:1.1;margin-bottom:14px">
+          You're all set!<br><em style="color:var(--pink);-webkit-text-stroke:1px var(--ink)">Profile Synchronized.</em></div>
+        <div style="font-size:14px;color:var(--muted);line-height:1.7;max-width:280px;margin-bottom:12px">Your metabolic genomics control panel has been statelessly synced with your browser. Your scans are now fully personalized.</div>
+        <div style="font-family:'Space Mono',monospace;font-size:10px;background:var(--ink);color:var(--yellow);padding:6px 12px;border-radius:8px;margin-bottom:20px;display:inline-block">X-Device-Key active</div>
+      </div>
+
       <!-- dots -->
       <div style="display:flex;gap:8px;margin:28px 0 24px">
         <div class="ob-dot active" id="ob-dot-0"></div>
         <div class="ob-dot" id="ob-dot-1"></div>
         <div class="ob-dot" id="ob-dot-2"></div>
+        <div class="ob-dot" id="ob-dot-3"></div>
+        <div class="ob-dot" id="ob-dot-4"></div>
       </div>
       <button id="ob-next-btn" onclick="obNext()"
         style="width:100%;max-width:320px;background:var(--ink);color:var(--yellow);border:var(--border);border-radius:var(--r-pill);padding:15px;font-family:'Fraunces',serif;font-weight:900;font-size:1.1rem;font-style:italic;box-shadow:var(--shadow-sticker);cursor:pointer;transition:transform 0.15s,box-shadow 0.1s"
@@ -4121,6 +4233,32 @@
 
 
   <script>
+    /* ── GLOBAL FETCH INTERCEPTOR & DEVICE KEY (NEW - Phase 5) ── */
+    function getLocalDeviceKey() {
+      let key = localStorage.getItem('eatlytic_device_key');
+      if (!key) {
+        key = 'dev_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('eatlytic_device_key', key);
+      }
+      return key;
+    }
+    (function interceptFetch() {
+      const originalFetch = window.fetch;
+      window.fetch = async function (url, options) {
+        options = options || {};
+        options.headers = options.headers || {};
+        const devKey = getLocalDeviceKey();
+        if (devKey) {
+          if (options.headers instanceof Headers) {
+            options.headers.set('X-Device-Key', devKey);
+          } else {
+            options.headers['X-Device-Key'] = devKey;
+          }
+        }
+        return originalFetch(url, options);
+      };
+    })();
+
     /* ═══════════════════════════════════════
        CONSTANTS & STATE
     ═══════════════════════════════════════ */
@@ -4141,6 +4279,7 @@
       conIngredients: [],
       histFilter: 'today',
       currentIngDetail: null,
+      obStep: 0,
     };
 
     /* ═══════════════════════════════════════
@@ -4936,10 +5075,37 @@
       }
 
       if (d.scan_id) html += `<button class="report-error-btn" style="margin-top:14px" onclick="reportScanError(${d.scan_id})">🚩 Report inaccuracy</button>`;
+
+      // ── ADDITIVE DB INTELLIGENCE SUMMARY BANNER ──────────────────────────
+      const addb = d.additive_db_summary;
+      if (addb && addb.total_additives_found > 0) {
+        const avoidBadge = addb.avoid_count > 0 ? `<span style="background:#FF1744;color:#fff;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:800;margin-right:6px">⛔ ${addb.avoid_count} Avoid</span>` : '';
+        const cautBadge = addb.caution_count > 0 ? `<span style="background:#FF6B00;color:#fff;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:800;margin-right:6px">⚠️ ${addb.caution_count} Caution</span>` : '';
+        const safeBadge = addb.safe_count > 0 ? `<span style="background:#00C896;color:#fff;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:800">✓ ${addb.safe_count} Safe</span>` : '';
+        html += `<div style="margin-top:18px;border:2px solid var(--ink);border-radius:14px;padding:14px 16px;background:var(--cream)">
+          <div style="font-family:'Fraunces',serif;font-weight:900;font-size:13px;letter-spacing:-0.5px;margin-bottom:10px">⚗️ Additive Intelligence <span style="font-family:'Space Mono',monospace;font-size:9px;font-weight:700;background:var(--ink);color:var(--yellow);padding:1px 6px;border-radius:4px">EATLYTIC VERIFIED DB</span></div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${avoidBadge}${cautBadge}${safeBadge}</div>
+          ${addb.red_flags.slice(0,3).map(f => `<div style="border-left:3px solid ${f.safety_tier==='AVOID'?'#FF1744':'#FF6B00'};padding:6px 10px;margin-bottom:6px;border-radius:0 8px 8px 0;background:${f.safety_tier==='AVOID'?'rgba(255,23,68,0.06)':'rgba(255,107,0,0.06)'}">
+            <div style="font-size:12px;font-weight:800;color:var(--ink)">${esc(f.name)}</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">FSSAI: ${esc(f.fssai_status||'—')} · ${esc(f.safety_tier)}</div>
+            <div style="font-size:11px;color:var(--ink);margin-top:3px;line-height:1.5">${esc(f.curiosity_fact||'')}</div>
+          </div>`).join('')}
+          <div style="font-size:10px;color:var(--muted);margin-top:6px">Powered by Eatlytic Proprietary Additive Database · ${addb.total_additives_found} additives matched</div>
+        </div>`;
+      }
+      // ──────────────────────────────────────────────────────────────────────
+
       html += `</div>`; // end rpanel-ingr
 
       // ── Inject HTML
       document.getElementById('reveal-scroll').innerHTML = html;
+
+      // ── Trigger healthy scan confetti blast (Score >= 8)
+      if (score >= 8) {
+        setTimeout(() => {
+          spawnConfetti(window.innerWidth / 2, window.innerHeight / 2);
+        }, 500); // Delays slightly so it bursts just as card animations complete!
+      }
 
       // ── Animate hero ring
       requestAnimationFrame(() => {
@@ -5349,6 +5515,32 @@
       if (p.activity) document.getElementById('pf-activity').value = p.activity;
       if (p.goal) document.querySelectorAll('#goal-row .chip').forEach(c => c.classList.toggle('active', c.dataset.goal === p.goal));
       if (p.tdee) { showTDEE(p.tdee, p.goal); updateProgressRings(p.tdee, p.goal); }
+
+      // Populate genomic and biomarker fields (NEW - Phase 5)
+      if (p.genetic_snps) {
+        if (p.genetic_snps.rs7903146) document.getElementById('pf-snp-diabetes').value = p.genetic_snps.rs7903146;
+        if (p.genetic_snps.rs5068) document.getElementById('pf-snp-hypertension').value = p.genetic_snps.rs5068;
+        if (p.genetic_snps.rs4988235) document.getElementById('pf-snp-lactose').value = p.genetic_snps.rs4988235;
+      }
+      if (p.biomarkers) {
+        if (p.biomarkers.hba1c) document.getElementById('pf-bio-hba1c').value = p.biomarkers.hba1c;
+        if (p.biomarkers.fasting_glucose) document.getElementById('pf-bio-glucose').value = p.biomarkers.fasting_glucose;
+      }
+
+      // Sync latest profile from server statelessly
+      fetch(`${API}/personalized/profile`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && data.genetic_snps) {
+            if (data.genetic_snps.rs7903146) document.getElementById('pf-snp-diabetes').value = data.genetic_snps.rs7903146.toUpperCase();
+            if (data.genetic_snps.rs5068) document.getElementById('pf-snp-hypertension').value = data.genetic_snps.rs5068.toUpperCase();
+            if (data.genetic_snps.rs4988235) document.getElementById('pf-snp-lactose').value = data.genetic_snps.rs4988235.toUpperCase();
+            if (data.biomarkers) {
+              if (data.biomarkers.hba1c) document.getElementById('pf-bio-hba1c').value = data.biomarkers.hba1c;
+              if (data.biomarkers.fasting_glucose) document.getElementById('pf-bio-glucose').value = data.biomarkers.fasting_glucose;
+            }
+          }
+        }).catch(() => {});
     }
     function computeTDEE(p) {
       if (!p.weight || !p.height || !p.age || !p.gender) return null;
@@ -5412,10 +5604,37 @@
       const name = document.getElementById('pf-name').value.trim(), age = parseFloat(document.getElementById('pf-age').value) || 0, weight = parseFloat(document.getElementById('pf-weight').value) || 0, height = parseFloat(document.getElementById('pf-height').value) || 0, gender = document.getElementById('pf-gender').value, activity = document.getElementById('pf-activity').value, goal = document.querySelector('#goal-row .chip.active')?.dataset.goal || 'maintain';
       const p = { name, age, weight, height, gender, activity, goal }, tdee = computeTDEE(p);
       if (tdee) p.tdee = tdee;
+
+      // Extract genomic & biomarker data (NEW - Phase 5)
+      const snps = {
+        rs7903146: document.getElementById('pf-snp-diabetes').value,
+        rs5068: document.getElementById('pf-snp-hypertension').value,
+        rs4988235: document.getElementById('pf-snp-lactose').value
+      };
+      
+      const biomarkers = {};
+      const hba1cVal = parseFloat(document.getElementById('pf-bio-hba1c').value);
+      if (!isNaN(hba1cVal)) biomarkers.hba1c = hba1cVal;
+      const glucoseVal = parseFloat(document.getElementById('pf-bio-glucose').value);
+      if (!isNaN(glucoseVal)) biomarkers.fasting_glucose = glucoseVal;
+
+      p.genetic_snps = snps;
+      p.biomarkers = biomarkers;
+
       localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
       if (name) document.getElementById('profile-name-disp').textContent = name;
       if (tdee) { showTDEE(tdee, goal); updateProgressRings(tdee, goal); }
-      spawnConfetti(window.innerWidth / 2, 200); showToast('✓ Profile saved — target: ' + (tdee || '?') + ' kcal');
+
+      // Statelessly sync genomic profile to backend database
+      fetch(`${API}/personalized/profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ genetic_snps: snps, biomarkers: biomarkers })
+      }).then(res => {
+        if (res.ok) console.log("Genomic profile synced successfully to server.");
+      }).catch(err => console.error("Genomic sync failed:", err));
+
+      spawnConfetti(window.innerWidth / 2, 200); showToast('✓ Profile & Genomics saved!');
     }
 
     /* ═══════════════════════════════════════
@@ -5790,17 +6009,92 @@
     /* ═══════════════════════════════════════
        ONBOARDING
     ═══════════════════════════════════════ */
+    let onboardConditions = { diabetic: false, hypertension: false, lactose: false };
+    
+    function toggleOnboardCondition(cond) {
+      onboardConditions[cond] = !onboardConditions[cond];
+      const card = document.getElementById('ob-cond-' + cond);
+      const chk = document.getElementById('ob-chk-' + cond);
+      if (onboardConditions[cond]) {
+        card.style.background = 'var(--yellow)';
+        card.style.transform = 'scale(1.02)';
+        chk.checked = true;
+      } else {
+        card.style.background = 'var(--white)';
+        card.style.transform = '';
+        chk.checked = false;
+      }
+    }
+
+    function saveOnboardProfile() {
+      // Map conditions to genetic presets
+      const snps = {
+        rs7903146: onboardConditions.diabetic ? 'TT' : 'CC',
+        rs5068: onboardConditions.hypertension ? 'GG' : 'AA',
+        rs4988235: onboardConditions.lactose ? 'GG' : 'AA'
+      };
+      const biomarkers = {};
+      if (onboardConditions.diabetic) {
+        biomarkers.hba1c = 6.2;
+        biomarkers.fasting_glucose = 125;
+      }
+      
+      const p = getProfile();
+      p.genetic_snps = snps;
+      p.biomarkers = biomarkers;
+      if (onboardConditions.diabetic) {
+        p.persona = 'diabetic';
+        state.persona = 'diabetic';
+        // Set the active chip in the main view
+        document.querySelectorAll('#persona-row .chip').forEach(c => {
+          c.classList.toggle('active', c.dataset.persona === 'diabetic');
+        });
+      }
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+      
+      // Update form values in Profile Screen
+      document.getElementById('pf-snp-diabetes').value = snps.rs7903146;
+      document.getElementById('pf-snp-hypertension').value = snps.rs5068;
+      document.getElementById('pf-snp-lactose').value = snps.rs4988235;
+      if (onboardConditions.diabetic) {
+        document.getElementById('pf-bio-hba1c').value = '6.2';
+        document.getElementById('pf-bio-glucose').value = '125';
+      }
+
+      // Statelessly sync with backend
+      fetch(`${API}/personalized/profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ genetic_snps: snps, biomarkers: biomarkers })
+      }).then(res => {
+        if (res.ok) console.log("Onboard genomic profile synced successfully.");
+      }).catch(err => console.error("Onboard genomic sync failed:", err));
+      
+      spawnConfetti(window.innerWidth / 2, 200);
+      showToast('✓ Health DNA synchronized!');
+    }
+
     function obNext() {
       document.getElementById('ob-step-' + state.obStep).style.display = 'none';
       document.getElementById('ob-dot-' + state.obStep).classList.remove('active');
       state.obStep++;
-      if (state.obStep > 2) {
+      if (state.obStep === 3) {
+        document.getElementById('ob-step-3').style.display = 'block';
+        document.getElementById('ob-dot-3').classList.add('active');
+        document.getElementById('ob-next-btn').textContent = 'Confirm & Sync DNA →';
+      } else if (state.obStep === 4) {
+        saveOnboardProfile();
+        document.getElementById('ob-step-4').style.display = 'block';
+        document.getElementById('ob-dot-4').classList.add('active');
+        document.getElementById('ob-next-btn').textContent = 'Open Portal';
+      } else if (state.obStep > 4) {
         finishOnboard();
         return;
+      } else {
+        document.getElementById('ob-step-' + state.obStep).style.display = 'block';
+        document.getElementById('ob-dot-' + state.obStep).classList.add('active');
+        if (state.obStep === 2) document.getElementById('ob-next-btn').textContent = 'Next →';
       }
-      document.getElementById('ob-step-' + state.obStep).style.display = 'block';
-      document.getElementById('ob-dot-' + state.obStep).classList.add('active');
-      if (state.obStep === 2) document.getElementById('ob-next-btn').textContent = 'Get Started →';
     }
 
     function finishOnboard() {

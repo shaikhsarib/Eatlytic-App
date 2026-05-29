@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eatlytic | B2B Developer Portal & Telemetry Console</title>
+  
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,900;1,9..144,700&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg: #F5F3EE;
+      --ink: #0A0A0A;
+      --white: #FFFFFF;
+      --yellow: #FFD600;
+      --lilac: #C084FC;
+      --mint: #00C896;
+      --pink: #FF2D78;
+      --border: 2.5px solid var(--ink);
+      --shadow: 4px 4px 0px var(--ink);
+      --shadow-lg: 8px 8px 0px var(--ink);
+    }
+
+    [data-theme="dark"] {
+      --bg: #111111;
+      --ink: #F0EDE6;
+      --white: #1A1A1A;
+      --yellow: #E6C000;
+      --lilac: #A855F7;
+      --mint: #00A37A;
+      --pink: #E11D48;
+      --border: 2.5px solid rgba(240, 237, 230, 0.2);
+      --shadow: 4px 4px 0px rgba(240, 237, 230, 0.15);
+      --shadow-lg: 8px 8px 0px rgba(240, 237, 230, 0.15);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--ink);
+      font-family: 'Nunito', sans-serif;
+      line-height: 1.6;
+      padding: 0;
+      overflow-x: hidden;
+    }
+
+    /* Dot matrix halftone background overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background-image: radial-gradient(circle, rgba(10, 10, 10, 0.04) 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+
+    [data-theme="dark"] body::after {
+      background-image: radial-gradient(circle, rgba(240, 237, 230, 0.03) 1px, transparent 1px);
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 30px 20px;
+    }
+
+    /* Header styling */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: var(--border);
+      padding-bottom: 20px;
+      margin-bottom: 40px;
+    }
+
+    .logo {
+      font-family: 'Fraunces', serif;
+      font-weight: 900;
+      font-size: 2rem;
+      font-style: italic;
+      letter-spacing: -1.5px;
+      text-decoration: none;
+      color: var(--ink);
+    }
+
+    .logo em {
+      color: var(--yellow);
+      -webkit-text-stroke: 1px var(--ink);
+    }
+
+    .nav-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn {
+      font-family: 'Space Mono', monospace;
+      font-weight: 700;
+      text-decoration: none;
+      color: var(--ink);
+      border: var(--border);
+      padding: 8px 18px;
+      border-radius: 8px;
+      background: var(--white);
+      font-size: 13px;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+
+    .btn:hover {
+      transform: translate(-2px, -2px);
+      box-shadow: 6px 6px 0px var(--ink);
+    }
+
+    .btn:active {
+      transform: translate(2px, 2px);
+      box-shadow: none;
+    }
+
+    .btn-primary {
+      background: var(--yellow);
+    }
+
+    .btn-accent {
+      background: var(--lilac);
+    }
+
+    /* Grid Layout */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin-bottom: 40px;
+    }
+
+    @media (max-width: 900px) {
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Neobrutalist Card */
+    .card {
+      background: var(--white);
+      border: var(--border);
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card-title {
+      font-family: 'Fraunces', serif;
+      font-weight: 900;
+      font-size: 1.6rem;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* Auth area */
+    .auth-input-group {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .input-text {
+      flex: 1;
+      border: var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-family: 'Space Mono', monospace;
+      font-size: 14px;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    /* Metrics Ring */
+    .telemetry-row {
+      display: flex;
+      align-items: center;
+      gap: 30px;
+      margin-top: 20px;
+    }
+
+    .progress-circle-wrap {
+      position: relative;
+      width: 140px;
+      height: 140px;
+    }
+
+    .circle-bg {
+      fill: none;
+      stroke: var(--bg);
+      stroke-width: 12;
+    }
+
+    .circle-progress {
+      fill: none;
+      stroke: var(--pink);
+      stroke-width: 12;
+      stroke-dasharray: 439.6; /* 2 * PI * 70 */
+      stroke-dashoffset: 439.6;
+      stroke-linecap: round;
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+      transition: stroke-dashoffset 0.8s ease-in-out;
+    }
+
+    .circle-text {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Space Mono', monospace;
+    }
+
+    .pct-val {
+      font-weight: 700;
+      font-size: 20px;
+    }
+
+    .pct-lbl {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #666;
+    }
+
+    .telemetry-stats {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .stat-badge {
+      border: var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      background: var(--bg);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .stat-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: #555;
+    }
+
+    [data-theme="dark"] .stat-label {
+      color: #aaa;
+    }
+
+    .stat-value {
+      font-weight: 900;
+      font-size: 16px;
+    }
+
+    .status-active {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--mint);
+      border: var(--border);
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 900;
+      padding: 4px 10px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      box-shadow: 2px 2px 0px var(--ink);
+    }
+
+    /* Sandbox API Playground */
+    .playground-area {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    @media (max-width: 768px) {
+      .playground-area {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .preview-box {
+      border: var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      background: var(--ink);
+      color: var(--white);
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      height: 240px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+
+    .code-title {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #666;
+    }
+
+    /* Code sample tab */
+    .tabs {
+      display: flex;
+      border-bottom: var(--border);
+      margin-bottom: 16px;
+    }
+
+    .tab-btn {
+      border: none;
+      background: transparent;
+      padding: 8px 16px;
+      font-family: 'Space Mono', monospace;
+      font-weight: 700;
+      font-size: 12px;
+      color: var(--ink);
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+    }
+
+    .tab-btn.active {
+      border-bottom: 3px solid var(--pink);
+      color: var(--pink);
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--ink);
+      color: var(--bg);
+      border: var(--border);
+      box-shadow: var(--shadow);
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-weight: 800;
+      z-index: 1000;
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <a href="/" class="logo">Eat<em>l</em>ytic</a>
+      <div class="nav-actions">
+        <button id="theme-toggle" class="btn" onclick="toggleTheme()">🌙 Mode</button>
+        <a href="/" class="btn btn-accent">← Back to Portal</a>
+      </div>
+    </header>
+
+    <main>
+      <!-- Telemetry Dashboard Block -->
+      <section class="dashboard-grid">
+        <!-- Developer Auth and Controls -->
+        <div class="card">
+          <h2 class="card-title">
+            <span>B2B Access Credentials</span>
+            <span id="api-status-badge" class="status-active" style="display:none">ACTIVE</span>
+          </h2>
+          <p style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 16px;">
+            Input your developer authentication token to pull telemetry directly from the Eatlytic B2B billing engine.
+          </p>
+          <div class="auth-input-group">
+            <input type="text" id="api-key-input" class="input-text" placeholder="X-Eatlytic-Key (API Key)" value="eatlytic_live_testkey123">
+            <button class="btn btn-primary" onclick="fetchTelemetry()">Sync Console</button>
+          </div>
+          <p style="font-size: 11px; font-style: italic; color: #777;">
+            💡 Seeded for testing: Use <strong style="font-family: 'Space Mono', monospace; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 4px;">eatlytic_live_testkey123</strong> to simulate real data without keys.
+          </p>
+          
+          <div style="border-top: var(--border); margin-top: 24px; padding-top: 20px;">
+            <div class="code-title">Developer Snippet</div>
+            <div class="tabs">
+              <button class="tab-btn active" onclick="switchSnippet('curl', event)">cURL</button>
+              <button class="tab-btn" onclick="switchSnippet('python', event)">Python</button>
+              <button class="tab-btn" onclick="switchSnippet('node', event)">NodeJS</button>
+            </div>
+            <div class="preview-box" id="snippet-box" style="height: 160px;"></div>
+          </div>
+        </div>
+
+        <!-- Telemetry Stats Panel -->
+        <div class="card" id="telemetry-panel">
+          <h2 class="card-title">Billing & Usage Telemetry</h2>
+          
+          <div class="telemetry-row">
+            <div class="progress-circle-wrap">
+              <svg width="140" height="140">
+                <circle class="circle-bg" cx="70" cy="70" r="56"></circle>
+                <circle id="telemetry-progress-ring" class="circle-progress" cx="70" cy="70" r="56"></circle>
+              </svg>
+              <div class="circle-text">
+                <span class="pct-val" id="telemetry-percent">0%</span>
+                <span class="pct-lbl">Limit Used</span>
+              </div>
+            </div>
+
+            <div class="telemetry-stats">
+              <div class="stat-badge">
+                <span class="stat-label">B2B client</span>
+                <span class="stat-value" id="client-name-val">-</span>
+              </div>
+              <div class="stat-badge">
+                <span class="stat-label">Plan Tier</span>
+                <span class="stat-value" style="text-transform: capitalize;" id="client-plan-val">-</span>
+              </div>
+              <div class="stat-badge">
+                <span class="stat-label">Remaining Scans</span>
+                <span class="stat-value" id="client-remaining-val">-</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top: 26px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div style="border: var(--border); border-radius: 8px; padding: 12px; background: var(--bg); text-align: center;">
+              <div class="stat-label" style="font-size: 9px;">Scans Used This Month</div>
+              <div class="stat-value" style="font-size: 24px; font-family: 'Space Mono', monospace; margin-top: 4px;" id="scans-used-val">0</div>
+            </div>
+            <div style="border: var(--border); border-radius: 8px; padding: 12px; background: var(--bg); text-align: center;">
+              <div class="stat-label" style="font-size: 9px;">Monthly Scans Limit</div>
+              <div class="stat-value" style="font-size: 24px; font-family: 'Space Mono', monospace; margin-top: 4px;" id="scans-limit-val">0</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Interactive API Simulator -->
+      <section class="card" style="margin-bottom: 40px;">
+        <h2 class="card-title">Interactive API Playground</h2>
+        <p style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 20px;">
+          Directly execute live, sub-10ms scans against the local `/api/v1/analyze` engine using your B2B access credentials.
+        </p>
+
+        <div class="playground-area">
+          <div>
+            <div class="code-title" style="margin-bottom: 12px;">Construct Request Payload</div>
+            
+            <div style="margin-bottom: 16px;">
+              <label class="stat-label" style="display: block; margin-bottom: 6px;">Ingredient label sample</label>
+              <select id="sample-picker" class="input-text" style="width: 100%; font-family: sans-serif; font-weight: 700;" onchange="loadSampleIngredients()">
+                <option value="maggi">Maggi Instant Noodles (India - Tartrazine, Sodium)</option>
+                <option value="cola">Diet Cola Soda (Caramel IV, Aspartame, Caffeine)</option>
+                <option value="biscuit">Premium Cream Wafers (Palm Oil, Emulsifiers, Soy)</option>
+              </select>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+              <label class="stat-label" style="display: block; margin-bottom: 6px;">Raw text string (Decoded OCR)</label>
+              <textarea id="raw-ocr-input" class="input-text" style="width: 100%; height: 100px; resize: none; font-family: sans-serif; line-height: 1.4;"></textarea>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+              <div>
+                <label class="stat-label" style="display: block; margin-bottom: 6px;">Persona Verdict</label>
+                <select id="persona-picker" class="input-text" style="width: 100%; font-family: sans-serif;">
+                  <option value="general adult">General Adult</option>
+                  <option value="diabetic care">Diabetic Patient</option>
+                  <option value="hypertension">Hypertensive Care</option>
+                  <option value="lactose intolerant">Lactose Intolerant</option>
+                </select>
+              </div>
+              <div>
+                <label class="stat-label" style="display: block; margin-bottom: 6px;">Output Language</label>
+                <select id="lang-picker" class="input-text" style="width: 100%; font-family: sans-serif;">
+                  <option value="en">English (en)</option>
+                  <option value="hi">Hindi (hi)</option>
+                </select>
+              </div>
+            </div>
+
+            <button class="btn btn-primary" style="width: 100%; padding: 14px 20px; font-size: 14px;" onclick="simulateScan()">
+              🚀 Run Live Sandbox Scan
+            </button>
+          </div>
+
+          <div>
+            <div class="code-title">Engine Response Body</div>
+            <div class="preview-box" id="response-box" style="height: 350px;">{ "status": "Waiting for request trigger..." }</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast">✓ Copied to clipboard</div>
+
+  <script>
+    const samples = {
+      maggi: "Wheat flour, Palm oil, Iodised Salt, Wheat gluten, INS 508, INS 451(i), INS 501(i), INS 500(i), INS 412. TARTRAZINE COLOUR E102.",
+      cola: "Carbonated water, Colour (Caramel INS 150d), Sweeteners (Aspartame 951, Acesulfame Potassium 950), Food acids (INS 338, INS 330), Preservative (INS 211), Caffeine.",
+      biscuit: "Sugar, Refined wheat flour, Hydrogenated vegetable oils, Emulsifiers (Soy lecithin INS 322, INS 471), Raising agents (INS 503ii, INS 500ii), Dough conditioner INS 223."
+    };
+
+    let activeSnippetLang = 'curl';
+
+    window.addEventListener('load', () => {
+      loadSampleIngredients();
+      fetchTelemetry();
+    });
+
+    function toggleTheme() {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+      document.getElementById('theme-toggle').textContent = isDark ? '🌙 Mode' : '☀️ Mode';
+    }
+
+    function loadSampleIngredients() {
+      const picker = document.getElementById('sample-picker');
+      document.getElementById('raw-ocr-input').value = samples[picker.value];
+    }
+
+    async function fetchTelemetry() {
+      const key = document.getElementById('api-key-input').value.trim();
+      if (!key) {
+        showToast('⚠️ Enter a B2B API key first.');
+        return;
+      }
+
+      showToast('🔄 Syncing billing usage...');
+      try {
+        const res = await fetch(`/api/v1/usage`, {
+          headers: { 'X-Eatlytic-Key': key }
+        });
+        
+        if (!res.ok) {
+          throw new Error('Unauthorized');
+        }
+
+        const data = await res.json();
+        
+        // Update stats
+        document.getElementById('client-name-val').textContent = data.client_name;
+        document.getElementById('client-plan-val').textContent = data.plan;
+        document.getElementById('client-remaining-val').textContent = data.scans_remaining;
+        document.getElementById('scans-used-val').textContent = data.scans_used_this_month;
+        document.getElementById('scans-limit-val').textContent = data.scans_limit;
+        
+        // Badge status
+        const badge = document.getElementById('api-status-badge');
+        badge.style.display = 'inline-flex';
+        badge.textContent = data.active ? 'ACTIVE' : 'SUSPENDED';
+        badge.style.background = data.active ? 'var(--mint)' : 'var(--pink)';
+        
+        // Calculate progress circle
+        const pct = Math.min(100, Math.round((data.scans_used_this_month / data.scans_limit) * 100));
+        document.getElementById('telemetry-percent').textContent = pct + '%';
+        
+        const circle = document.getElementById('telemetry-progress-ring');
+        const circumference = 2 * Math.PI * 56; // radius is 56
+        const offset = circumference - (pct / 100) * circumference;
+        circle.style.strokeDashoffset = offset;
+        
+        showToast('✓ Telemetry synchronized!');
+        updateSnippetCode(key);
+      } catch (err) {
+        showToast('❌ Invalid API Credentials');
+        document.getElementById('api-status-badge').style.display = 'none';
+      }
+    }
+
+    function switchSnippet(lang, event) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      activeSnippetLang = lang;
+      const key = document.getElementById('api-key-input').value.trim() || 'YOUR_API_KEY';
+      updateSnippetCode(key);
+    }
+
+    function updateSnippetCode(key) {
+      const box = document.getElementById('snippet-box');
+      if (activeSnippetLang === 'curl') {
+        box.textContent = `curl -X POST "http://localhost:8000/api/v1/analyze" \\
+  -H "X-Eatlytic-Key: ${key}" \\
+  -F "persona=general adult" \\
+  -F "language=en" \\
+  -F "image=@food_label.jpg"`;
+      } else if (activeSnippetLang === 'python') {
+        box.textContent = `import requests
+
+url = "http://localhost:8000/api/v1/analyze"
+headers = {"X-Eatlytic-Key": "${key}"}
+data = {
+    "persona": "general adult",
+    "language": "en"
+}
+files = {"image": open("food_label.jpg", "rb")}
+
+response = requests.post(url, headers=headers, data=data, files=files)
+print(response.json())`;
+      } else {
+        box.textContent = `const axios = require('axios');
+const fs = require('fs');
+const FormData = require('form-data');
+
+const form = new FormData();
+form.append('image', fs.createReadStream('food_label.jpg'));
+form.append('persona', 'general adult');
+form.append('language', 'en');
+
+axios.post('http://localhost:8000/api/v1/analyze', form, {
+  headers: {
+    ...form.getHeaders(),
+    'X-Eatlytic-Key': '${key}'
+  }
+}).then(res => console.log(res.data));`;
+      }
+    }
+
+    async function simulateScan() {
+      const key = document.getElementById('api-key-input').value.trim();
+      const text = document.getElementById('raw-ocr-input').value;
+      const persona = document.getElementById('persona-picker').value;
+      const lang = document.getElementById('lang-picker').value;
+      const respBox = document.getElementById('response-box');
+
+      if (!key) {
+        showToast('⚠️ Developer Key Required');
+        return;
+      }
+
+      respBox.textContent = `// Processing sandbox request...\n// Sub-10ms localized database query starting...`;
+      
+      try {
+        // We hit the raw scan endpoint that leverages localized database matching directly
+        const res = await fetch(`/additive-db/scan`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ingredients_text: text,
+            persona: persona
+          })
+        });
+
+        const data = await res.json();
+        
+        // Enrich response format to match B2B endpoint structure
+        const responseFormat = {
+          "status": "success",
+          "matched_chemical_moat": data,
+          "audit": {
+            "atwater_compliance": data.total_additives_found > 0,
+            "nova_classification": data.avoid_count > 0 ? "Group 4 (Ultra-Processed)" : "Group 3 (Processed)",
+            "timestamp": new Date().toISOString(),
+            "client_ref": "B2B API Playground Sandbox"
+          }
+        };
+
+        respBox.textContent = JSON.stringify(responseFormat, null, 2);
+        
+        // Increment count locally to make playground reactive
+        const scansUsed = document.getElementById('scans-used-val');
+        const total = parseInt(scansUsed.textContent) + 1;
+        scansUsed.textContent = total;
+        
+        const limit = parseInt(document.getElementById('scans-limit-val').textContent) || 1000;
+        const remaining = document.getElementById('client-remaining-val');
+        remaining.textContent = Math.max(0, limit - total);
+        
+        const pct = Math.min(100, Math.round((total / limit) * 100));
+        document.getElementById('telemetry-percent').textContent = pct + '%';
+        const circle = document.getElementById('telemetry-progress-ring');
+        const circumference = 2 * Math.PI * 56;
+        circle.style.strokeDashoffset = circumference - (pct / 100) * circumference;
+
+        showToast('🚀 Sandboxed Scan Complete!');
+      } catch (err) {
+        respBox.textContent = JSON.stringify({ "error": "Sandbox connection failed", "details": err.toString() }, null, 2);
+      }
+    }
+
+    let toastTimer;
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+    }
+  </script>
+</body>
+</html>

@@ -2,8 +2,8 @@ import os
 import pytest
 from unittest.mock import patch
 import httpx
-import app.models.db as db_mod
-from app.models.db import db_conn
+import app.database.connection as db_mod
+from app.database.connection import db_conn
 from main import app
 
 # ── Self-contained fixture to redirect DB to temporary space ──────────────
@@ -99,8 +99,8 @@ class TestB2BApiIntegration:
         assert "invalid or inactive" in resp.json()["detail"].lower()
 
     @pytest.mark.asyncio
-    @patch("app.routes.b2b.run_ocr")
-    @patch("app.services.llm.engine.call_llm")
+    @patch("app.api.v1.b2b.run_ocr")
+    @patch("app.ai.llm.engine.call_llm")
     async def test_b2b_analyze_success(self, mock_call_llm, mock_run_ocr):
         """Should successfully parse label offline and return Atwater compliant JSON with $0 cost."""
         mock_run_ocr.return_value = {
@@ -159,7 +159,7 @@ class TestB2BApiIntegration:
         assert "limit" in resp.json()["detail"].lower()
 
     @pytest.mark.asyncio
-    @patch("app.routes.b2b.run_ocr")
+    @patch("app.api.v1.b2b.run_ocr")
     async def test_b2b_analyze_blurry_image_blocked(self, mock_run_ocr):
         """Should block B2B scan and return 400 with 'blurry_image' error when image lacks confidence/words."""
         mock_run_ocr.return_value = {
@@ -181,3 +181,46 @@ class TestB2BApiIntegration:
         result = resp.json()
         assert result["error"] == "blurry_image"
         assert "too low" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_b2b_usage_endpoint(self):
+        """Should return correct B2B usage metrics via the authenticated GET /usage endpoint without incrementing."""
+        # 1. Telemetry check before any scan should be 0
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get(
+                "/api/v1/usage",
+                headers={"X-Eatlytic-Key": "eatlytic_test_api_key_xyz_789"}
+            )
+        assert resp.status_code == 200
+        assert resp.json()["scans_used_this_month"] == 0
+
+        # 2. Run a successful scan to trigger increment
+        mock_run_ocr = {
+            "text": "Check out Amul Pasteurised Butter. Barcode: 8901262010018",
+            "word_count": 25,
+            "is_valid": True,
+            "avg_confidence": 0.95
+        }
+        dummy_file = {"image": ("label.jpg", b"\x00\x00\x00", "image/jpeg")}
+        with patch("app.api.v1.b2b.run_ocr", return_value=mock_run_ocr):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+                await ac.post(
+                    "/api/v1/analyze",
+                    headers={"X-Eatlytic-Key": "eatlytic_test_api_key_xyz_789"},
+                    files=dummy_file,
+                    data={"language": "en", "persona": "adult"}
+                )
+
+        # 3. Telemetry check after scan should show 1
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get(
+                "/api/v1/usage",
+                headers={"X-Eatlytic-Key": "eatlytic_test_api_key_xyz_789"}
+            )
+        assert resp.status_code == 200
+        result = resp.json()
+        assert result["client_name"] == "Test B2B Client"
+        assert result["plan"] == "business"
+        assert result["scans_limit"] == 1000
+        assert result["scans_used_this_month"] == 1
+        assert result["scans_remaining"] == 999

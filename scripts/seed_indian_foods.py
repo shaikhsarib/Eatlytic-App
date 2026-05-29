@@ -4,7 +4,7 @@ import sys
 # Ensure parent directory is in Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.models.db import db_conn, init_db
+from app.database.connection import db_conn, init_db
 
 def seed_foods():
     # Make sure tables are initialized

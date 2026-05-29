@@ -8,7 +8,7 @@ import logging
 import asyncio
 from fastapi import APIRouter, Request, HTTPException, Form, File, UploadFile
 from fastapi.responses import JSONResponse
-from app.models.db import db_conn
+from app.database.connection import db_conn
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
@@ -87,7 +87,7 @@ def _compute_ocr_f1(extracted_text: str, ground_truth_text: str) -> float:
 
 
 def _get_ocr_service():
-    from app.services.ocr import run_ocr
+    from app.ai.ocr.client import run_ocr
 
     return run_ocr
 
@@ -104,7 +104,7 @@ def _get_image_service():
 
 
 def _get_llm_service():
-    from app.services.llm import unified_analyze_flow
+    from app.ai.llm import unified_analyze_flow
 
     return unified_analyze_flow
 
@@ -316,7 +316,7 @@ async def discrepancy_audit(
     VIRAL FEATURE: The Discrepancy Engine.
     Exposes gaps between Label OCR, Web Marketing, and Atwater Physics.
     """
-    from app.services.llm import unified_analyze_flow
+    from app.ai.llm import unified_analyze_flow
     
     # 1. Search for official nutrition info
     search_query = f"{product_name} nutrition facts official label"

@@ -1,9 +1,9 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from app.models.db import db_conn, init_db
-import app.models.db as db_mod
+from app.database.connection import db_conn, init_db
+import app.database.connection as db_mod
 from app.services.explanation_engine import verify_atwater_math
-from app.services.llm.engine import find_db_product_match, unified_analyze_flow
+from app.ai.llm.engine import find_db_product_match, unified_analyze_flow
 
 # ── Self-contained fixture to redirect DB to temporary space ──────────────
 @pytest.fixture(autouse=True)

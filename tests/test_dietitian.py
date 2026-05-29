@@ -5,8 +5,8 @@ import sqlite3
 import datetime
 from unittest.mock import patch
 from main import app
-from app.models.db import db_conn, init_db
-import app.models.db as db_mod
+from app.database.connection import db_conn, init_db
+import app.database.connection as db_mod
 
 @pytest.fixture(autouse=True)
 def use_test_db(tmp_path, monkeypatch):
@@ -119,7 +119,7 @@ async def test_dietitian_dashboard_analytics():
             conn.execute("""
                 INSERT INTO scans (device_key, product_name, score, verdict, brand, category, scanned_at, analysis_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (device_key, "Almonds", 8, "Safe", "BadamCorp", "nut", datetime.datetime.utcnow().isoformat(), json.dumps(safe_analysis)))
+            """, (device_key, "Almonds", 8, "Safe", "BadamCorp", "nut", datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat(), json.dumps(safe_analysis)))
 
             # Avoid scan (score 2, glycemic threat)
             avoid_analysis = {
@@ -134,7 +134,7 @@ async def test_dietitian_dashboard_analytics():
             conn.execute("""
                 INSERT INTO scans (device_key, product_name, score, verdict, brand, category, scanned_at, analysis_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (device_key, "Treat Jim Jam Biscuits", 2, "Glycemic Threat", "Britannia", "biscuit", datetime.datetime.utcnow().isoformat(), json.dumps(avoid_analysis)))
+            """, (device_key, "Treat Jim Jam Biscuits", 2, "Glycemic Threat", "Britannia", "biscuit", datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat(), json.dumps(avoid_analysis)))
 
         # 4. Fetch dashboard again and verify clinical aggregation
         dash_resp2 = await ac.get(f"/dietitian/dashboard?key={key}")
@@ -160,3 +160,88 @@ async def test_dietitian_dashboard_analytics():
         err_resp = await ac.get("/dietitian/dashboard?key=invalid_key")
         assert err_resp.status_code == 403
         assert "invalid" in err_resp.json()["detail"].lower()
+
+@pytest.mark.asyncio
+async def test_dietitian_cohort_insights():
+    """Verify dietitian cohort endpoint fetches detailed patient insights and aggregated macros."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        # 1. Setup dietitian and join patient
+        reg_resp = await ac.post(
+            "/dietitian/register",
+            data={"name": "Dr. Sarib", "email": "s@diet.org", "code": "COHORT_TEST"}
+        )
+        key = reg_resp.json()["dietitian_key"]
+        
+        device_key = "device_bob"
+        await ac.post("/dietitian/join", data={"device_key": device_key, "cohort_code": "COHORT_TEST"})
+
+        # Seed device details
+        with db_conn() as conn:
+            conn.execute("INSERT OR REPLACE INTO devices (device_key, persona, streak_days, last_scan_date) VALUES (?, ?, ?, ?)", (device_key, 'diabetic', 5, '2026-05-29'))
+            # Add a scan
+            conn.execute("""
+                INSERT INTO scans (device_key, product_name, score, verdict, brand, category, scanned_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (device_key, "Apple", 8, "Safe", "Fresh", "fruit", "2026-05-29"))
+            # Add a meal log
+            conn.execute("""
+                INSERT INTO daily_logs (device_key, log_date, meal_name, calories, protein, carbs, fat)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (device_key, datetime.date.today().isoformat(), "Apple", 95.0, 0.5, 25.0, 0.3))
+            # Add CGM readings (Average 100 mg/dL, 100% TIR)
+            conn.execute("""
+                INSERT INTO cgm_readings (device_key, glucose_mgdl, recorded_at, sensor_state)
+                VALUES (?, ?, ?, ?)
+            """, (device_key, 100.0, datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat(), "active"))
+
+        # Fetch cohort details
+        resp = await ac.get(f"/dietitian/cohort?cohort_code=COHORT_TEST&key={key}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cohort_code"] == "COHORT_TEST"
+        assert data["total_active_patients"] == 1
+        assert len(data["patients"]) == 1
+        
+        patient = data["patients"][0]
+        assert patient["persona"] == "diabetic"
+        assert patient["streak_days"] == 5
+        assert patient["scans_count"] == 1
+        assert patient["today_macros"]["calories"] == 95.0
+        assert patient["today_macros"]["carbs"] == 25.0
+        
+        # Verify clinical CGM indicators are synchronized
+        assert patient["cgm_stats"] is not None
+        assert patient["cgm_stats"]["average_glucose_mgdl"] == 100.0
+        assert patient["cgm_stats"]["time_in_range_percent"] == 100.0
+        assert patient["cgm_stats"]["estimated_hba1c"] == 5.11
+
+        # Fetch with unauthorized key or cohort mismatch
+        err_resp = await ac.get(f"/dietitian/cohort?cohort_code=COHORT_TEST&key=invalid_key")
+        assert err_resp.status_code == 403
+
+@pytest.mark.asyncio
+async def test_dietitian_dashboard_html_response():
+    """Verify that dietitian dashboard returns beautiful HTML when requested by a browser or format=html."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        # 1. Setup dietitian
+        reg_resp = await ac.post(
+            "/dietitian/register",
+            data={"name": "Dr. Ananya Sharma", "email": "ananya@diet.org", "code": "HTML_COHORT"}
+        )
+        key = reg_resp.json()["dietitian_key"]
+        
+        # 2. Get with format=html
+        html_resp = await ac.get(f"/dietitian/dashboard?key={key}&format=html")
+        assert html_resp.status_code == 200
+        assert "text/html" in html_resp.headers.get("content-type", "").lower()
+        content = html_resp.text
+        assert "Eatlytic Clinical Console" in content
+        assert "Dr. Ananya Sharma" in content
+        assert "HTML_COHORT" in content
+        
+        # 3. Get with Accept: text/html header
+        headers = {"Accept": "text/html,application/xhtml+xml"}
+        html_resp2 = await ac.get(f"/dietitian/dashboard?key={key}", headers=headers)
+        assert html_resp2.status_code == 200
+        assert "text/html" in html_resp2.headers.get("content-type", "").lower()
+        assert "Dr. Ananya Sharma" in html_resp2.text

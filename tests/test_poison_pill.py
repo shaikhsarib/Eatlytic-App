@@ -12,7 +12,7 @@ from io import BytesIO
 @pytest.fixture(autouse=True)
 def use_test_db(tmp_path, monkeypatch):
     db_path = str(tmp_path / "test.db")
-    import app.models.db as db_mod
+    import app.database.connection as db_mod
 
     monkeypatch.setattr(db_mod, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(db_mod, "DB_FILE", db_path)
@@ -64,7 +64,7 @@ class TestAtwaterMath:
 # ══ 2. OCR CONFIDENCE GATE ═══════════════════════════════════════════
 class TestOCRConfidenceGate:
     def test_high_confidence_passes(self):
-        from app.services.ocr import passes_confidence_gate
+        from app.ai.ocr.client import passes_confidence_gate
 
         ocr = {"text": "Protein 8g Fat 5g", "avg_confidence": 0.85, "word_count": 6}
         passes, msg = passes_confidence_gate(ocr)
@@ -72,7 +72,7 @@ class TestOCRConfidenceGate:
         assert msg == ""
 
     def test_low_confidence_blocked(self):
-        from app.services.ocr import passes_confidence_gate
+        from app.ai.ocr.client import passes_confidence_gate
 
         ocr = {"text": "Pr te n 8g F t 5g", "avg_confidence": 0.15, "word_count": 8}
         passes, msg = passes_confidence_gate(ocr)
@@ -81,14 +81,14 @@ class TestOCRConfidenceGate:
 
     def test_threshold_boundary(self):
         """Exactly 0.35 should pass."""
-        from app.services.ocr import passes_confidence_gate
+        from app.ai.ocr.client import passes_confidence_gate
 
         ocr = {"text": "test", "avg_confidence": 0.35, "word_count": 1}
         passes, msg = passes_confidence_gate(ocr)
         assert passes is True
 
     def test_just_below_threshold_blocked(self):
-        from app.services.ocr import passes_confidence_gate
+        from app.ai.ocr.client import passes_confidence_gate
 
         ocr = {"text": "test", "avg_confidence": 0.20, "word_count": 1}
         passes, msg = passes_confidence_gate(ocr)
@@ -134,7 +134,7 @@ class TestBlurryImageRejection:
 class TestToxicProductFlagging:
     def test_pure_sugar_label_detected(self):
         """Pure sugar should pass nutrition validation."""
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
 
         text = "Nutrition Facts per 100g\nCalories 387kcal\nSugar 100g\nCarbohydrate 100g\nIngredients: Sugar"
         result = universal_label_filter(text)
@@ -142,7 +142,7 @@ class TestToxicProductFlagging:
 
     def test_msg_ingredients_parsed(self):
         """MSG product label should pass nutrition validation."""
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
 
         text = (
             "Nutrition Facts per 100g\n"
@@ -157,20 +157,20 @@ class TestToxicProductFlagging:
         assert result["is_valid"] is True
 
     def test_front_pack_marketing_rejected(self):
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
 
         text = "NEW! Natural Energy Boost\nPremium Organic Formula\nDelicious & Tasty"
         result = universal_label_filter(text)
         assert result["is_valid"] is False
 
     def test_empty_image_rejected(self):
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
 
         result = universal_label_filter("")
         assert result["is_valid"] is False
 
     def test_partial_garbled_text_rejected(self):
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
     
         # This used to be rejected, but in the 'Indian Context Engine' we are 
         # more permissive to catch stylized mockups.
@@ -180,7 +180,7 @@ class TestToxicProductFlagging:
 
     def test_maggi_style_label_with_garbage_words(self):
         """Maggi-style label with FSSAI/MRP lines should still detect nutrition data."""
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
 
         text = (
             "FSSAI License No. 10012021000345\n"
@@ -205,7 +205,7 @@ class TestToxicProductFlagging:
 
     def test_line_reconstruction_preserves_nutrition_rows(self):
         """Simulated OCR with line-structured output should pass filter."""
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
 
         text = (
             "Nutrition Facts\n"
@@ -221,7 +221,7 @@ class TestToxicProductFlagging:
 
     def test_maggi_full_label_preserves_product_name(self):
         """Realistic Maggi label: product name in header, garbage words, nutrition table."""
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
 
         text = (
             "MAGGI Masala Noodles\n"
@@ -265,7 +265,7 @@ class TestMultiColumnAwareness:
 
     def test_double_column_extraction_logic(self):
         """Verify that the filter preserves multiple numbers for the multi-column extract rules to work."""
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
         
         text = "Energy (kcal) per 100g per serve\n389 272"
         result = universal_label_filter(text)
@@ -274,7 +274,7 @@ class TestMultiColumnAwareness:
 
     def test_ocr_horizontal_sorting(self):
         """Simulate EasyOCR returning words out of order horizontally and verify they are sorted."""
-        from app.services.ocr import run_ocr
+        from app.ai.ocr.client import run_ocr
         import hashlib
         from unittest.mock import patch, MagicMock
 
@@ -286,9 +286,9 @@ class TestMultiColumnAwareness:
         ]
 
         # Use patch to mock the reader and cache
-        with patch("app.services.ocr.get_reader_for") as mock_get_reader, \
-             patch("app.services.ocr.get_ocr_cache", return_value=None), \
-             patch("app.services.ocr.set_ocr_cache"), \
+        with patch("app.ai.ocr.client.get_reader_for") as mock_get_reader, \
+             patch("app.ai.ocr.client.get_ocr_cache", return_value=None), \
+             patch("app.ai.ocr.client.set_ocr_cache"), \
              patch("PIL.Image.open") as mock_open, \
              patch("numpy.array") as mock_array:
             
@@ -331,7 +331,7 @@ class TestMultiColumnAwareness:
     @pytest.mark.asyncio
     async def test_hallucination_self_correction(self):
         """Verify that unified_analyze_flow triggers retry on math mismatch."""
-        from app.services.llm import unified_analyze_flow
+        from app.ai.llm.engine import unified_analyze_flow
         import unittest.mock as mock
         
         # 1. Mock the first LLM response to be VERY WRONG (Fat 50g -> 721 kcal)
@@ -341,7 +341,7 @@ class TestMultiColumnAwareness:
         # 3. Mock the third LLM response for ANALYSIS step
         analysis_json = '{"score": 3, "verdict": "Processed", "summary": "High sodium", "eli5": "Salty noodles", "pros": [], "cons": [], "age_warnings": [], "molecular_insight": ""}'
         
-        with mock.patch("app.services.llm.engine.call_llm") as mock_call:
+        with mock.patch("app.ai.llm.engine.call_llm") as mock_call:
             mock_call.side_effect = [bad_json, good_json, analysis_json]
             
             result = await unified_analyze_flow(

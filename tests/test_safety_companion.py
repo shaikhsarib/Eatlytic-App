@@ -4,7 +4,7 @@ import asyncio
 from unittest.mock import patch, MagicMock
 
 # Import the logic we want to test
-from app.services.llm import unified_analyze_flow
+from app.ai.llm.engine import unified_analyze_flow
 
 @pytest.mark.asyncio
 async def test_safety_companion_diabetes_avoid():
@@ -38,7 +38,7 @@ async def test_safety_companion_diabetes_avoid():
         "better_alternative": "Plain Oats"
     }
 
-    with patch("app.services.llm.engine.call_llm", return_value=json.dumps(mock_llm_json)):
+    with patch("app.ai.llm.engine.call_llm", return_value=json.dumps(mock_llm_json)):
         result = await unified_analyze_flow(
             extracted_text=label_text,
             persona="Diabetes Care",
@@ -86,7 +86,7 @@ async def test_safety_companion_hypertension_avoid():
         "better_alternative": "Unsalted Nuts"
     }
 
-    with patch("app.services.llm.engine.call_llm", return_value=json.dumps(mock_llm_json)):
+    with patch("app.ai.llm.engine.call_llm", return_value=json.dumps(mock_llm_json)):
         result = await unified_analyze_flow(
             extracted_text=label_text,
             persona="Blood Pressure (Hypertension)",
@@ -133,7 +133,7 @@ async def test_safety_companion_general_health_safe():
         "better_alternative": "None"
     }
 
-    with patch("app.services.llm.engine.call_llm", return_value=json.dumps(mock_llm_json)):
+    with patch("app.ai.llm.engine.call_llm", return_value=json.dumps(mock_llm_json)):
         result = await unified_analyze_flow(
             extracted_text=label_text,
             persona="General Health",

@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  vllm-gemma:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-gemma-server
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN:-}
+      - CUDA_VISIBLE_DEVICES=0
+    ports:
+      - "11435:8000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      --model google/gemma-2-9b-it
+      --port 8000
+      --max-model-len 4096
+      --gpu-memory-utilization 0.90
+      --trust-remote-code
+    restart: unless-stopped

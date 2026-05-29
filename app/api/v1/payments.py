@@ -7,9 +7,9 @@ import hashlib
 from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import JSONResponse
 from app.services.user_auth import get_user_from_token
-from app.models.db import db_conn
+from app.database.connection import db_conn
 from app.services.payments import create_order, activate_pro_after_payment, get_payment_status
-from app.utils import get_device_key
+from app.core.security import get_device_key
 from fastapi import Response
 
 logger = logging.getLogger(__name__)

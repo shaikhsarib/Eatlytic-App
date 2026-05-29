@@ -7,7 +7,7 @@ import logging
 import hashlib
 import hmac
 import datetime
-from app.models.db import db_conn
+from app.database.connection import db_conn
 UTC = datetime.timezone.utc
 
 logger = logging.getLogger(__name__)

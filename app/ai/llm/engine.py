@@ -4,14 +4,14 @@ import time
 import logging
 import asyncio
 import hashlib
-from app.models.db import get_ai_cache, set_ai_cache, db_conn
+from app.database.connection import get_ai_cache, set_ai_cache, db_conn
 from app.services.fake_detector import apply_dna_overrides, atwater_math_check
 from app.services.alternatives import get_healthy_alternative
 from app.services.explanation_engine import get_explanation_report, adjust_score_for_persona, verify_atwater_math
 from app.services.formatter import get_whatsapp_tiered_content
-from app.services.llm.client import call_llm, parse_llm_response
-from app.services.llm.prompts import build_super_prompt, MEDICAL_DISCLAIMER
-from app.services.llm.validators import _rule_rate, compute_rule_based_score, compute_extraction_confidence
+from app.ai.llm.client import call_llm, parse_llm_response
+from app.ai.llm.prompts import build_super_prompt, MEDICAL_DISCLAIMER
+from app.ai.llm.validators import _rule_rate, compute_rule_based_score, compute_extraction_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -112,30 +112,43 @@ def find_db_product_match(extracted_text: str) -> dict:
                 if row:
                     return dict(row)
                     
-    # 2. Text Keyword brand + name check
+    # 2. Text Keyword brand + name check — push filtering to SQLite (BUG 3 FIX)
+    # Extract candidate words (3+ chars) from OCR text for SQL LIKE filtering
+    words = list({w for w in re.split(r"\W+", lower_text) if len(w) >= 3})
+    if not words:
+        return None
+
+    # Build a LIKE clause for up to 10 most common words to narrow candidates in SQL
+    like_clauses = " OR ".join(["fp.name LIKE ? OR fp.brand LIKE ?"] * min(len(words), 8))
+    like_params = []
+    for w in words[:8]:
+        like_params.extend([f"%{w}%", f"%{w}%"])
+    like_params.append(50)  # LIMIT
+
     with db_conn() as conn:
-        rows = conn.execute("""
+        rows = conn.execute(f"""
             SELECT fp.*, fpe.sat_fat_100g, fpe.ingredients_raw, fpe.source
             FROM food_products fp
             LEFT JOIN food_products_extra fpe ON fp.id = fpe.id
-            WHERE fp.verified = 1
-        """).fetchall()
-        
+            WHERE fp.verified = 1 AND ({like_clauses})
+            LIMIT ?
+        """, like_params).fetchall()
+
     best_match = None
     best_score = 0
-    
+
     for row in rows:
         prod = dict(row)
         brand = (prod.get("brand") or "").lower().strip()
         name = (prod.get("name") or "").lower().strip()
-        
+
         if not brand or not name:
             continue
-            
-        # Brand must be present in the text
+
+        # Brand must be present in the OCR text
         if brand not in lower_text:
             continue
-            
+
         # Split product name into significant words
         name_words = [w for w in re.split(r"\W+", name) if len(w) > 2]
         if not name_words:
@@ -145,21 +158,21 @@ def find_db_product_match(extracted_text: str) -> dict:
                     best_score = score
                     best_match = prod
             continue
-            
+
         # Count matches
         matches = sum(1 for w in name_words if w in lower_text)
         match_ratio = matches / len(name_words)
-        
-        # At least 70% matching words to match
+
+        # At least 70% matching words to qualify
         if match_ratio >= 0.7:
             score = match_ratio * 10 + matches
             if score > best_score:
                 best_score = score
                 best_match = prod
-                
+
     return best_match
 
-def build_offline_match_response(db_match: dict, persona: str, language: str, t_pipeline_start: float) -> dict:
+def build_offline_match_response(db_match: dict, persona: str, language: str, t_pipeline_start: float, device_key: str = None) -> dict:
     """
     Constructs the exact same response schema as the LLM-based unified_analyze_flow
     using local verified product data and offline calculations.
@@ -189,7 +202,8 @@ def build_offline_match_response(db_match: dict, persona: str, language: str, t_
         nutrients=nutrients,
         ingredients_raw=ingredients_raw,
         persona=persona,
-        eatlytic_score=int(db_match.get("eatlytic_score")) if db_match.get("eatlytic_score") is not None else None
+        eatlytic_score=int(db_match.get("eatlytic_score")) if db_match.get("eatlytic_score") is not None else None,
+        device_key=device_key
     )
     
     latency_ms = int((time.time() - t_pipeline_start) * 1000)
@@ -246,6 +260,7 @@ async def unified_analyze_flow(
     label_confidence: str = "high",
     front_text: str = "",
     image_content: bytes = None,
+    device_key: str = None,
 ) -> dict:
     """THE CORE ENGINE: Coordinates OCR, LLM, DNA validation, and persona scoring."""
     t_pipeline_start = time.time()
@@ -267,7 +282,7 @@ async def unified_analyze_flow(
     # ENTRY POINT A: DB-First Hybrid Lookup on initial OCR text
     db_match = find_db_product_match(extracted_text)
     if db_match:
-        return build_offline_match_response(db_match, persona, language, t_pipeline_start)
+        return build_offline_match_response(db_match, persona, language, t_pipeline_start, device_key)
 
     cache_key = hashlib.md5(
         f"v7:{extracted_text[:500]}:{persona}:{language}:{blur_info.get('score',0)}".encode()
@@ -278,7 +293,7 @@ async def unified_analyze_flow(
         cached["scan_meta"] = {"cached": True, "scans_remaining": 0, "is_pro": False}
         return cached
 
-    from app.services.ocr import universal_label_filter, run_ocr
+    from app.ai.ocr.client import universal_label_filter, run_ocr
     filter_result = universal_label_filter(extracted_text)
 
     if extracted_text and len(extracted_text.strip()) > 20:
@@ -378,7 +393,7 @@ async def unified_analyze_flow(
     # ENTRY POINT B: DB-First Hybrid Lookup on enhanced/recovered OCR or vision text
     db_match = find_db_product_match(clean_text)
     if db_match:
-        return build_offline_match_response(db_match, persona, language, t_pipeline_start)
+        return build_offline_match_response(db_match, persona, language, t_pipeline_start, device_key)
 
     internal_web_context = ""
     try:
@@ -616,7 +631,8 @@ async def unified_analyze_flow(
         nutrients=brain_nutrients,
         ingredients_raw=ingredients_raw,
         persona=persona,
-        eatlytic_score=final_score
+        eatlytic_score=final_score,
+        device_key=device_key
     )
     final_output["data_source"] = "llm_fallback"
     final_output["extraction_confidence"] = confidence
@@ -638,7 +654,7 @@ async def unified_analyze_flow(
     return final_output
 
 def upsert_food_product(name, nutrients, score, ingredients_raw="", barcode=None, brand="", category="", source="llm_scan") -> int:
-    from app.models.db import db_conn
+    from app.database.connection import db_conn
     def _get(key):
         for n in nutrients:
             if key in n.get("name", "").lower():

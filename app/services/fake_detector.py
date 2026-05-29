@@ -239,8 +239,17 @@ def atwater_math_check(nutrients: dict, category: str = "unknown") -> dict:
         return {"is_valid": True, "reason": "Valid zero-calorie, zero-macro product (e.g. salt, water, pure spice)."}
 
     if label_calories == 0:
-        # Nothing to validate
-        return {"is_valid": True, "reason": "No calorie data to validate."}
+        detector = FakeDetector(tolerance_percent=100)
+        calculated = detector.calculate_expected_calories(fd)
+        if calculated > 20.0:
+            return {
+                "is_valid": False,
+                "reason": (
+                    f"Math Mismatch: Label claims 0 kcal, but "
+                    f"macros calculate to {calculated:.0f} kcal."
+                ),
+            }
+        return {"is_valid": True, "reason": "Valid zero-calorie product."}
 
     # ── 3. Atwater calculation (sub-components excluded by FakeDetector) ───────
     detector = FakeDetector(tolerance_percent=100)   # we apply our own tolerance

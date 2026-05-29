@@ -39,7 +39,7 @@ def benchmark_cache_performance():
 
     # 4. Simulate Third Run (Level 2 Cache - DB Mocked)
     _CACHE.clear() # Clear memory to force DB lookup
-    with patch('app.models.db.get_research_cache') as mock_get_db:
+    with patch('app.database.connection.get_research_cache') as mock_get_db:
         mock_get_db.return_value = res1 # Simulate DB find
         
         start_time = time.time()

@@ -2,7 +2,7 @@ import pytest
 import httpx
 from unittest.mock import patch, MagicMock
 from main import app
-import app.models.db as db_mod
+import app.database.connection as db_mod
 
 @pytest.fixture(autouse=True)
 def use_test_db(tmp_path, monkeypatch):
@@ -14,11 +14,11 @@ def use_test_db(tmp_path, monkeypatch):
     yield
 
 @pytest.mark.asyncio
-@patch("app.routes.scan.assess_image_quality")
-@patch("app.routes.scan.deblur_and_enhance")
-@patch("app.routes.scan.process_image_for_ocr")
-@patch("app.routes.scan.run_ocr")
-@patch("app.routes.scan.unified_analyze_flow")
+@patch("app.api.v1.scan.assess_image_quality")
+@patch("app.api.v1.scan.deblur_and_enhance")
+@patch("app.api.v1.scan.process_image_for_ocr")
+@patch("app.api.v1.scan.run_ocr")
+@patch("app.api.v1.scan.unified_analyze_flow")
 @patch("httpx.AsyncClient.get")
 async def test_whatsapp_webhook_no_media(
     mock_get, mock_analyze, mock_ocr, mock_crop, mock_enhance, mock_assess
@@ -38,11 +38,11 @@ async def test_whatsapp_webhook_no_media(
     assert "🩺 *Eatlytic Diabetic Safety Scanner*" in response.text
 
 @pytest.mark.asyncio
-@patch("app.routes.scan.assess_image_quality")
-@patch("app.routes.scan.deblur_and_enhance")
-@patch("app.routes.scan.process_image_for_ocr")
-@patch("app.routes.scan.run_ocr")
-@patch("app.routes.scan.unified_analyze_flow")
+@patch("app.api.v1.scan.assess_image_quality")
+@patch("app.api.v1.scan.deblur_and_enhance")
+@patch("app.api.v1.scan.process_image_for_ocr")
+@patch("app.api.v1.scan.run_ocr")
+@patch("app.api.v1.scan.unified_analyze_flow")
 @patch("httpx.AsyncClient.get")
 async def test_whatsapp_webhook_with_media_clear(
     mock_get, mock_analyze, mock_ocr, mock_crop, mock_enhance, mock_assess

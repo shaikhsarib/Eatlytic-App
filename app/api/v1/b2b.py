@@ -2,10 +2,11 @@ from fastapi import APIRouter, Request, File, UploadFile, Form, HTTPException, S
 from fastapi.responses import JSONResponse
 import logging
 import datetime
+_UTC = datetime.timezone.utc
 from app.services.image import assess_image_quality
-from app.services.ocr import run_ocr
-from app.services.llm import unified_analyze_flow
-from app.models.db import db_conn
+from app.ai.ocr.client import run_ocr
+from app.ai.llm import unified_analyze_flow
+from app.database.connection import db_conn
 from app.services.b2b_auth import get_b2b_client
 
 router = APIRouter(prefix="/api/v1", tags=["b2b"])
@@ -42,7 +43,7 @@ async def api_analyze(
     ocr = run_ocr(cropped, language)
     
     # Enforce the OCR confidence gate to block extremely blurry/unreadable images
-    from app.services.ocr import passes_confidence_gate
+    from app.ai.ocr.client import passes_confidence_gate
     passed, err_msg = passes_confidence_gate(ocr)
     if not passed:
         return JSONResponse(
@@ -72,8 +73,34 @@ async def api_analyze(
     result["audit"] = {
         "atwater_compliance": result.get("score", 0) > 3,
         "nova_classification": result.get("analysis_json", {}).get("nova_group", "Unknown"),
-        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "timestamp": datetime.datetime.now(_UTC).replace(tzinfo=None).isoformat(),
         "client_ref": api_key_data["client_name"]
     }
 
+    # Increment usage counter upon successful scan completion
+    from app.database.connection import increment_api_scan
+    increment_api_scan(api_key_data["api_key"])
     return result
+
+
+@router.get("/usage")
+async def api_usage(
+    api_key_data: dict = Security(get_b2b_client),
+):
+    """
+    Returns monthly usage telemetry for the authenticated B2B client.
+    Powers their developer portal and telemetry dashboards.
+    """
+    LIMITS = {"business": 1000, "enterprise": 99999}
+    limit = LIMITS.get(api_key_data.get("plan"), 1000)
+    scans_used = api_key_data.get("scans_this_month", 0)
+    
+    return {
+        "client_name": api_key_data["client_name"],
+        "plan": api_key_data["plan"],
+        "scans_used_this_month": scans_used,
+        "scans_limit": limit,
+        "scans_remaining": max(0, limit - scans_used),
+        "month": api_key_data.get("month", datetime.date.today().isoformat()[:7]),
+        "active": bool(api_key_data.get("active", 1)),
+    }

@@ -9,7 +9,8 @@ import secrets
 import datetime
 import threading
 import uuid
-from app.models.db import db_conn
+import json
+from app.database.connection import db_conn
 UTC = datetime.timezone.utc
 
 logger = logging.getLogger(__name__)
@@ -19,51 +20,75 @@ FREE_SCAN_LIMIT  = int(os.environ.get("FREE_SCAN_LIMIT", "10"))
 OTP_MAX_ATTEMPTS = 5        # lockout after 5 wrong guesses
 OTP_EXPIRY_MINS  = 10
 
-_pending_otps: dict = {}    # email -> (otp, expires, attempt_count)
-_otp_lock = threading.Lock()
-
 
 def send_email_otp(email: str) -> str:
-    """Generate and store a 6-digit OTP. Thread-safe."""
+    """Generate and store a 6-digit OTP. Thread-safe & Persistent."""
+    key = email.lower().strip()
     now = datetime.datetime.now(UTC)
-    otp     = str(secrets.randbelow(900000) + 100000)
+    otp = str(secrets.randbelow(900000) + 100000)
     expires = now + datetime.timedelta(minutes=OTP_EXPIRY_MINS)
-    with _otp_lock:
-        # Purge expired entries
-        expired = [k for k, (_, exp, _att) in _pending_otps.items() if now > exp]
-        for k in expired:
-            del _pending_otps[k]
-        _pending_otps[email.lower()] = (otp, expires, 0)
+    
+    # Store in persistent SQLite cache
+    with db_conn() as conn:
+        conn.execute("DELETE FROM ai_cache WHERE cache_key = ?", (f"otp:{key}",))
+        conn.execute(
+            "INSERT OR REPLACE INTO ai_cache(cache_key, result_json) VALUES(?,?)",
+            (f"otp:{key}", json.dumps({
+                "otp": otp,
+                "expires": expires.isoformat(),
+                "attempts": 0
+            }))
+        )
     logger.info("OTP issued for %s (dev mode — remove in prod)", email)
     return otp
 
 
 def verify_email_otp(email: str, otp: str):
-    """Verify OTP. Returns user on success, None on failure. Thread-safe with lockout."""
-    key = email.lower()
-    with _otp_lock:
-        entry = _pending_otps.get(key)
-        if not entry:
+    """Verify OTP. Returns user on success, None on failure. Thread-safe & Persistent with lockout."""
+    key = email.lower().strip()
+    now = datetime.datetime.now(UTC)
+    
+    with db_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT result_json FROM ai_cache WHERE cache_key=?", (f"otp:{key}",)).fetchone()
+        if not row:
             return None
-        stored, expires, attempts = entry
-
-        if datetime.datetime.now(UTC) > expires:
-            del _pending_otps[key]
+        
+        try:
+            entry = json.loads(row["result_json"])
+        except Exception:
             return None
-
+            
+        stored = entry.get("otp")
+        expires_str = entry.get("expires")
+        attempts = entry.get("attempts", 0)
+        
+        try:
+            expires = datetime.datetime.fromisoformat(expires_str)
+        except Exception:
+            conn.execute("DELETE FROM ai_cache WHERE cache_key=?", (f"otp:{key}",))
+            return None
+            
+        if now > expires:
+            conn.execute("DELETE FROM ai_cache WHERE cache_key=?", (f"otp:{key}",))
+            return None
+            
         if attempts >= OTP_MAX_ATTEMPTS:
-            # Locked out — delete so they must request a new OTP
-            del _pending_otps[key]
+            conn.execute("DELETE FROM ai_cache WHERE cache_key=?", (f"otp:{key}",))
             logger.warning("OTP brute-force lockout for %s after %d attempts", email, attempts)
             return None
-
+            
         # Timing-safe compare
         if not hmac.compare_digest(stored, otp.strip()):
-            _pending_otps[key] = (stored, expires, attempts + 1)
+            entry["attempts"] = attempts + 1
+            conn.execute(
+                "UPDATE ai_cache SET result_json=? WHERE cache_key=?",
+                (json.dumps(entry), f"otp:{key}")
+            )
             return None
-
-        del _pending_otps[key]
-
+            
+        conn.execute("DELETE FROM ai_cache WHERE cache_key=?", (f"otp:{key}",))
+        
     return _get_or_create_user(email=email)
 
 
@@ -122,6 +147,7 @@ def check_and_increment_scan_user(user_id: str, increment: bool = True) -> dict:
     """
     month_key = datetime.date.today().isoformat()[:7]
     with db_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             "SELECT is_pro, scan_month, scan_count_month FROM users WHERE id=?", (user_id,)
         ).fetchone()

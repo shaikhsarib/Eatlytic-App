@@ -28,7 +28,7 @@ import datetime
 def use_test_db(tmp_path, monkeypatch):
     """Redirect DB to a temp file for each test."""
     db_path = str(tmp_path / "test.db")
-    import app.models.db as db_mod
+    import app.database.connection as db_mod
 
     monkeypatch.setattr(db_mod, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(db_mod, "DB_FILE", db_path)
@@ -97,34 +97,34 @@ class TestChartDataRounding:
 # ══ 3. NUTRITION VALIDATION (REGEX-BASED) ═════════════════════════════
 class TestLabelDetection:
     def test_back_label_detected(self):
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
 
         text = "Nutrition Facts per 100g\nCalories 250kcal\nProtein 8g\nFat 5g\nIngredients: wheat flour, sugar, salt"
         result = universal_label_filter(text)
         assert result["is_valid"] is True
 
     def test_maggi_style_label_detected(self):
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
 
         text = "What makes Truly GOOD?\nNestle Maggi Noodles\nPer 100g\nEnergy 500kcal\nProtein 10g\nCarbohydrate 60g\nTotal Fat 20g\nSaturated Fat 8g\nSodium 500mg"
         result = universal_label_filter(text)
         assert result["is_valid"] is True
 
     def test_front_label_rejected(self):
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
 
         text = "NEW! Improved flavour\nOrganic Crunchy Wheat Bites\nNatural Goodness\nPremium Quality"
         result = universal_label_filter(text)
         assert result["is_valid"] is False
 
     def test_empty_text_rejected(self):
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
 
         result = universal_label_filter("")
         assert result["is_valid"] is False
 
     def test_partial_label_rejected(self):
-        from app.services.ocr import universal_label_filter
+        from app.ai.ocr.client import universal_label_filter
 
         text = "Ingredients: water, salt\nBest before: Jan 2027"
         result = universal_label_filter(text)
@@ -135,7 +135,7 @@ class TestLabelDetection:
 class TestAuthTokenLifecycle:
     def test_create_and_validate_session(self):
         from app.services.user_auth import create_session, get_user_from_token
-        from app.models.db import db_conn
+        from app.database.connection import db_conn
 
         # Create a user first
         user_id = "test-user-001"
@@ -164,7 +164,7 @@ class TestAuthTokenLifecycle:
             revoke_session,
             get_user_from_token,
         )
-        from app.models.db import db_conn
+        from app.database.connection import db_conn
 
         user_id = "test-user-002"
         with db_conn() as conn:
@@ -196,7 +196,7 @@ class TestAuthTokenLifecycle:
 # ══ 5. SCAN QUOTA (USER-BASED) ════════════════════════════════════════
 class TestScanQuota:
     def _make_user(self, user_id, email):
-        from app.models.db import db_conn
+        from app.database.connection import db_conn
 
         with db_conn() as conn:
             conn.execute("INSERT INTO users(id,email) VALUES(?,?)", (user_id, email))
@@ -214,7 +214,7 @@ class TestScanQuota:
 
     def test_pro_user_unlimited(self):
         from app.services.user_auth import check_and_increment_scan_user
-        from app.models.db import db_conn
+        from app.database.connection import db_conn
 
         self._make_user("u2", "b@t.com")
         with db_conn() as conn:
@@ -260,7 +260,7 @@ class TestPaymentSignature:
 # ══ 7. FOOD DATABASE ═════════════════════════════════════════════════
 class TestFoodDatabase:
     def test_insert_and_query_product(self):
-        from app.models.db import db_conn
+        from app.database.connection import db_conn
 
         with db_conn() as conn:
             conn.execute(
@@ -291,7 +291,7 @@ class TestFoodDatabase:
         assert row["scan_count"] == 1
 
     def test_duplicate_increments_scan_count(self):
-        from app.models.db import db_conn
+        from app.database.connection import db_conn
 
         with db_conn() as conn:
             conn.execute(
@@ -344,7 +344,7 @@ class TestImageValidation:
 # ══ 9. STREAK TRACKING ════════════════════════════════════════════════
 class TestStreakTracking:
     def _make_user(self, user_id):
-        from app.models.db import db_conn
+        from app.database.connection import db_conn
 
         with db_conn() as conn:
             conn.execute(
@@ -354,7 +354,7 @@ class TestStreakTracking:
 
     def test_consecutive_days_increments_streak(self):
         from app.services.user_auth import update_streak_user
-        from app.models.db import db_conn
+        from app.database.connection import db_conn
 
         self._make_user("streak_user_1")
         yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
@@ -375,7 +375,7 @@ class TestStreakTracking:
 
     def test_missed_day_resets_streak(self):
         from app.services.user_auth import update_streak_user
-        from app.models.db import db_conn
+        from app.database.connection import db_conn
 
         self._make_user("streak_user_2")
         old_date = (datetime.date.today() - datetime.timedelta(days=5)).isoformat()
@@ -458,7 +458,7 @@ class TestEndpointBlurRejection:
             "word_count": 3
         }
         
-        with patch("app.routes.scan.run_ocr", return_value=mock_ocr):
+        with patch("app.api.v1.scan.run_ocr", return_value=mock_ocr):
             dummy_file = {"image": ("label.jpg", b"\x00\x00\x00", "image/jpeg")}
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
                 resp = await ac.post(
@@ -471,3 +471,29 @@ class TestEndpointBlurRejection:
             result = resp.json()
             assert result["error"] == "blurry_image"
             assert "too low" in result["message"].lower()
+
+
+# ══ 12. PROGRAMMATIC SEO INGREDIENTS PAGES ════════════════════════════
+class TestIngredientsSeoPage:
+    @pytest.mark.asyncio
+    async def test_ingredients_seo_page_success(self):
+        """Should return HTML page for a valid ingredient, and 404 for an invalid one."""
+        from main import app
+        import httpx
+        
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+            # 1. Direct INS lookup
+            resp = await ac.get("/ingredients/E621")
+            assert resp.status_code == 200
+            assert "text/html" in resp.headers["content-type"]
+            assert "Monosodium Glutamate" in resp.text
+            assert "FSSAI (India)" in resp.text
+            
+            # 2. Case-insensitive / normalized lookup check
+            resp_slug = await ac.get("/ingredients/monosodium-glutamate")
+            assert resp_slug.status_code == 200
+            assert "Monosodium Glutamate" in resp_slug.text
+            
+            # 3. Non-existent slug should 404
+            resp_fake = await ac.get("/ingredients/nonexistent-additive-slug-999")
+            assert resp_fake.status_code == 404

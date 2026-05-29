@@ -3,13 +3,13 @@ import httpx
 import sqlite3
 import datetime
 from main import app
-from app.models.db import db_conn, init_db, verify_password, hash_password
+from app.database.connection import db_conn, init_db, verify_password, hash_password
 
 @pytest.fixture(autouse=True)
 def use_test_db(tmp_path, monkeypatch):
     """Redirect DB to a temp file for each test."""
     db_path = str(tmp_path / "test.db")
-    import app.models.db as db_mod
+    import app.database.connection as db_mod
 
     monkeypatch.setattr(db_mod, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(db_mod, "DB_FILE", db_path)

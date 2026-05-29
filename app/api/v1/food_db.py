@@ -5,7 +5,7 @@ Proprietary food database endpoints.
 import logging
 from fastapi import APIRouter, Request, HTTPException, Form, Query
 from fastapi.responses import JSONResponse
-from app.models.db import db_conn
+from app.database.connection import db_conn
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/food-db", tags=["food-db"])

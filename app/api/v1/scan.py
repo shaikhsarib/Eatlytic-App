@@ -4,17 +4,17 @@ import logging
 import os
 import datetime
 from app.services.image import assess_image_quality, deblur_and_enhance, image_to_b64
-from app.services.ocr import run_ocr
-from app.services.llm import unified_analyze_flow
-from app.services.hash_service import get_image_fingerprint
+from app.ai.ocr.client import run_ocr
+from app.ai.llm import unified_analyze_flow
+from app.ai.perception.bk_tree import get_image_fingerprint
 from app.services.label_detector import process_image_for_ocr
-from app.models.db import (
+from app.database.connection import (
     check_and_increment_scan,
     save_scan,
     get_image_fingerprint_match,
     set_image_fingerprint,
 )
-from app.utils import get_device_key, sanitize_text
+from app.core.security import get_device_key, sanitize_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["scanning"])
@@ -155,7 +155,7 @@ async def analyze_product(
             ocr_result = run_ocr(cropped_content, language)
             
             # Enforce the OCR confidence gate to block extremely blurry/unreadable images
-            from app.services.ocr import passes_confidence_gate
+            from app.ai.ocr.client import passes_confidence_gate
             passed, err_msg = passes_confidence_gate(ocr_result)
             if not passed:
                 return JSONResponse(
@@ -179,6 +179,7 @@ async def analyze_product(
             label_confidence="high",
             front_text=front_text,
             image_content=working_content,
+            device_key=device_key,
         )
 
         if "error" in result:
@@ -276,6 +277,7 @@ async def parse_voice_meal(
             label_confidence="high",
             front_text="",
             image_content=None,
+            device_key=device_key,  # BUG 4 FIX: pass device_key so genomic overrides apply
         )
 
         if "error" in result:
@@ -321,7 +323,7 @@ async def activate_pro(request: Request, response: Response, payment_id: str = F
     """Demo Pro activation endpoint (real flow uses /payments/verify)."""
     device_key = get_device_key(request, response)
     try:
-        with __import__("app.models.db", fromlist=["db_conn"]).db_conn() as conn:
+        with __import__("app.database.connection", fromlist=["db_conn"]).db_conn() as conn:
             conn.execute(
                 "UPDATE devices SET is_pro=1 WHERE device_key=?", (device_key,)
             )
@@ -367,7 +369,7 @@ async def whatsapp_webhook(
     device_key = f"whatsapp_{From.replace('whatsapp:', '').strip()}"
     
     # Check quota
-    from app.models.db import check_and_increment_scan, save_scan
+    from app.database.connection import check_and_increment_scan, save_scan
     scan_check = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=False)
     if not scan_check["allowed"]:
         quota_err = (
@@ -416,7 +418,7 @@ async def whatsapp_webhook(
         ocr_result = run_ocr(cropped_content, "en")
         
         # Enforce confidence gate
-        from app.services.ocr import passes_confidence_gate
+        from app.ai.ocr.client import passes_confidence_gate
         passed, err_msg = passes_confidence_gate(ocr_result)
         if not passed:
             return build_xml_response(f"⚠️ *Image Unreadable*\n\n{err_msg}")
@@ -435,6 +437,7 @@ async def whatsapp_webhook(
             label_confidence="high",
             front_text="",
             image_content=working_content,
+            device_key=device_key,
         )
 
         if "error" in result:

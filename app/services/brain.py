@@ -9,11 +9,21 @@ import re
 import logging
 from typing import Dict, List, Tuple
 from app.services.alternatives import get_healthy_alternative
-from app.services.llm.validators import _rule_rate, compute_rule_based_score
+from app.ai.llm.validators import _rule_rate, compute_rule_based_score
 from app.services.explanation_engine import get_explanation_report, adjust_score_for_persona, verify_atwater_math
 from app.services.fake_detector import FakeDetector
 
 logger = logging.getLogger(__name__)
+
+# Import additive DB service (lazy — OK if additives.json missing during tests)
+try:
+    from app.services.additive_db import scan_ingredients as _scan_additives, get_ingredient_risk_summary as _additive_risk
+    _ADDITIVE_DB_AVAILABLE = True
+except Exception as _e:
+    logger.warning("Additive DB not available: %s", _e)
+    _ADDITIVE_DB_AVAILABLE = False
+    def _scan_additives(text): return []
+    def _additive_risk(text, persona="general"): return {"total_additives_found": 0, "safe_count": 0, "caution_count": 0, "avoid_count": 0, "red_flags": [], "persona_flags": [], "matched_additives": []}
 
 # ── INDIAN INGREDIENT & ADDITIVE LEXICON ──────────────────────────────
 # Maps ingredient names / INS codes to glycemic index (GI), safety tiers, and clinical reasoning.
@@ -476,12 +486,38 @@ class EatlyticBrain:
             "teaspoons": teaspoons,
         }
 
-    def compile_local_report(self, product_name: str, brand: str, category: str, nutrients: Dict, ingredients_raw: str, persona: str = "diabetic", eatlytic_score: int = None) -> Dict:
+    def compile_local_report(self, product_name: str, brand: str, category: str, nutrients: Dict, ingredients_raw: str, persona: str = "diabetic", eatlytic_score: int = None, device_key: str = None) -> Dict:
         """
         Builds a full high-fidelity frontend scan response structure completely offline.
         Bypasses LLM cloud latency entirely.
         """
         matched_ings = self.match_lexicon_ingredients(ingredients_raw)
+
+        # ── Additive DB Integration (The Moat) ─────────────────────────────
+        # Scan against verified proprietary additive database
+        additive_risk = _additive_risk(ingredients_raw, persona=persona)
+        additive_matches = _scan_additives(ingredients_raw)
+
+        # Merge additive DB matches into matched_ings if not already present
+        existing_names = {m["name"].lower() for m in matched_ings}
+        for add in additive_matches:
+            if add["name"].lower() not in existing_names:
+                # Convert additive DB format to brain lexicon format
+                tier = add.get("safety_tier", "SAFE")
+                diabetic_verdict = "SAFE" if tier == "SAFE" else "CAUTION" if tier == "CAUTION" else "AVOID"
+                matched_ings.append({
+                    "name": add["name"],
+                    "category": add.get("category", "additive"),
+                    "gi_level": "LOW",
+                    "typical_gi": 0,
+                    "diabetic_verdict": diabetic_verdict,
+                    "reason": add.get("curiosity_fact", ""),
+                    "curiosity_fact": add.get("curiosity_fact", ""),
+                    "source": "additive_db",
+                    "safety_tier": tier,
+                    "fssai_status": add.get("fssai_status", "unknown"),
+                })
+                existing_names.add(add["name"].lower())
         
         # Determine base scores from DB match or compute rules
         sugar = float(nutrients.get("sugar") or nutrients.get("sugar_100g") or 0.0)
@@ -516,6 +552,14 @@ class EatlyticBrain:
         
         # Run clinical audit to apply local lexicon overlays
         audit = self.run_clinical_audit(rich, matched_ings, persona)
+        
+        # ── Phase 5 AI Personalized Medicine Genomic Overrides ──────────
+        rich["ingredients_raw_text"] = ingredients_raw
+        try:
+            from app.services.personalized_medicine import apply_genomic_overrides
+            audit = apply_genomic_overrides(device_key, rich, matched_ings, audit)
+        except Exception as e:
+            logger.error(f"Error applying genomic overrides: {e}")
         
         # If clinical audit suggests Avoid or Caution, let's reflect that in the score
         if audit["verdict"] == "AVOID" and final_score > 3:
@@ -613,6 +657,22 @@ class EatlyticBrain:
                     "curiosity_fact": "Verified by Eatlytic Brain."
                 })
 
+        # Add additive DB red flags to spotlight if not already there
+        spotlight_names = {s["name"].lower() for s in spotlight}
+        for flag in additive_risk.get("red_flags", [])[:4]:
+            if flag["name"].lower() not in spotlight_names:
+                tier = flag["safety_tier"]
+                rating = "safe" if tier == "SAFE" else "warning" if tier == "CAUTION" else "danger"
+                spotlight.append({
+                    "name": flag["name"],
+                    "type": "additive",
+                    "safety_rating": rating,
+                    "what_it_is": f"{flag['name']} ({flag.get('category', 'additive')}) — FSSAI: {flag.get('fssai_status', 'unknown')}.",
+                    "health_impact": flag.get("curiosity_fact", ""),
+                    "curiosity_fact": flag.get("curiosity_fact", "")
+                })
+                spotlight_names.add(flag["name"].lower())
+
         # Energy chart
         total_energy = (carbs * 4) + (protein * 4) + (fat * 9)
         if total_energy > 0:
@@ -685,6 +745,7 @@ class EatlyticBrain:
             "atwater_audit": atwater,
             "clinical_audit": audit,
             "sugar_teaspoons": audit["teaspoons"],
-            "gi_level": audit["gi_level"]
+            "gi_level": audit["gi_level"],
+            "additive_db_summary": additive_risk,  # Verified additive intelligence
         }
 
