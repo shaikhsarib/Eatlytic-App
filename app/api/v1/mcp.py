@@ -243,21 +243,26 @@ async def mcp_message(client_id: str, request_payload: dict):
     return {"status": "accepted"}
 
 async def run_stdio_mcp_server():
-    """Standard IO transport reader for local LLM tools integration."""
-    loop = asyncio.get_event_loop()
-    reader = asyncio.StreamReader()
-    protocol = asyncio.StreamReaderProtocol(reader)
-    await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+    """Standard IO transport reader for local LLM tools integration.
+    Uses cross-platform, thread-safe input reading to support Windows ProactorEventLoop."""
+    logger.info("Starting Eatlytic stdio MCP Server...")
     
+    def read_line():
+        return sys.stdin.readline()
+        
     while True:
-        line = await reader.readline()
+        line = await asyncio.to_thread(read_line)
         if not line:
             break
         try:
-            request_data = json.loads(line.decode("utf-8").strip())
+            line_str = line.strip()
+            if not line_str:
+                continue
+            request_data = json.loads(line_str)
             response = await handle_mcp_request(request_data)
             if response:
                 sys.stdout.write(json.dumps(response) + "\n")
                 sys.stdout.flush()
         except Exception as e:
             logger.error("Stdio MCP Server error: %s", e)
+
