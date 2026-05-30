@@ -7,7 +7,7 @@ from app.database.connection import get_image_fingerprint_match
 
 def test_maggi_image_hash_and_db_match():
     """Verify that the Maggi back-panel image hash resolves to the seeded DB entry."""
-    img_path = os.path.join("data", "media__1779297081184.jpg")
+    img_path = os.path.join("tests", "fixtures", "media__1779297081184.jpg")
     
     # 1. Assert the image exists in the data directory
     assert os.path.exists(img_path), f"Maggi test image not found at {img_path}"

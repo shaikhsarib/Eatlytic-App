@@ -1,5 +1,5 @@
 """
-app/models/db.py
+app/database/connection.py
 Database schema, connection management, and initialisation.
 Uses Supabase for production (concurrent-safe cache + device tracking).
 SQLite retained as local dev fallback when Supabase env vars are absent.

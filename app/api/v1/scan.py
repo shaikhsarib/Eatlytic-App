@@ -5,7 +5,7 @@ import os
 import datetime
 from app.services.image import assess_image_quality, deblur_and_enhance, image_to_b64
 from app.ai.ocr.client import run_ocr
-from app.ai.llm import unified_analyze_flow
+from app.services.scan_orchestrator import unified_analyze_flow
 from app.ai.perception.bk_tree import get_image_fingerprint
 from app.services.label_detector import process_image_for_ocr
 from app.database.connection import (
@@ -15,6 +15,11 @@ from app.database.connection import (
     set_image_fingerprint,
 )
 from app.core.security import get_device_key, sanitize_text
+from app.services.user_auth import (
+    get_user_from_token,
+    check_and_increment_scan_user,
+    update_streak_user,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["scanning"])
@@ -79,7 +84,6 @@ async def analyze_product(
     token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else None
     if not token:
         token = request.cookies.get("session_token")
-    from app.services.user_auth import get_user_from_token
     user = get_user_from_token(token) if token else None
     user_id = user["id"] if user else None
     
@@ -91,7 +95,6 @@ async def analyze_product(
 
     # Check quota
     if user_id:
-        from app.services.user_auth import check_and_increment_scan_user
         scan_check = check_and_increment_scan_user(user_id, increment=False)
     else:
         scan_check = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=False)
@@ -137,7 +140,6 @@ async def analyze_product(
             cached_result = get_image_fingerprint_match(image_hash)
             if cached_result and "error" not in cached_result:
                 if user_id:
-                    from app.services.user_auth import check_and_increment_scan_user
                     scan_update = check_and_increment_scan_user(user_id, increment=True)
                 else:
                     scan_update = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=True)
@@ -187,7 +189,6 @@ async def analyze_product(
 
         # Deduct quota
         if user_id:
-            from app.services.user_auth import check_and_increment_scan_user
             scan_update = check_and_increment_scan_user(user_id, increment=True)
         else:
             scan_update = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=True)
@@ -206,7 +207,6 @@ async def analyze_product(
 
         # Update user streak if logged in
         if user_id:
-            from app.services.user_auth import update_streak_user
             try:
                 update_streak_user(user_id)
             except Exception as streak_err:
@@ -233,7 +233,6 @@ async def parse_voice_meal(
     token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else None
     if not token:
         token = request.cookies.get("session_token")
-    from app.services.user_auth import get_user_from_token
     user = get_user_from_token(token) if token else None
     user_id = user["id"] if user else None
     
@@ -243,7 +242,6 @@ async def parse_voice_meal(
 
     # Check quota
     if user_id:
-        from app.services.user_auth import check_and_increment_scan_user
         scan_check = check_and_increment_scan_user(user_id, increment=False)
     else:
         scan_check = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=False)
@@ -285,7 +283,6 @@ async def parse_voice_meal(
 
         # Deduct quota
         if user_id:
-            from app.services.user_auth import check_and_increment_scan_user
             scan_update = check_and_increment_scan_user(user_id, increment=True)
         else:
             scan_update = check_and_increment_scan(device_key, limit=FREE_SCAN_LIMIT, increment=True)
@@ -301,7 +298,6 @@ async def parse_voice_meal(
 
         # Update user streak if logged in
         if user_id:
-            from app.services.user_auth import update_streak_user
             try:
                 update_streak_user(user_id)
             except Exception as streak_err:

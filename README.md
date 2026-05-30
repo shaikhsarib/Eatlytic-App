@@ -14,7 +14,7 @@ Eatlytic-App-main/
 │   ├── ai/                          <--- 🧠 COGNITIVE REASONING LAYER
 │   │   ├── llm/
 │   │   │   ├── client.py            # Multi-provider failovers (Ollama Gemma-4 -> Groq -> Gemini -> Together)
-│   │   │   ├── engine.py            # Calorie-math self-corrections & pipeline flows
+│   │   │   ├── engine.py            # Stateless LLM routines, re-exports & label recovery helpers
 │   │   │   ├── prompts.py           # Nutrition specialist prompt matrices & system prompts
 │   │   │   └── validators.py        # Strict Pydantic JSON validation models
 │   │   ├── ocr/
@@ -23,12 +23,13 @@ Eatlytic-App-main/
 │   │       └── bk_tree.py           # Metric space Burkhard-Keller Trees for sub-linear pHash matching
 │   │
 │   ├── core/                        <--- 🛡️ INFRASTRUCTURE & SECURITY UTILITIES
-│   │   └── security.py              # Cryptographic cookie signing, device key generation, & admin auth
+│   │   └── security.py              # Central cryptographic signing, device keys, & admin auth
 │   │
 │   ├── database/                    <--- 💾 DATA PERSISTENCE LAYER
-│   │   └── connection.py            # Thread-safe connection context managers with atomic locks (SQLite WAL)
+│   │   └── connection.py            # Connection pool contexts & SQLite WAL locks
 │   │
 │   ├── services/                    <--- ⚙️ BUSINESS DOMAIN SERVICES
+│   │   ├── scan_orchestrator.py     # Core scan orchestration, caching & local verified lookups
 │   │   ├── personalized_medicine.py # Genomic SNPs (TCF7L2, AGT) & clinical safety algorithms
 │   │   ├── explanation_engine.py    # Atwater calorie maths, ICMR RDA math, & INS/E-number translations
 │   │   ├── fake_detector.py         # Nutrition fraud classification rules
@@ -37,7 +38,7 @@ Eatlytic-App-main/
 │   │
 │   └── api/                         <--- 🌐 PRESENTATION LAYER (TRANSPORT GATEWAY)
 │       └── v1/                      # FastAPI endpoint controllers
-│           ├── scan.py              # Photo & Voice loggers
+│           ├── scan.py              # Photo & Voice loggers, imports scan_orchestrator
 │           ├── cgm.py               # CGM telemetry syncs & post-prandial correlations
 │           ├── dietitian.py         # SSR clinical neobrutalist B2B cohort interfaces
 │           └── user.py              # User profiles & session configurations

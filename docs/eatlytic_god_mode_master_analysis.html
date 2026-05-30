@@ -1,0 +1,243 @@
+
+<h2 class="sr-only">Eatlytic strategic analysis: 5-layer irreplaceability stack, investor thesis mapping, and 90-day execution plan</h2>
+<style>
+.layer { border:0.5px solid var(--color-border-secondary); border-radius:var(--border-radius-lg); padding:14px 18px; margin-bottom:8px; cursor:pointer; transition:background 0.15s; position:relative; }
+.layer:hover { background:var(--color-background-secondary); }
+.layer.active { border-color:var(--color-border-primary); background:var(--color-background-secondary); }
+.layer-head { display:flex; align-items:center; gap:12px; }
+.layer-badge { font-size:11px; font-weight:500; padding:3px 8px; border-radius:4px; white-space:nowrap; }
+.layer-title { font-size:14px; font-weight:500; color:var(--color-text-primary); }
+.layer-sub { font-size:12px; color:var(--color-text-secondary); margin-top:2px; }
+.detail { display:none; margin-top:12px; padding-top:12px; border-top:0.5px solid var(--color-border-tertiary); }
+.layer.active .detail { display:block; }
+.detail-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:8px; }
+.detail-card { background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:10px 12px; }
+.detail-card-title { font-size:11px; font-weight:500; color:var(--color-text-secondary); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.04em; }
+.detail-card-body { font-size:12px; color:var(--color-text-primary); line-height:1.5; }
+.threat-chip { display:inline-block; font-size:11px; padding:2px 7px; border-radius:3px; margin-right:4px; margin-top:3px; }
+.tab-nav { display:flex; gap:4px; margin-bottom:16px; border-bottom:0.5px solid var(--color-border-tertiary); padding-bottom:0; }
+.tab { font-size:13px; padding:8px 14px; cursor:pointer; color:var(--color-text-secondary); border-bottom:2px solid transparent; margin-bottom:-0.5px; transition:color 0.15s; }
+.tab.active { color:var(--color-text-primary); border-bottom-color:var(--color-text-primary); font-weight:500; }
+.tab-panel { display:none; }
+.tab-panel.active { display:block; }
+.thesis-row { display:flex; align-items:flex-start; gap:12px; padding:10px 0; border-bottom:0.5px solid var(--color-border-tertiary); }
+.thesis-row:last-child { border-bottom:none; }
+.thesis-source { font-size:11px; font-weight:500; padding:2px 8px; border-radius:3px; min-width:90px; text-align:center; }
+.thesis-body { flex:1; }
+.thesis-title { font-size:13px; font-weight:500; color:var(--color-text-primary); }
+.thesis-map { font-size:12px; color:var(--color-text-secondary); margin-top:3px; line-height:1.5; }
+.week-block { border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:12px 14px; margin-bottom:8px; }
+.week-head { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.week-num { font-size:11px; font-weight:500; padding:2px 8px; border-radius:3px; }
+.week-title { font-size:13px; font-weight:500; color:var(--color-text-primary); }
+.task { font-size:12px; color:var(--color-text-secondary); padding:3px 0; display:flex; gap:6px; }
+.task::before { content:'→'; color:var(--color-text-tertiary); flex-shrink:0; }
+.risk-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; padding:8px 0; border-bottom:0.5px solid var(--color-border-tertiary); font-size:12px; }
+.risk-row:last-child { border-bottom:none; }
+.risk-head { font-size:11px; font-weight:500; color:var(--color-text-secondary); text-transform:uppercase; letter-spacing:0.04em; padding-bottom:6px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; border-bottom:0.5px solid var(--color-border-secondary); margin-bottom:4px; }
+.moat-bar-wrap { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+.moat-label { font-size:12px; color:var(--color-text-secondary); min-width:140px; }
+.moat-bar-bg { flex:1; height:6px; background:var(--color-border-tertiary); border-radius:3px; overflow:hidden; }
+.moat-bar { height:100%; border-radius:3px; transition:width 0.6s; }
+</style>
+
+<div class="tab-nav">
+<div class="tab active" onclick="switchTab('moat')">Irreplaceability stack</div>
+<div class="tab" onclick="switchTab('thesis')">Investor thesis map</div>
+<div class="tab" onclick="switchTab('plan')">90-day build plan</div>
+<div class="tab" onclick="switchTab('risks')">Risk registry</div>
+</div>
+
+<div id="tab-moat" class="tab-panel active">
+<p style="font-size:13px;color:var(--color-text-secondary);margin-bottom:14px">5 stacked layers — each one resists a different attack vector. Click any layer to see why Google, HealthifyMe, or a well-funded clone can't replicate it.</p>
+
+<div class="layer active" onclick="toggleLayer(this,'l1')">
+  <div class="layer-head">
+    <span class="layer-badge" style="background:#E1F5EE;color:#0F6E56">PHYSICS</span>
+    <div><div class="layer-title">Atwater Physics Gate</div><div class="layer-sub">Thermodynamic truth verification — laws of physics don't change</div></div>
+  </div>
+  <div class="detail" id="l1">
+    <div class="detail-grid">
+      <div class="detail-card"><div class="detail-card-title">What it is</div><div class="detail-card-body">Calorie math (protein×4 + carbs×4 + fat×9), macro hierarchy guard, gross mass cap (≤103g per 100g). Per-category tolerances (snack 25%, condiment 30%). NOVA-4 + Lie Detector on top.</div></div>
+      <div class="detail-card"><div class="detail-card-title">Why it can't be replicated by scale</div><div class="detail-card-body">This is deterministic code, not ML. Throwing GPUs at it doesn't help. It runs in microseconds. The physics is absolute — nobody can train a model to "do it better." They'd have to write the same equations.</div></div>
+      <div class="detail-card"><div class="detail-card-title">Real moat signal</div><div class="detail-card-body">Current bug: zero-calorie bypass (BUG-01). Fix this first. Once fixed, Eatlytic becomes the only app in India that can provably catch fraudulent food labels using physics — that's a media story, a regulatory angle, and a clinical trust builder.</div></div>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--color-text-secondary)">Who this kills: <span class="threat-chip" style="background:#FAECE7;color:#993C1D">Yuka (no math)</span><span class="threat-chip" style="background:#FAECE7;color:#993C1D">HealthifyMe (no physics)</span><span class="threat-chip" style="background:#FAECE7;color:#993C1D">MyFitnessPal (no gate)</span></div>
+  </div>
+</div>
+
+<div class="layer" onclick="toggleLayer(this,'l2')">
+  <div class="layer-head">
+    <span class="layer-badge" style="background:#FAEEDA;color:#854F0B">DOMAIN DATA</span>
+    <div><div class="layer-title">Indian Additive Intelligence + FSSAI Lexicon</div><div class="layer-sub">Years of manual curation — Maida (GI 110-185), INS codes, FSSAI alerts</div></div>
+  </div>
+  <div class="detail" id="l2">
+    <div class="detail-grid">
+      <div class="detail-card"><div class="detail-card-title">What it is</div><div class="detail-card-body">INDIAN_INGREDIENT_LEXICON in brain.py, 67-entry additives.json (needs expansion to 500), INS/E-number O(1) lookup, FSSAI regulatory status, glycemic mappings for Indian-specific starches.</div></div>
+      <div class="detail-card"><div class="detail-card-title">Why Google can't replicate it</div><div class="detail-card-body">Google has no business incentive to build India-specific FSSAI additive intelligence. This requires food chemists who know Indian products, FSSAI regulation tracking, and years of manual verification. No amount of Gemini calls produces this.</div></div>
+      <div class="detail-card"><div class="detail-card-title">The 433-entry gap</div><div class="detail-card-body">additives.json claims 500 entries, has 67. Maltodextrin isn't even in it — it's in brain.py's lexicon instead. This gap is a 4-week sprint, not a 4-year problem. The data exists; it just needs migrating and expanding.</div></div>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--color-text-secondary)">Compounds over time: <span class="threat-chip" style="background:#E1F5EE;color:#0F6E56">every admin verification makes the next scan free and instant</span></div>
+  </div>
+</div>
+
+<div class="layer" onclick="toggleLayer(this,'l3')">
+  <div class="layer-head">
+    <span class="layer-badge" style="background:#EEEDFE;color:#534AB7">CLINICAL TRUST</span>
+    <div><div class="layer-title">Dietitian Cohort + Genomic Personalization</div><div class="layer-sub">Once clinicians plug in patient cohorts, Eatlytic becomes medical infrastructure</div></div>
+  </div>
+  <div class="detail" id="l3">
+    <div class="detail-grid">
+      <div class="detail-card"><div class="detail-card-title">What it is</div><div class="detail-card-body">TCF7L2 (T2D risk), AGT (hypertension), LCT (lactose) SNP overlays. HbA1c + fasting glucose biomarker gates. Dietitian cohort portal. Anonymous MD5 patient IDs. Score overrides based on genomic profile.</div></div>
+      <div class="detail-card"><div class="detail-card-title">Switching cost lock-in</div><div class="detail-card-body">Once a dietitian connects 50 patients, their scan history and genomic profiles live in Eatlytic. Moving to a competitor means losing all historical data + retraining patients on a new app. YC's Alex Immerman: "the collaboration layer becomes the moat."</div></div>
+      <div class="detail-card"><div class="detail-card-title">The multiplayer unlock</div><div class="detail-card-body">Patient scans → dietitian sees aggregate excursions → adjusts meal plan → patient rescans → loop tightens. This multi-agent collaboration creates data no competitor has. This is the "Vertical AI Multiplayer" thesis from a16z in practice.</div></div>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--color-text-secondary)">YC explicitly funds this: <span class="threat-chip" style="background:#EEEDFE;color:#534AB7">Ankit Gupta (YC) — "AI Personalized Medicine using genome scan + EHR data"</span></div>
+  </div>
+</div>
+
+<div class="layer" onclick="toggleLayer(this,'l4')">
+  <div class="layer-head">
+    <span class="layer-badge" style="background:#E6F1FB;color:#185FA5">PRIVACY ARCH</span>
+    <div><div class="layer-title">DPDP-Compliant Stateless Genomics</div><div class="layer-sub">Cookie device_key architecture — clinical personalization with zero PII collection</div></div>
+  </div>
+  <div class="detail" id="l4">
+    <div class="detail-grid">
+      <div class="detail-card"><div class="detail-card-title">What it is</div><div class="detail-card-body">Genomic profiles linked to device_key cookies only. No email, no name collected. DPDP erasure via /api/v1/user/delete. SNP overlays computed locally against stored profiles. Stateless by design.</div></div>
+      <div class="detail-card"><div class="detail-card-title">Why big companies fear this space</div><div class="detail-card-body">Google and Meta building genomic health features in India faces DPDP regulatory exposure worth billions. Eatlytic's stateless architecture is a legal shield. Big companies will eventually require account creation, email, and consent flows — Eatlytic's friction-free model wins on UX.</div></div>
+      <div class="detail-card"><div class="detail-card-title">a16z alignment</div><div class="detail-card-body">"Secrets-as-a-service" (Adeniyi Abiodun): "healthcare requires companies to keep sensitive data private." Eatlytic's cookie-based genomic architecture is exactly this — private by architecture, not by policy promise.</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="layer" onclick="toggleLayer(this,'l5')">
+  <div class="layer-head">
+    <span class="layer-badge" style="background:#EAF3DE;color:#3B6D11">COMPOUND CACHE</span>
+    <div><div class="layer-title">pHash Verified Product DB + Admin Crowdsource</div><div class="layer-sub">Every human-verified scan permanently reduces the cost of future scans for everyone</div></div>
+  </div>
+  <div class="detail" id="l5">
+    <div class="detail-grid">
+      <div class="detail-card"><div class="detail-card-title">What it is</div><div class="detail-card-body">14 verified food products now. pHash fingerprint cache (9 images). Admin /correct endpoint for human verification. Every verified scan: pHash stored → future identical scans return in &lt;10ms for free, no LLM token cost.</div></div>
+      <div class="detail-card"><div class="detail-card-title">The compounding math</div><div class="detail-card-body">At 14 products: marginal impact zero. At 500: LLM calls drop 40%. At 5,000: 80%+ of Indian urban packaged food is covered. At 50,000: Eatlytic's marginal cost per scan approaches ₹0. No competitor can buy this DB — they'd need to do the scans.</div></div>
+      <div class="detail-card"><div class="detail-card-title">Fix needed NOW</div><div class="detail-card-body">pHash Hamming fallback is O(n) not O(1) (BUG-06). Fix this before the cache grows past 1,000 entries or cold-start times spike. Use the BK-tree already in the Blueprint's planned app/ai/perception/ directory.</div></div>
+    </div>
+    <div style="margin-top:10px">
+      <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:8px">Moat growth by scan volume:</div>
+      <div class="moat-bar-wrap"><span class="moat-label">Now (80 scans, 14 verified)</span><div class="moat-bar-bg"><div class="moat-bar" style="width:2%;background:#9FE1CB"></div></div><span style="font-size:11px;color:var(--color-text-tertiary);width:30px">2%</span></div>
+      <div class="moat-bar-wrap"><span class="moat-label">1,000 verified products</span><div class="moat-bar-bg"><div class="moat-bar" style="width:25%;background:#5DCAA5"></div></div><span style="font-size:11px;color:var(--color-text-tertiary);width:30px">25%</span></div>
+      <div class="moat-bar-wrap"><span class="moat-label">10,000 verified products</span><div class="moat-bar-bg"><div class="moat-bar" style="width:65%;background:#1D9E75"></div></div><span style="font-size:11px;color:var(--color-text-tertiary);width:30px">65%</span></div>
+      <div class="moat-bar-wrap"><span class="moat-label">100,000 verified products</span><div class="moat-bar-bg"><div class="moat-bar" style="width:95%;background:#0F6E56"></div></div><span style="font-size:11px;color:var(--color-text-tertiary);width:30px">95%</span></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="tab-thesis" class="tab-panel">
+<p style="font-size:13px;color:var(--color-text-secondary);margin-bottom:14px">Every major 2026 investor thesis from a16z + YC mapped directly to existing Eatlytic code or planned features.</p>
+
+<div class="thesis-row">
+  <span class="thesis-source" style="background:#E1F5EE;color:#0F6E56">a16z · Julie Yoo</span>
+  <div class="thesis-body"><div class="thesis-title">Healthy MAUs — the most fundable healthtech thesis of 2026</div><div class="thesis-map">Exact match. Eatlytic's core user is not sick — they're the 300M Indian urban consumers who buy packaged food and want recurring health intelligence. Scan streaks, daily macro logs, and personalization without signup are ALL built for Healthy MAUs. The subscription model (₹99/mo, ₹499/mo Pro) is exactly "consumers comfortable paying out of pocket for prevention."</div></div>
+</div>
+<div class="thesis-row">
+  <span class="thesis-source" style="background:#EEEDFE;color:#534AB7">YC · Ankit Gupta</span>
+  <div class="thesis-body"><div class="thesis-title">AI Personalized Medicine using genome scan + diagnostic data</div><div class="thesis-map">Direct feature match. TCF7L2, AGT, LCT SNP overlays + HbA1c + fasting glucose = exactly what Gupta described. This is the YC funding pitch: "We analyze personalized health data — genome scan + EHR — to get highly accurate, user-specific suggestions." Eatlytic does this TODAY via personalized_medicine.py.</div></div>
+</div>
+<div class="thesis-row">
+  <span class="thesis-source" style="background:#FAEEDA;color:#854F0B">YC · Gustaf Alströmer</span>
+  <div class="thesis-body"><div class="thesis-title">AI-Native Service Companies — sell the outcome, not the tool</div><div class="thesis-map">Eatlytic must reframe: not "a scanner app" but "metabolic safety verdict as a service." The B2B API (b2b.py) already enables this — FMCG brands pay per scan to certify their own products. Insurance companies pay for risk assessment APIs. This is selling the SERVICE, not software.</div></div>
+</div>
+<div class="thesis-row">
+  <span class="thesis-source" style="background:#E1F5EE;color:#0F6E56">a16z · Alex Immerman</span>
+  <div class="thesis-body"><div class="thesis-title">Vertical AI Multiplayer — collaboration layer as the moat</div><div class="thesis-map">The dietitian cohort portal (dietitian.py) is exactly this. Patient + Dietitian + AI forming a multiplayer loop. Once a nutritionist connects 50 patients, switching costs become prohibitive. The MISSING piece: /dietitian/cohort endpoint (BUG-13). Build it. This unlocks the B2B revenue tier.</div></div>
+</div>
+<div class="thesis-row">
+  <span class="thesis-source" style="background:#E6F1FB;color:#185FA5">a16z · Bryan Kim</span>
+  <div class="thesis-body"><div class="thesis-title">Help Me → See Me — consumer AI shifts to identity/connection</div><div class="thesis-map">"See Me" products monetize through daily engagement, not discrete job completion. Eatlytic's scan streak (daily habit formation), personalized score showing YOUR genetic risk to THIS product, teaspoon visualizations — these are "see me" features. The confetti on score ≥8 is a retention mechanic, not a feature.</div></div>
+</div>
+<div class="thesis-row">
+  <span class="thesis-source" style="background:#EEEDFE;color:#534AB7">YC · Tom Blomfield</span>
+  <div class="thesis-body"><div class="thesis-title">Company Brain — living map of institutional knowledge as AI substrate</div><div class="thesis-map">brain.py IS Eatlytic's company brain. INDIAN_INGREDIENT_LEXICON is institutional nutrition knowledge converted to executable code. The FSSAI additive database is structured medical knowledge. The pHash cache is episodic memory. This architecture maps exactly to what Blomfield describes — and it's already built.</div></div>
+</div>
+<div class="thesis-row">
+  <span class="thesis-source" style="background:#EAF3DE;color:#3B6D11">a16z · Jennifer Li</span>
+  <div class="thesis-body"><div class="thesis-title">Taming Multimodal Data Chaos — extracting structure from images</div><div class="thesis-map">Every food label scan is unstructured multimodal data (image → OCR text → nutrition JSON). Eatlytic's entire pipeline is a vertical implementation of exactly what Jennifer Li describes: "extract structure from documents, images... reconcile conflicts, repair pipelines." The admin /correct endpoint is the "repair pipeline" in practice.</div></div>
+</div>
+<div class="thesis-row">
+  <span class="thesis-source" style="background:#FAEEDA;color:#854F0B">Eric Ries</span>
+  <div class="thesis-body"><div class="thesis-title">Incorruptible Mission-Controlled Company — legal structure to protect the mission</div><div class="thesis-map">BLUEPRINT.md written by Sarib Shaikh dated April 27, 2026 — the founder has a 90-day plan and clear mission. Before raising any money: register as a Public Benefit Corporation (PBC) in India or set up a structure that protects the health mission from short-term profit pressure. Anthropic used a Perpetual Purpose Trust. Novo Nordisk uses an Industrial Foundation. This makes the company 6x more likely to survive to age 50.</div></div>
+</div>
+</div>
+
+<div id="tab-plan" class="tab-panel">
+<p style="font-size:13px;color:var(--color-text-secondary);margin-bottom:14px">90 days from current state (80 scans, 14 verified products, 92 devices) to investment-ready. Ordered by what kills you first if delayed.</p>
+
+<div class="week-block">
+  <div class="week-head"><span class="week-num" style="background:#FCEBEB;color:#A32D2D">CRITICAL · Week 1–2</span><span class="week-title">Fix the patient safety bugs — no investor pitch before this</span></div>
+  <div class="task">BUG-01: Add 5-line check in fake_detector.py — if label_calories == 0 AND calculated > 20, return is_valid:False. Zero-calorie fraud must be caught.</div>
+  <div class="task">BUG-02: Add device_key=device_key to whatsapp_webhook's unified_analyze_flow() call (1 line, 30 seconds of work).</div>
+  <div class="task">BUG-03: Add device_key=device_key to Entry Point B build_offline_match_response() call in engine.py line 396 (1 line).</div>
+  <div class="task">BUG-04: Merge scan quota check+increment into one atomic SQL UPDATE...CASE transaction to fix TOCTOU race condition.</div>
+  <div class="task">Add google-generativeai to requirements.txt so Gemini failover doesn't silently fail on fresh deployments.</div>
+</div>
+
+<div class="week-block">
+  <div class="week-head"><span class="week-num" style="background:#FAEEDA;color:#854F0B">DATA · Week 3–4</span><span class="week-title">Close the 433-entry additive gap — your SEO moat depends on this</span></div>
+  <div class="task">Expand additives.json from 67 to 200+ entries. Priority: INS 211 (sodium benzoate), INS 471, INS 330, INS 322, all common azo dyes (E102, E110, E122, E124, E151), common emulsifiers.</div>
+  <div class="task">Migrate INDIAN_INGREDIENT_LEXICON from brain.py into additives.json so maltodextrin, maida, and lexicon entries are searchable via /ingredients/{slug} SEO pages.</div>
+  <div class="task">Seed 100 verified Indian packaged products using seed_indian_foods.py. Target: Maggi, Parle-G, Sunfeast, Britannia, Haldiram's, ITC, Patanjali — the products every Indian kitchen has.</div>
+  <div class="task">Fix OTP in-memory store (BUG-05) — persist to SQLite with TTL so server restarts don't invalidate pending logins.</div>
+</div>
+
+<div class="week-block">
+  <div class="week-head"><span class="week-num" style="background:#E1F5EE;color:#0F6E56">PWA · Week 5–6</span><span class="week-title">Ship the PWA — distribution without the App Store</span></div>
+  <div class="task">Create static/manifest.json (50 lines of JSON): theme_color #FFD600, icons at 192px and 512px, display: standalone, name: Eatlytic.</div>
+  <div class="task">Create static/sw.js (80 lines): cache-first strategy for index.html, style.css, manifest.json. Background sync for offline scan queue.</div>
+  <div class="task">Inject manifest link tag and service worker registration into index.html head. Test install on Android Chrome — Eatlytic must appear on home screen.</div>
+  <div class="task">Add Tesseract as secondary OCR engine (BUG-15). EasyOCR 150MB cold start kills serverless deployments. Tesseract fast-paths the easy labels, EasyOCR handles complex scripts as second pass.</div>
+</div>
+
+<div class="week-block">
+  <div class="week-head"><span class="week-num" style="background:#EEEDFE;color:#534AB7">B2B · Week 7–8</span><span class="week-title">Unlock the ₹10K/month revenue tier</span></div>
+  <div class="task">Build the missing /dietitian/cohort endpoint in dietitian.py — aggregate patient scan counts, streaks, macro averages, flagged excursions. This is your B2B sales hook.</div>
+  <div class="task">Add tenacity retry wrapping to all Supabase calls in db.py. Pattern: @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=8)) on every .execute() call.</div>
+  <div class="task">Build the docker-compose.inference.yml for vLLM/Gemma GPU inference. Map CUDA devices, set OpenAI-compatible endpoint, point LOCAL_LLM_URL at it.</div>
+  <div class="task">Reorder LLM failover from Local→Gemini→Groq to Local→Groq→Gemini→Together to reduce cost on cloud API calls (BUG-09).</div>
+</div>
+
+<div class="week-block">
+  <div class="week-head"><span class="week-num" style="background:#E6F1FB;color:#185FA5">SCALE · Week 9–12</span><span class="week-title">Infrastructure that doesn't die</span></div>
+  <div class="task">Implement BK-tree Hamming distance search for pHash lookups (BUG-06). The current O(n) full table scan must be replaced before the cache hits 5,000 entries.</div>
+  <div class="task">Migrate from SQLite → Supabase with row-level security. Trigger: when DAUs reach 500 consistently. Don't do it earlier — premature migration burns time.</div>
+  <div class="task">CGM integration (from Blueprint's app/api/v1/cgm.py): Dexcom/Libre webhook sync, post-prandial correlation engine. This connects scans to actual glucose response — the most defensible clinical feature possible.</div>
+  <div class="task">Submit to Product Hunt, BetaList, Razorpay "Fix My Itch." Deploy to HuggingFace Spaces (already CI/CD'd via GitHub Actions). These three channels for first 1,000 users, zero ad spend.</div>
+</div>
+</div>
+
+<div id="tab-risks" class="tab-panel">
+<p style="font-size:13px;color:var(--color-text-secondary);margin-bottom:12px">Every material risk with probability, impact, and the exact solution already available in or adjacent to the codebase.</p>
+<div class="risk-head"><span>Risk</span><span>Severity</span><span>Solution already in code</span></div>
+<div class="risk-row"><span style="color:var(--color-text-primary);font-weight:500">Fraudulent label passes Atwater gate (zero-calorie bypass)</span><span style="color:var(--color-text-danger)">🔴 Patient safety</span><span>5-line fix in fake_detector.py atwater_math_check(). If calculated>20 and label=0, return invalid.</span></div>
+<div class="risk-row"><span style="color:var(--color-text-primary);font-weight:500">Google Lens adds nutrition analysis</span><span style="color:var(--color-text-warning)">🟡 Distribution</span><span>Google has no FSSAI data, no Indian lexicon, no genomic layer, no DPDP compliance, and will serve ads on health data. Double down on clinical trust (dietitian cohorts) before Google ships.</span></div>
+<div class="risk-row"><span style="color:var(--color-text-primary);font-weight:500">LLM hallucination passes Atwater tolerance (&lt;20% error)</span><span style="color:var(--color-text-warning)">🟡 Data quality</span><span>The admin /correct endpoint + crowdsource audit (admin.py) is already built. Every wrong scan that users flag gets corrected and stored permanently. Build a "flag this result" button in the UI immediately.</span></div>
+<div class="risk-row"><span style="color:var(--color-text-primary);font-weight:500">Groq / Gemini API down simultaneously</span><span style="color:var(--color-text-warning)">🟡 Availability</span><span>4-provider failover chain already coded (Local→Gemini→Groq→Together). Add Together API key to .env. The chain guarantees uptime unless all 4 providers fail simultaneously.</span></div>
+<div class="risk-row"><span style="color:var(--color-text-primary);font-weight:500">Code is public on GitHub — competitor clones it</span><span style="color:var(--color-text-warning)">🟡 IP risk</span><span>The code is table stakes. The moat is the verified product DB (not in GitHub), the FSSAI additive data (partially obfuscated), and the dietitian cohort relationships (not cloneable). Add GPL or AGPL license to limit commercial use.</span></div>
+<div class="risk-row"><span style="color:var(--color-text-primary);font-weight:500">FMCG brand scans their own label, gets CAUTION rating, threatens legal action</span><span style="color:var(--color-text-danger)">🔴 Legal</span><span>Every scan result already has medical disclaimer built into prompts.py. Add explicit "educational purposes only" to all API responses. The Atwater physics is factual, not editorial — courts protect factual science reporting.</span></div>
+<div class="risk-row"><span style="color:var(--color-text-primary);font-weight:500">additives.json has 67/500 entries — SEO claims break under scrutiny</span><span style="color:var(--color-text-warning)">🟡 Credibility</span><span>4-week sprint. The total_entries field in JSON claims 500 but has 67. Fix the metadata before any investor DD. The expansion work is data entry + verification, not engineering.</span></div>
+<div class="risk-row"><span style="color:var(--color-text-primary);font-weight:500">Single-person team — founder burnout kills the company</span><span style="color:var(--color-text-danger)">🔴 Existential</span><span>Register as PBC or Foundation structure before raising. Build the company brain described in BLUEPRINT.md so institutional knowledge is in code, not in the founder's head. The 135 GitHub commits show sustained velocity — protect it.</span></div>
+</div>
+</div>
+
+<script>
+function toggleLayer(el,id){
+  const wasActive=el.classList.contains('active');
+  document.querySelectorAll('.layer').forEach(l=>l.classList.remove('active'));
+  if(!wasActive)el.classList.add('active');
+}
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelector(`[onclick="switchTab('${name}')"]`).classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+}
+</script>

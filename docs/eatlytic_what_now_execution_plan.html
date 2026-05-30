@@ -1,0 +1,413 @@
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+.nav { display: flex; gap: 4px; flex-wrap: wrap; padding: 0 0 16px; border-bottom: 1px solid var(--color-border-tertiary); margin-bottom: 20px; }
+.nb { padding: 6px 12px; border-radius: 6px; border: 0.5px solid var(--color-border-secondary); background: var(--color-background-primary); color: var(--color-text-secondary); font-size: 12px; cursor: pointer; transition: all .15s; }
+.nb.on { background: var(--color-text-primary); color: var(--color-background-primary); font-weight: 500; border-color: var(--color-text-primary); }
+.nb:hover:not(.on) { background: var(--color-background-secondary); }
+.page { display: none; } .page.on { display: block; }
+.card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 16px; margin-bottom: 12px; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+.g { background: var(--color-background-success); color: var(--color-text-success); }
+.r { background: var(--color-background-danger); color: var(--color-text-danger); }
+.o { background: var(--color-background-warning); color: var(--color-text-warning); }
+.b { background: var(--color-background-info); color: var(--color-text-info); }
+.p { background: rgba(139,92,246,.12); color: #7c3aed; }
+h3 { font-size: 14px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 8px; }
+p, li { font-size: 13px; color: var(--color-text-secondary); line-height: 1.6; }
+.sec { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .06em; color: var(--color-text-secondary); margin: 16px 0 8px; }
+.action { display: flex; gap: 10px; margin-bottom: 10px; padding: 12px; border-radius: 8px; border: 0.5px solid var(--color-border-tertiary); }
+.day { font-size: 11px; font-weight: 500; width: 48px; flex-shrink: 0; padding-top: 2px; color: var(--color-text-secondary); }
+.abody h4 { font-size: 13px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 4px; }
+.abody p { font-size: 12px; color: var(--color-text-secondary); line-height: 1.5; }
+.metric-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.metric { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 12px; }
+.mv { font-size: 20px; font-weight: 500; color: var(--color-text-primary); }
+.ml { font-size: 11px; color: var(--color-text-secondary); margin-top: 2px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media(max-width:500px){.row2{grid-template-columns:1fr}}
+.pitch-line { padding: 14px; border-radius: 8px; margin-bottom: 10px; }
+.tel { font-size: 14px; font-weight: 500; color: var(--color-text-primary); font-style: italic; line-height: 1.5; }
+.code { font-family: var(--font-mono); font-size: 11px; background: var(--color-background-secondary); padding: 2px 6px; border-radius: 3px; color: var(--color-text-secondary); }
+.check { list-style: none; padding: 0; }
+.check li { padding: 5px 0; font-size: 12px; color: var(--color-text-secondary); border-bottom: 0.5px solid var(--color-border-tertiary); }
+.check li:last-child { border-bottom: none; }
+.urgency-bar { height: 4px; border-radius: 2px; margin-top: 6px; }
+</style>
+
+<div class="nav" id="nav"></div>
+<div id="pages"></div>
+
+<script>
+const tabs = [
+  {id:'now', label:'🔥 Right now', fn: renderNow},
+  {id:'week1', label:'Week 1–2', fn: renderW12},
+  {id:'week3', label:'Week 3–6', fn: renderW36},
+  {id:'week7', label:'Week 7–12', fn: renderW712},
+  {id:'yc', label:'YC application', fn: renderYC},
+  {id:'intel', label:'Intelligence', fn: renderIntel},
+  {id:'script', label:'Dietitian script', fn: renderScript},
+];
+
+const navEl = document.getElementById('nav');
+const pagesEl = document.getElementById('pages');
+tabs.forEach(t => {
+  const b = document.createElement('button');
+  b.className = 'nb'; b.dataset.id = t.id; b.textContent = t.label;
+  b.onclick = () => {
+    document.querySelectorAll('.nb').forEach(x => x.classList.toggle('on', x.dataset.id===t.id));
+    document.querySelectorAll('.page').forEach(x => x.classList.toggle('on', x.id===t.id));
+  };
+  navEl.appendChild(b);
+  const d = document.createElement('div');
+  d.className = 'page'; d.id = t.id; d.innerHTML = t.fn();
+  pagesEl.appendChild(d);
+});
+document.querySelector('.nb').classList.add('on');
+document.querySelector('.page').classList.add('on');
+
+function renderNow() {
+  return `
+<h2 class="sr-only">What to do right now with Eatlytic</h2>
+<div style="padding:14px;border-radius:10px;background:var(--color-background-danger);border:0.5px solid var(--color-border-danger);margin-bottom:16px">
+  <p style="font-size:13px;font-weight:500;color:var(--color-text-danger);margin-bottom:4px">Before anything else — do these 3 things in the next 2 hours</p>
+  <p style="font-size:12px;color:var(--color-text-danger)">Everything below is meaningless if someone finds your API keys first.</p>
+</div>
+
+<div class="action" style="border-color:var(--color-border-danger)">
+  <div class="day" style="color:var(--color-text-danger)">NOW<br>⏱️ 20min</div>
+  <div class="abody">
+    <h4>Rotate ALL API keys immediately</h4>
+    <p>Your <span class="code">.env</span> is inside the zip you shared with me. That means it was on your machine and possibly pushed to HuggingFace or GitHub. Rotate: <strong>GROQ_API_KEY</strong> (console.groq.com) → <strong>GEMINI_API_KEY</strong> (aistudio.google.com) → <strong>TOGETHER_API_KEY</strong> (api.together.xyz) → <strong>RAZORPAY_KEY_SECRET</strong> → <strong>TWILIO_AUTH_TOKEN</strong>. Then run: <span class="code">echo ".env" >> .gitignore && git rm --cached .env</span></p>
+  </div>
+</div>
+
+<div class="action" style="border-color:var(--color-border-danger)">
+  <div class="day" style="color:var(--color-text-danger)">NOW<br>⏱️ 10min</div>
+  <div class="abody">
+    <h4>Add legal disclaimer to every clinical output</h4>
+    <p>In <span class="code">app/ai/llm/prompts.py</span>, append to every response: <em>"For educational purposes only. Not medical advice. Consult a healthcare professional before making dietary decisions."</em> Add it to the SNP overlay output in <span class="code">personalized_medicine.py</span> too. This is 10 minutes of work that prevents 10 months of legal trouble.</p>
+  </div>
+</div>
+
+<div class="action" style="border-color:var(--color-border-danger)">
+  <div class="day" style="color:var(--color-text-danger)">NOW<br>⏱️ 30min</div>
+  <div class="abody">
+    <h4>Deploy to HuggingFace Spaces properly with Secrets</h4>
+    <p>Your <span class="code">.github/workflows/sync_to_huggingface.yml</span> already exists. Move all env vars to HuggingFace Space Secrets (Settings → Variables and Secrets). Never push <span class="code">.env</span> again. This gives you a live demo URL — which you need for every conversation with investors and dietitians.</p>
+  </div>
+</div>
+
+<div class="sec" style="margin-top:20px">Today's most important strategic decision</div>
+<div class="card">
+  <h3>The YC S26 batch application window is open NOW</h3>
+  <p style="margin-bottom:8px">YC Summer 2026 applications are projected to close in May 2026 — you are right at the edge of the window. The batch runs July–September 2026 in San Francisco. The S26 RFS <em>literally</em> describes your product: <strong>"AI Personalized Medicine"</strong>. If you apply and get in, you get $500K (₹4.1 crore), 3 months of intense mentorship, and access to the YC network.</p>
+  <p style="margin-bottom:8px">The problem: <strong>YC will not accept a solo founder</strong> without extraordinary traction. Beacon Health (the W26 healthcare winner) was co-founded by a Stanford physician + ex-Amazon engineer. You need either: (a) revenue (10 paying customers), OR (b) a clinical co-founder, OR (c) both.</p>
+  <p>Apply anyway even if the deadline passes — explain your technical depth and market timing. Get rejected and re-apply next batch with traction. The rejection feedback from YC is worth more than most accelerator programs.</p>
+</div>
+`;
+}
+
+function renderW12() {
+  return `
+<h2 class="sr-only">Eatlytic week 1-2 action plan</h2>
+<p class="sec">Week 1–2: Security, stability, first revenue conversation</p>
+<div class="metric-row">
+  <div class="metric"><div class="mv">₹0</div><div class="ml">Current MRR</div></div>
+  <div class="metric"><div class="mv">₹20K</div><div class="ml">Target MRR in 14 days</div></div>
+  <div class="metric"><div class="mv">10</div><div class="ml">Target dietitian outreach</div></div>
+  <div class="metric"><div class="mv">1</div><div class="ml">Target paying customer</div></div>
+</div>
+
+<div class="action">
+  <div class="day">Day 1–3</div>
+  <div class="abody">
+    <h4>Complete Supabase migration <span class="tag b">stability</span></h4>
+    <p>Your <span class="code">connection.py</span> already has the Supabase client initialized — it just needs <span class="code">SUPABASE_URL</span> and <span class="code">SUPABASE_KEY</span> env vars. Create a free Supabase project, enable Row Level Security on <span class="code">scans</span> and <span class="code">devices</span> tables, and set the env vars. Without this, any viral moment kills the server. SQLite WAL cannot handle 50+ concurrent writes.</p>
+  </div>
+</div>
+
+<div class="action">
+  <div class="day">Day 2–4</div>
+  <div class="abody">
+    <h4>Seed 200 verified Indian products into DB <span class="tag g">cost reduction</span></h4>
+    <p>Run <span class="code">scripts/seed_indian_foods.py</span>. Prioritize: Maggi (2-min noodles), Parle-G biscuit, Lay's India flavors, Amul butter, Haldiram's snacks, Bournvita, Boost, Horlicks, MDH masalas, MTR instant foods. Every cached product = zero LLM API call on scan. At 1,000 scans/month of common products, this saves ~$50/month in API costs and drops response time to <10ms for most users.</p>
+  </div>
+</div>
+
+<div class="action">
+  <div class="day">Day 3–7</div>
+  <div class="abody">
+    <h4>Find and DM 10 dietitians — start today <span class="tag r">revenue critical</span></h4>
+    <p>Search LinkedIn for: "Clinical Dietitian Mumbai diabetes" / "Registered Dietitian Bangalore PCOS" / "Nutritionist Hyderabad". Find 10 who post about their patients and have WhatsApp contact on their profile. Your DM script is in the Dietitian Script tab. Goal: 3 demo calls booked in 7 days. You only need 1 paying customer at ₹2,000/month to prove the model to investors.</p>
+  </div>
+</div>
+
+<div class="action">
+  <div class="day">Day 5–10</div>
+  <div class="abody">
+    <h4>Generate and submit sitemap to Google <span class="tag p">organic growth</span></h4>
+    <p>Run <span class="code">scripts/generate_sitemap.py</span>. It creates 500+ programmatic SEO pages for additives. Submit <span class="code">static/sitemap.xml</span> to Google Search Console and Bing Webmaster. Target queries: "Is INS 621 safe India", "INS 102 FSSAI status", "aspartame side effects India". These pages take 60–90 days to rank but cost you nothing and bring passive signups forever. Also: share 3 additive pages on Reddit r/India and r/diabetes — each page is genuinely useful content.</p>
+  </div>
+</div>
+
+<div class="action">
+  <div class="day">Day 7–14</div>
+  <div class="abody">
+    <h4>OTP-gate the 10 free scan limit <span class="tag o">monetization</span></h4>
+    <p>Currently anyone can bypass the 10-scan limit by clearing cookies. Your <span class="code">user.py</span> OTP system already exists. Add phone OTP verification before scan #11. This protects your free quota and simultaneously builds your user database. Critical before any growth push — don't pour users into a bucket with a hole.</p>
+  </div>
+</div>
+
+<div class="action">
+  <div class="day">Day 10–14</div>
+  <div class="abody">
+    <h4>Post your first "build in public" content <span class="tag b">distribution</span></h4>
+    <p>Tweet/X: "I built a food scanner that does Atwater physics on every label to catch nutrition lies. Tested it on [famous Indian snack]. Here's what the label says vs what the math says." Include a side-by-side screenshot. Link to your HuggingFace demo. This is the content that goes viral in Indian tech Twitter. Do this for Maggi, Bournvita, Lay's India. You have real benchmarks in <span class="code">data/maggi_scan_result.json</span> — use them.</p>
+  </div>
+</div>
+`;
+}
+
+function renderW36() {
+  return `
+<h2 class="sr-only">Eatlytic week 3-6 execution plan</h2>
+<p class="sec">Week 3–6: WhatsApp launch + first clinical revenue</p>
+
+<div class="card">
+  <h3>The single highest-leverage move in weeks 3–6</h3>
+  <p style="margin-bottom:8px"><strong>WhatsApp bot production launch.</strong> India has 500M+ WhatsApp users. Your Twilio webhook is already wired in <span class="code">scan.py</span>. The "Diabetic Care" persona is hardcoded. WhatsApp has <em>zero install friction</em> — your user doesn't need to download anything, create an account, or remember a URL. They just add a number and send a photo.</p>
+  <p>The go-to-market is: get into 5 diabetes WhatsApp groups (search Facebook or Reddit for "diabetes India WhatsApp group join link"), and post: <em>"Free: Send a photo of any packaged food to +91-XXXX and get a diabetes-safe verdict in 10 seconds."</em> That's it. That's your entire GTM for month 2.</p>
+</div>
+
+<div class="action">
+  <div class="day">Wk 3</div>
+  <div class="abody">
+    <h4>Get Twilio WhatsApp Business approval <span class="tag r">critical path</span></h4>
+    <p>Apply at twilio.com/whatsapp. Approval takes 1–3 weeks. Do this NOW — it's the bottleneck. You need a Facebook Business Manager account and to verify your business. While waiting: test with a Twilio Sandbox number internally. Your webhook code at <span class="code">/analyze/whatsapp</span> is already written.</p>
+  </div>
+</div>
+
+<div class="action">
+  <div class="day">Wk 3–4</div>
+  <div class="abody">
+    <h4>Close first paying dietitian <span class="tag r">revenue critical</span></h4>
+    <p>Offer: "Free 3-month pilot for your first 5 patients. You get a dashboard showing their scan history, flagged additives, macro averages. All I ask is a testimonial and a referral to one other dietitian." This is not charity — it gets you: (1) real usage data, (2) a testimonial for investors, (3) a referral. The dietitian cohort portal is already built. You just need someone using it.</p>
+  </div>
+</div>
+
+<div class="action">
+  <div class="day">Wk 4</div>
+  <div class="abody">
+    <h4>Find your clinical co-founder <span class="tag r">existential</span></h4>
+    <p>Post on LinkedIn: "I'm a developer who built a clinical nutrition scanner with Atwater physics validation, genomic SNP overlays, and CGM biosensor integration. Looking for a clinical co-founder (MBBS/RD/PhD nutrition science) who wants to build the future of preventive healthcare in India." Also post in: Indian Dietetics Association (IDA) forums, IAPEN India network, LinkedIn groups "Diabetes India Professionals", "Clinical Nutritionists India". Offer 10–20% equity. This is not optional — it's the difference between a product and a startup.</p>
+  </div>
+</div>
+
+<div class="action">
+  <div class="day">Wk 5–6</div>
+  <div class="abody">
+    <h4>CGM integration beta — 20 FreeStyle Libre users <span class="tag p">moat building</span></h4>
+    <p>Abbott launched FreeStyle Libre 2 Plus in India in August 2025, priced at ₹5,249 per sensor. India has 101 million people living with diabetes, making it a massive CGM market. Find 20 FreeStyle Libre users through diabetes forums, endocrinologist contacts, or Bharat Biotech/Abbott partner clinics. Give them free Eatlytic Pro access to sync their CGM data. You need real post-prandial correlation data — this is the dataset that will define your defensibility in 12 months.</p>
+  </div>
+</div>
+
+<div class="action">
+  <div class="day">Wk 6</div>
+  <div class="abody">
+    <h4>Create "Label Myth" content series <span class="tag b">virality</span></h4>
+    <p>Use your Atwater engine as a content weapon. "This biscuit claims 490 kcal per 100g but contains 13g protein + 67g carbs + 19g fat = 483 kcal. Close. But wait — it says '0 trans fat' while listing 'partially hydrogenated vegetable oil' as ingredient #3. Here's how Eatlytic caught it." Post on LinkedIn, X, Reddit r/India, r/IndianFood. Tag @FSSAI_India. This creates earned media, establishes credibility, and drives signups.</p>
+  </div>
+</div>
+`;
+}
+
+function renderW712() {
+  return `
+<h2 class="sr-only">Eatlytic week 7-12 scaling and fundraising</h2>
+<p class="sec">Week 7–12: Series of firsts that unlock funding</p>
+
+<div class="card">
+  <h3>The target state at day 90</h3>
+  <div class="metric-row">
+    <div class="metric"><div class="mv">₹50K+</div><div class="ml">Monthly recurring revenue</div></div>
+    <div class="metric"><div class="mv">10+</div><div class="ml">Paying dietitian clients</div></div>
+    <div class="metric"><div class="mv">1</div><div class="ml">Clinical co-founder</div></div>
+    <div class="metric"><div class="mv">100+</div><div class="ml">CGM-linked users</div></div>
+    <div class="metric"><div class="mv">5K+</div><div class="ml">Total scans in DB</div></div>
+    <div class="metric"><div class="mv">500+</div><div class="ml">SEO pages indexed</div></div>
+  </div>
+  <p style="font-size:12px">With this state, Eatlytic qualifies for: YC F26 or W27 application, Indian angel rounds from health-focused angels (Prashant Tandon of 1mg invested in Neodocs), and potential strategic interest from Abbott India or HealthifyMe.</p>
+</div>
+
+<div class="action">
+  <div class="day">Wk 7–8</div>
+  <div class="abody">
+    <h4>Build the "Eatlytic for FMCG Brands" pitch <span class="tag p">B2B revenue</span></h4>
+    <p>Your B2B API is built. The real revenue play is selling to food brands, not consumers. Pitch to: D2C health food startups (Yoga Bar, RiteBite, Sattvic Foods) who need real-time label compliance checking before FSSAI audits. The pitch: "We run your nutrition label through the same physics engine that will catch lies before the regulator does. ₹15,000/month for up to 500 label validations." This is a compliance product — high urgency, easy budget approval.</p>
+  </div>
+</div>
+
+<div class="action">
+  <div class="day">Wk 8</div>
+  <div class="abody">
+    <h4>Apply to Indian accelerators in parallel <span class="tag b">optionality</span></h4>
+    <p>While waiting for YC timing: apply to <strong>100X.VC</strong> (India's most active early-stage fund, invested in 100+ startups), <strong>Venture Catalysts</strong>, <strong>Antler India</strong> (has a healthtech thesis), and <strong>Rebright Partners</strong> (Japan-origin fund with India health focus). Also: <strong>IIT Bombay SINE incubator</strong> (free, zero equity for 6 months) and <strong>BIRAC BIG grant</strong> (₹50 lakh non-dilutive for biotech/healthtech from Govt of India).</p>
+  </div>
+</div>
+
+<div class="action">
+  <div class="day">Wk 9–10</div>
+  <div class="abody">
+    <h4>Launch vLLM self-hosted inference when API costs hit ₹15K/month <span class="tag g">margins</span></h4>
+    <p>Your <span class="code">docker-compose.inference.yml</span> is already written. When API costs exceed ₹15K/month, spin up a 1x A100 on Lambda Labs (lambda.ai) at ~$1.10/hour or Vast.ai at ~$0.80/hour. Run Gemma 4 locally. Your <span class="code">client.py</span> auto-detects the vLLM endpoint. This drops your per-scan LLM cost from ~₹0.50 to ~₹0.02 — a 25x margin improvement at scale.</p>
+  </div>
+</div>
+
+<div class="action">
+  <div class="day">Wk 10–12</div>
+  <div class="abody">
+    <h4>Build the "Metabolic Safety Report" PDF product <span class="tag p">premium tier</span></h4>
+    <p>Your <span class="code">services/audit_pdf.py</span> already generates PDFs. Build a premium tier: ₹499/month for a monthly "Metabolic Safety Audit" — a PDF report showing which products the user scanned, which were flagged, their personal glucose response data (if CGM linked), and 5 healthier alternatives for each flagged product. This is a high-perceived-value, low-cost-to-produce premium product. Dietitians can gift it to patients.</p>
+  </div>
+</div>
+
+<div class="action">
+  <div class="day">Wk 11–12</div>
+  <div class="abody">
+    <h4>MeitY/DST grant application — non-dilutive ₹50L <span class="tag g">free money</span></h4>
+    <p>Government of India has: <strong>BIRAC BIG grant</strong> (₹50 lakh for health biotech), <strong>MeitY TIDE 2.0</strong> (₹25 lakh for AI/health startups), <strong>Startup India Seed Fund</strong> (₹20 lakh). Your product qualifies as "AI for preventive healthcare" — exactly what these programs fund. Non-dilutive capital. Use it to hire a full-time data scientist who can scale the Indian ingredient database and CGM correlation engine.</p>
+  </div>
+</div>
+`;
+}
+
+function renderYC() {
+  return `
+<h2 class="sr-only">YC application strategy for Eatlytic</h2>
+<p class="sec">How to position Eatlytic for YC — based on what actually gets accepted</p>
+
+<div class="card" style="background:var(--color-background-info)">
+  <h3 style="color:var(--color-text-info)">The YC application is a product demo, not an essay</h3>
+  <p style="color:var(--color-text-info)">YC partners spend 8 minutes on each application. The only thing that matters: (1) can you explain the problem in one sentence, (2) do you have users/revenue, (3) is your team credible. Your technical depth is table stakes — they need to see it working.</p>
+</div>
+
+<div class="sec">Your one-liner (the most important sentence you'll write)</div>
+<div class="pitch-line" style="background:var(--color-background-secondary)">
+  <p class="tel">"Eatlytic is the first nutrition scanner that mathematically audits every food label for lies — and personalizes safety verdicts using your DNA and blood sugar data."</p>
+</div>
+
+<div class="row2">
+  <div class="card">
+    <h3>What to answer for "What problem are you solving?"</h3>
+    <p style="font-size:12px">India has 101 million diabetics — the world's highest burden. Every packaged food label they read could be mathematically wrong, and no existing app catches this. HealthifyMe tracks calories. Yuka scans barcodes. Neither validates the nutrition math, neither knows your genes, and neither connects your food to your actual blood sugar readings. We do all three.</p>
+  </div>
+  <div class="card">
+    <h3>What to answer for "What's your moat?"</h3>
+    <p style="font-size:12px">Every scan we process gets correlated with real CGM blood sugar data. In 6 months, we'll have India's first biosensor-validated food database — showing which specific Indian products cause glucose spikes in real bodies, not just on paper. That dataset cannot be bought, replicated, or scraped.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h3>The YC demo video — exactly what to show (2 minutes)</h3>
+  <ul class="check">
+    <li>0:00–0:20 — Show the problem: hold up a Bournvita tin. "This says it's a 'health drink.' Here's what the math says."</li>
+    <li>0:20–0:50 — Live scan: scan the Bournvita label with your phone camera. Show the Atwater check catching the sugar-to-calorie ratio. Show the "CAUTION" verdict.</li>
+    <li>0:50–1:10 — Show genomic overlay: upload a fake SNP profile with TCF7L2 CT variant. Watch the score drop to 3/10 and "AVOID" verdict appear.</li>
+    <li>1:10–1:35 — Show the dietitian dashboard: 3 patients, their scan histories, flagged products. "This is what a diabetes clinic pays us ₹2,000/month for."</li>
+    <li>1:35–2:00 — Numbers: X scans processed, Y dietitians using it, Z MRR. End with the one-liner.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>The co-founder question — how to answer it honestly</h3>
+  <p style="font-size:12px;margin-bottom:8px">YC will ask: "Why are you the right team to build this?" As a solo founder, you need a very strong answer. Options ranked by strength:</p>
+  <ul class="check">
+    <li><strong>Best:</strong> "I've partnered with Dr. [Name], a clinical dietitian from [Hospital] who has 200 diabetes patients and is actively using the product with them." Close this before applying.</li>
+    <li><strong>Good:</strong> "My family has a history of T2D — I built this for my father. I have 10 paying dietitian clients validating the clinical utility." Personal + traction.</li>
+    <li><strong>Acceptable:</strong> "I built this entirely solo — 100+ tests, live production, 8 weeks of shipping. I'm actively recruiting a clinical co-founder and have 3 conversations in progress."</li>
+    <li><strong>Never say:</strong> "I'm looking for a co-founder." Says it to YC without having found one = you'll be rejected.</li>
+  </ul>
+</div>
+`;
+}
+
+function renderIntel() {
+  return `
+<h2 class="sr-only">Market intelligence for Eatlytic strategy</h2>
+<p class="sec">Key intelligence from research — use this in every conversation</p>
+
+<div class="card">
+  <h3>The CGM market intelligence you needed</h3>
+  <p style="margin-bottom:8px">Abbott launched FreeStyle Libre 2 Plus in India in August 2025, with readings every minute sent directly to a smartphone. India has 101 million people living with diabetes — the second-largest diabetes population in the world. Abbott's Diabetes Care business grew 19.6% organically in Q2 2025 with global CGM users exceeding 6 million. This is your ecosystem: millions of Indian diabetics are now generating real-time glucose data with no food intelligence layer sitting on top of it. That's Eatlytic's exact gap.</p>
+</div>
+
+<div class="card">
+  <h3>Your closest funded competitor: Neodocs (YC + Omidyar)</h3>
+  <p style="margin-bottom:8px">Neodocs raised Rs 16.6 crore ($2 million) in a seed funding round led by Omidyar Network India, with participation from YC, 9 Unicorns, and angel investors including Prashant Tandon (1mg) and Kunal Shah (Cred). Neodocs plans to perform 100 million tests in 3 years using smartphone-based diagnostics. Their vision is to build a personal lab for everyone on the spot.</p>
+  <p style="font-size:12px;color:var(--color-text-secondary)">Critical difference: Neodocs does body fluid diagnostics (urine, blood). Eatlytic does food label intelligence. These are <strong>complementary, not competitive</strong>. Neodocs tells you what your body markers are — Eatlytic tells you what foods are safe given those markers. Integration pitch: "If Neodocs tells you your HbA1c is 6.2%, Eatlytic automatically adjusts your food safety verdicts." This is a partnership, not a fight.</p>
+</div>
+
+<div class="card">
+  <h3>The FSSAI angle — regulatory tailwind you're not using</h3>
+  <p style="margin-bottom:8px">FSSAI issued a strong advisory banning food brands from using the word "100%" on labels because it misleads consumers. FSSAI is actively cracking down on misleading food labels in 2025–2026. Eatlytic's Atwater physics gate and marketing lie detector <em>directly catches</em> the violations FSSAI is regulating.</p>
+  <p style="font-size:12px;color:var(--color-text-secondary)">Pitch to FSSAI directly: "We built the consumer-facing compliance verification tool for the regulations you're enforcing." FSSAI has a consumer app (FoSCoS) that's widely considered poor. You could be their AI layer — or get featured on their consumer awareness campaigns as a recommended tool.</p>
+</div>
+
+<div class="card">
+  <h3>YC S26 timing — your window</h3>
+  <p style="margin-bottom:8px">YC's Summer 2026 RFS states that AI agents like Claude Code can analyze personalized health data — genome scans, EHR data, wearables — and generate highly accurate, user-specific suggestions. The future of medicine is not population-level treatment. It is one patient, one protocol.</p>
+  <p style="font-size:12px;color:var(--color-text-secondary)">The YC S26 batch runs July to September 2026 in San Francisco, with the application deadline projected for May 2026. That window may have closed or be closing now — but W27 opens around June 2026 with a deadline around August. Apply for both.</p>
+</div>
+
+<div class="card">
+  <h3>The Indian dietitian ecosystem — who to target first</h3>
+  <p style="margin-bottom:8px">IAPEN India (Association of Parenteral and Enteral Nutrition) has a core group specifically for nutrition and diabetes in India, with dietitians affiliated with major hospitals including KEM Hospital, Kokilaben Ambani Hospital, and Wockhardt. These are your Tier 1 targets — clinical dietitians inside hospital systems who see 50–200 diabetic patients monthly and have no tool to monitor their packaged food consumption.</p>
+  <p style="font-size:12px">Contact IAPEN India directly. Offer to present Eatlytic at their next webinar or conference. One presentation to 50 clinical dietitians = 10 demo calls = 3–5 paying customers.</p>
+</div>
+`;
+}
+
+function renderScript() {
+  return `
+<h2 class="sr-only">Cold outreach scripts for Eatlytic dietitian sales</h2>
+<p class="sec">Exact scripts — copy-paste these today</p>
+
+<div class="card">
+  <h3>WhatsApp/LinkedIn cold DM to dietitians <span class="tag g">proven structure</span></h3>
+  <div style="background:var(--color-background-secondary);border-radius:8px;padding:14px;font-size:13px;color:var(--color-text-primary);line-height:1.8;margin-bottom:10px">
+    <p>Hi Dt. [Name],</p>
+    <p>I'm a developer who built something I think could genuinely help your diabetes patients — and I'd love your feedback.</p>
+    <p>It's a free AI food scanner that: (1) catches when packaged food labels are mathematically wrong (sugar+protein+fat don't add up to the stated calories), (2) personalizes safety verdicts for diabetics and hypertensive patients, and (3) gives you a simple dashboard showing which products your patients are eating and which ones are flagged.</p>
+    <p>Would you be open to a 15-minute call? I'd set you up for free and walk through how it works for your patients. No commitment.</p>
+    <p>You can try it now at [your HuggingFace URL] — just scan any label with your phone camera.</p>
+    <p>Thanks,<br>Umer</p>
+  </div>
+  <p style="font-size:11px;color:var(--color-text-secondary)">Send to 10 dietitians today. 3 will reply. 2 will take a call. 1 will convert to free trial. That's your first user.</p>
+</div>
+
+<div class="card">
+  <h3>Demo call script — the 15 minutes that close the deal</h3>
+  <ul class="check">
+    <li><strong>Min 0–2:</strong> "Tell me about your most challenging patients — the ones who are compliant with your meal plan but still have poor glycemic control. How do you track what packaged foods they're eating?" (Let them talk. This surfaces the pain.)</li>
+    <li><strong>Min 2–5:</strong> "The reason I'm asking is — I built this because I realized dietitians have no way to verify what patients are actually buying vs what they should eat. Let me show you." (Screen share — scan a Maggi packet or Bournvita live.)</li>
+    <li><strong>Min 5–8:</strong> "Now watch this — if I turn on the diabetic genomic profile, the same product goes from 4/10 to 2/10 AVOID because it detects Maltodextrin in the ingredients which has a GI of 110." (Show the SNP overlay.)</li>
+    <li><strong>Min 8–11:</strong> "This is the dashboard where you'd see all your patients' scans. You can see which products they're scanning, which ones are being flagged, and their macro averages for the week." (Show dietitian.py portal.)</li>
+    <li><strong>Min 11–13:</strong> "I'm offering a free 90-day pilot for 5 patients. No payment. I just ask: can I use your feedback to improve the product, and if you find it useful, would you be willing to refer one colleague?" (Soft ask.)</li>
+    <li><strong>Min 13–15:</strong> "After the pilot, if you find it saves you time and helps your patients — I'll charge ₹2,000/month for the dashboard and unlimited scans. That's it." (Clear pricing.)</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>LinkedIn co-founder post — post this today</h3>
+  <div style="background:var(--color-background-secondary);border-radius:8px;padding:14px;font-size:13px;color:var(--color-text-primary);line-height:1.8">
+    <p>I spent 8 weeks building something I believe could change how India's 178 million diabetics make food choices.</p>
+    <p>Eatlytic is an AI nutrition scanner with: ✅ Atwater physics verification (catches label lies mathematically) ✅ Genomic SNP personalization (adjusts safety scores for your DNA) ✅ CGM integration (correlates your blood sugar with what you ate) ✅ 500+ Indian additive database with FSSAI status</p>
+    <p>I'm a developer. I can build anything. But to build this into a company that actually helps patients — I need someone who understands clinical nutrition, has relationships with dietitians and endocrinologists, and wants to co-found.</p>
+    <p>If you're an RD, MBBS, or PhD in nutrition science who's frustrated that your patients have no way to make sense of packaged food labels — let's talk.</p>
+    <p>DM me or comment below.</p>
+  </div>
+</div>
+`;
+}
+</script>

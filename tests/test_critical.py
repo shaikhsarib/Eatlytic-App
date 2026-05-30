@@ -399,7 +399,7 @@ class TestStreakTracking:
 class TestAccuracyBenchmarking:
     def test_field_accuracy_correct_detection(self):
         """Within 15% tolerance → marked correct."""
-        from app.routes.benchmarks import _compute_field_accuracy
+        from app.api.v1.benchmarks import _compute_field_accuracy
 
         llm_output = {
             "score": 6,
@@ -427,17 +427,17 @@ class TestAccuracyBenchmarking:
         assert result["fields"]["fat"]["status"] == "correct"
 
     def test_word_f1_perfect_match(self):
-        from app.routes.benchmarks import _word_f1
+        from app.api.v1.benchmarks import _word_f1
 
         assert _word_f1("wheat flour sugar salt", "wheat flour sugar salt") == 1.0
 
     def test_word_f1_zero_overlap(self):
-        from app.routes.benchmarks import _word_f1
+        from app.api.v1.benchmarks import _word_f1
 
         assert _word_f1("apples oranges", "wheat flour") == 0.0
 
     def test_word_f1_partial(self):
-        from app.routes.benchmarks import _word_f1
+        from app.api.v1.benchmarks import _word_f1
 
         score = _word_f1("wheat flour sugar", "wheat flour")
         assert 0 < score < 1.0
