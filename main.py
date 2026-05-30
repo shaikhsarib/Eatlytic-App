@@ -21,7 +21,7 @@ if not hasattr(PIL.Image, 'ANTIALIAS'):
 load_dotenv()
 
 from app.database.connection import init_db
-from app.api.v1 import scan, user, admin, b2b, payments, benchmarks, dietitian, personalized, cgm
+from app.api.v1 import scan, user, admin, b2b, payments, benchmarks, dietitian, personalized, cgm, mcp
 from app.api.v1 import food_db
 from app.api.v1 import additive_db as additive_db_route
 from app.api.v1 import ingredients as ingredients_route
@@ -69,6 +69,7 @@ app.include_router(personalized.router)
 app.include_router(additive_db_route.router)
 app.include_router(cgm.router)
 app.include_router(ingredients_route.router)   # Programmatic SEO — /ingredients/{slug}
+app.include_router(mcp.router)
 
 
 # --- Static ---
@@ -118,5 +119,11 @@ async def export_pdf(request: Request):
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import sys
+    if "--mcp" in sys.argv:
+        import asyncio
+        from app.api.v1.mcp import run_stdio_mcp_server
+        asyncio.run(run_stdio_mcp_server())
+    else:
+        import uvicorn
+        uvicorn.run(app, host="0.0.0.0", port=8000)
