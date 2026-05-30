@@ -44,14 +44,14 @@ Return ONLY this JSON object:
         return {"is_valid": False, "clean_text": ""}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# BACKWARD COMPATIBILITY RE-EXPORTS (Onion Architecture Shim)
-# Re-exports the orchestration functions moved to app.services.scan_orchestrator.
-# ─────────────────────────────────────────────────────────────────────────────
+def __getattr__(name: str):
+    if name in (
+        "unified_analyze_flow",
+        "find_db_product_match",
+        "upsert_food_product",
+        "build_offline_match_response"
+    ):
+        import app.services.scan_orchestrator as scan_orchestrator
+        return getattr(scan_orchestrator, name)
+    raise AttributeError(f"module {__name__} has no attribute {name}")
 
-from app.services.scan_orchestrator import (
-    unified_analyze_flow,
-    find_db_product_match,
-    upsert_food_product,
-    build_offline_match_response
-)
