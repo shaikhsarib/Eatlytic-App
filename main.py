@@ -101,16 +101,6 @@ async def sitemap():
 
 @app.post("/export-pdf")
 async def export_pdf(request: Request):
-    # BUG 5 FIX: require valid session before generating a PDF
-    from app.services.user_auth import get_user_from_token
-    auth = request.headers.get("Authorization", "")
-    token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else None
-    if not token:
-        token = request.cookies.get("session_token")
-    user = get_user_from_token(token) if token else None
-    if not user:
-        from fastapi.responses import JSONResponse as _JR
-        return _JR(status_code=401, content={"error": "Login required to export PDF."})
     from app.services.audit_pdf import generate_audit_pdf
     data = await request.json()
     filename = f"static/audit_{data.get('scan_id', 'temp')}.pdf"

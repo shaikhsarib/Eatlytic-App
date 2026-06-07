@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eatlytic — Complete Project & Codebase Blueprint</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #09090b;
+    --surface: #18181b;
+    --surface-card: #27272a;
+    --border: #3f3f46;
+    --text: #f4f4f5;
+    --text-muted: #a1a1aa;
+    --cyan: #06b6d4;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --purple: #8b5cf6;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    line-height: 1.6;
+    padding: 3rem 1.5rem;
+  }
+
+  header {
+    max-width: 1000px;
+    margin: 0 auto 3rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 2rem;
+  }
+
+  .tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--purple);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin-bottom: 0.5rem;
+  }
+
+  h1 {
+    font-size: 2.5rem;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    margin-bottom: 0.75rem;
+  }
+
+  h1 span {
+    color: var(--purple);
+  }
+
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    max-width: 750px;
+  }
+
+  .container {
+    max-width: 1000px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+  }
+
+  .section-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 3rem;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    position: relative;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+  }
+
+  .section-card:hover {
+    border-color: #8b5cf650;
+  }
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    background: var(--surface-card);
+    padding: 4px 12px;
+    border-radius: 6px;
+  }
+
+  h2 {
+    font-size: 1.8rem;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+  }
+
+  h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+    color: var(--purple);
+  }
+
+  p {
+    color: var(--text-muted);
+    margin-bottom: 1.25rem;
+    font-size: 1.05rem;
+  }
+
+  .callout {
+    background: rgba(139, 92, 246, 0.08);
+    border-left: 4px solid var(--purple);
+    padding: 1.25rem;
+    border-radius: 0 8px 8px 0;
+    margin: 1.5rem 0;
+    font-size: 1rem;
+  }
+
+  .callout strong {
+    color: #fff;
+  }
+
+  /* Grid details */
+  .modules-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+  }
+
+  @media (max-width: 768px) {
+    .modules-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .module-card {
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    padding: 1.5rem;
+    border-radius: 12px;
+  }
+
+  .module-card h4 {
+    font-size: 1.15rem;
+    color: #fff;
+    margin-bottom: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .dot.purple { background: var(--purple); }
+  .dot.cyan { background: var(--cyan); }
+  .dot.green { background: var(--green); }
+  .dot.amber { background: var(--amber); }
+  .dot.red { background: var(--red); }
+  .dot.blue { background: var(--blue); }
+
+  .flow-box {
+    background: #09090b;
+    border: 1px solid var(--border);
+    padding: 1.5rem;
+    border-radius: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    color: var(--cyan);
+    margin: 1.5rem 0;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  ul, ol {
+    margin-left: 1.75rem;
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+    font-size: 1rem;
+  }
+
+  li {
+    margin-bottom: 0.5rem;
+  }
+
+  .highlight-span {
+    color: #fff;
+    font-weight: 600;
+  }
+
+  /* Diagram & Info Callout styling */
+  .diagram-wrapper {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    margin: 1.5rem 0;
+    background: #000;
+  }
+  .diagram-wrapper img {
+    width: 100%;
+    display: block;
+  }
+  .highlight-box {
+    background: rgba(139, 92, 246, 0.06);
+    border-left: 4px solid var(--purple);
+    padding: 1rem;
+    border-radius: 0 6px 6px 0;
+    margin-bottom: 1.5rem;
+  }
+  .danger-box {
+    background: rgba(239, 68, 68, 0.06);
+    border-left: 4px solid var(--red);
+    padding: 1rem;
+    border-radius: 0 6px 6px 0;
+    margin-bottom: 1.5rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="tag">Master Deck</div>
+  <h1>Eatlytic — Complete Project Blueprint</h1>
+  <div class="subtitle">A simple, comprehensive explanation of our system architecture, the 8 core modules, scan flows, and roadmap.</div>
+</header>
+
+<div class="container">
+
+  <!-- CARD 1: WHAT IS EATLYTIC -->
+  <div class="section-card">
+    <div class="card-header">
+      <h2>01. What is Eatlytic? (The Core Concept)</h2>
+      <span class="section-num">Part 1</span>
+    </div>
+    <p>Eatlytic is a <span class="highlight-span">Personal Nutrition Intelligence Layer (PNIL)</span>. Instead of just adding up calories (like general fitness trackers), Eatlytic decodes the food label to reveal its physical truth and safety profile.</p>
+    
+    <div class="callout">
+      <strong>In Simple Words:</strong> It validates product claims using physical laws (thermodynamics), detects processed food additives, and checks if food is safe for a user's health condition (like diabetes) or genetic profile (lactose intolerance, sodium sensitivity).
+    </div>
+    
+    <h3>Key Core Features:</h3>
+    <ul>
+      <li><span class="highlight-span">Claim Verification:</span> Catches brands lying about calories or ingredients at run-time.</li>
+      <li><span class="highlight-span">Offline First Design:</span> Runs deterministic rules locally before triggering cloud AI models, saving significant server costs.</li>
+      <li><span class="highlight-span">CGM & DNA Integrations:</span> Correlates scanned items with continuous glucose monitor spikes and genetic markers.</li>
+    </ul>
+  </div>
+
+  <!-- CARD 2: THE 8 CORE MODULES -->
+  <div class="section-card">
+    <div class="card-header">
+      <h2>02. Codebase Walkthrough — The 8 Core Modules</h2>
+      <span class="section-num">Part 2</span>
+    </div>
+    <p>The codebase is split into specific modules. Here is exactly what they do in plain English:</p>
+
+    <div class="modules-grid">
+      
+      <div class="module-card">
+        <h4><span class="dot purple"></span> brain.py (The Local Brain)</h4>
+        <p style="margin:0; font-size: 0.9rem;">Takes the parsed nutrients and runs offline medical logic. It assigns a safety rating (Safe/Limit/Avoid) based on user conditions (e.g. diabetes) without needing expensive LLMs.</p>
+      </div>
+
+      <div class="module-card">
+        <h4><span class="dot cyan"></span> fake_detector.py (The Lie Detector)</h4>
+        <p style="margin:0; font-size: 0.9rem;">Runs Atwater Calorie calculations: <code>(protein*4) + (carbs*4) + (fat*9)</code> to catch calorie fraud. It also scans ingredients lists for hidden sugars to catch fake "No Added Sugar" claims.</p>
+      </div>
+
+      <div class="module-card">
+        <h4><span class="dot green"></span> scan_orchestrator.py (The Traffic Cop)</h4>
+        <p style="margin:0; font-size: 0.9rem;">Manages the entire scan pipeline: handles OCR extraction fallbacks, routes matches, triggers RAG searches, runs the clinical engine, and stores the results.</p>
+      </div>
+
+      <div class="module-card">
+        <h4><span class="dot amber"></span> personalized_medicine.py (The DNA Layer)</h4>
+        <p style="margin:0; font-size: 0.9rem;">Checks user genetic SNPs for diabetes predisposition (TCF7L2), sodium-sensitive hypertension (AGT), and lactose intolerance (LCT) to override safety scores.</p>
+      </div>
+
+      <div class="module-card">
+        <h4><span class="dot red"></span> cgm.py (The Biosensor Engine)</h4>
+        <p style="margin:0; font-size: 0.9rem;">Manages continuous glucose monitor feeds, calculates Time-in-Range (70-140 mg/dL), and links food scans with actual glucose spikes 2 hours post-meal.</p>
+      </div>
+
+      <div class="module-card">
+        <h4><span class="dot blue"></span> additive_db.py (The Additive Lookup)</h4>
+        <p style="margin:0; font-size: 0.9rem;">Loads <code>additives.json</code> to perform rapid offline lookups on E-numbers and INS codes (like MSG or Tartrazine) for safety status and FSSAI rules.</p>
+      </div>
+
+      <div class="module-card">
+        <h4><span class="dot purple"></span> dietitian.py (The B2B Portal)</h4>
+        <p style="margin:0; font-size: 0.9rem;">A clinical dashboard allowing professional dietitians to track their patients' scans, CGM spikes, compliance reports, and send medical interventions.</p>
+      </div>
+
+      <div class="module-card">
+        <h4><span class="dot cyan"></span> mcp.py (The AI Server Connection)</h4>
+        <p style="margin:0; font-size: 0.9rem;">Integrates Model Context Protocol (MCP) to let external AI systems query Eatlytic's database and metabolic compatibility scoring dynamically.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- CARD 3: THE SCAN PIPELINE -->
+  <div class="section-card">
+    <div class="card-header">
+      <h2>03. Step-by-Step Scan Lifecycle</h2>
+      <span class="section-num">Part 3</span>
+    </div>
+    <p>How a scan moves through Eatlytic when a user photographs a label package:</p>
+
+    <div class="flow-box">
+1. OCR Text Extracted (OCR engine reads the label image)
+        │
+        ▼
+2. Local Database Match (Bypasses LLM / Web queries if product barcode matches database)
+        │ [No Match]
+        ▼
+3. Query Formulation (Extracts top 4 tokens + brand name to form a search key)
+        │
+        ▼
+4. Cache Verification (Checks L1 memory dictionary -> L2 SQLite/Supabase 'research_cache')
+        │ [Cache Miss]
+        ▼
+5. Web Search (RAG) (Performs a fast DuckDuckGo context search for safety advisories)
+        │
+        ▼
+6. Clinical & Physics Audits (Atwater calorie calculations + Persona warning flags)
+        │
+        ▼
+7. Genomic Check (Applies DNA lactose/diabetic/sodium overrides)
+        │
+        ▼
+8. Save Scan & Cache result (Returns a detailed report card to the user)</div>
+  </div>
+
+  <!-- CARD 4: RAG ENGINE & RETRIEVAL -->
+  <div class="section-card">
+    <div class="card-header">
+      <h2>04. RAG Engine & Live Context Retrieval</h2>
+      <span class="section-num">Part 4</span>
+    </div>
+    <p>How the real-time web-augmented RAG (Retrieval-Augmented Generation) pipeline operates to pull live product updates and safety alerts:</p>
+    
+    <div class="highlight-box">
+      <strong>How it works:</strong> If a scanned product misses our local database moat, the orchestrator formulates a search query from OCR keywords and triggers a background DuckDuckGo search (with a 3-second timeout). Results are cached in two tiers (L1 memory dict + L2 SQLite/Supabase DB table <code>research_cache</code>) before being injected straight into the LLM system prompt.
+    </div>
+
+    <h3>Subsystem Architecture Map:</h3>
+    <div class="diagram-wrapper">
+      <img src="eatlytic_rag_architecture.png" alt="Eatlytic RAG Architecture Diagram">
+    </div>
+
+    <h3>Vulnerabilities & Issues to Address:</h3>
+    <ul>
+      <li><span class="highlight-span">Scraper Fragility:</span> DuckDuckGo rate-limits scrapers. When it blocks us, RAG fails silently, causing the LLM to score without live data. We must migrate to a local vector database of FSSAI regulations.</li>
+      <li><span class="highlight-span">Generic Search Terms:</span> Grabbing the first 4 words of a label layout often queries generic words like <code>"Nutrition Facts Serving Size"</code>. We need to refactor query formulation to search based on the *detected ingredients*.</li>
+    </ul>
+  </div>
+
+  <!-- CARD 5: THE MOAT & DEV ROADMAP -->
+  <div class="section-card">
+    <div class="card-header">
+      <h2>05. The Challenges & Dev Roadmap</h2>
+      <span class="section-num">Part 5</span>
+    </div>
+    <p>What the development team is focusing on next to launch Eatlytic successfully:</p>
+
+    <h3>1. Core Technical Goals:</h3>
+    <ul>
+      <li><span class="highlight-span">Scraping FSSAI Permitted Additives:</span> Grow the database from 76 additives and 27 ingredients to 500+ items using public regulatory datasheets.</li>
+      <li><span class="highlight-span">Replacing DDG Scraping:</span> Web scraping is fragile and gets blocked. We will implement local vector databases loaded with FSSAI rules and food manuals.</li>
+      <li><span class="highlight-span">Harden DB Connections:</span> Verify WAL configurations to support multiple concurrent users on SQLite.</li>
+    </ul>
+
+    <h3>2. Launch Strategy (The Next 7 Days):</h3>
+    <ul>
+      <li><span class="highlight-span">Day 1-2:</span> Find 10 D2C brands that have high-sugar or palm oil claims.</li>
+      <li><span class="highlight-span">Day 3-4:</span> Build a professional compliance PDF report template. Generate demo reports to show brands.</li>
+      <li><span class="highlight-span">Day 5-6:</span> Deploy to a live VPS/VPS cloud using Supabase.</li>
+      <li><span class="highlight-span">Day 7:</span> Connect Twilio to activate the WhatsApp Scanning Bot.</li>
+    </ul>
+  </div>
+
+</div>
+
+</body>
+</html>
+

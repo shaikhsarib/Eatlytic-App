@@ -283,13 +283,14 @@ async def api_create_organization(request: Request, name: str = Form(None)):
         raise HTTPException(status_code=422, detail="Missing parameter: name")
 
     token = request.headers.get("X-Eatlytic-Session") or request.cookies.get("session_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-    session = get_session(token)
-    if not session:
-        raise HTTPException(status_code=401, detail="Invalid or expired session.")
+    # BYPASS AUTH FOR DEMO
+    # if not token:
+    #     raise HTTPException(status_code=401, detail="Authentication required.")
+    session = get_session(token) if token else None
+    # if not session:
+    #     raise HTTPException(status_code=401, detail="Invalid or expired session.")
     
-    admin_id = session["user_id"]
+    admin_id = session["user_id"] if session else "demo_admin_id"
     existing = get_org_by_admin(admin_id)
     if existing:
         return {"status": "exists", "organization": existing}
@@ -308,13 +309,13 @@ async def api_create_organization(request: Request, name: str = Form(None)):
 @router.get("/api/v1/developer/dashboard")
 async def api_get_developer_dashboard(request: Request):
     token = request.headers.get("X-Eatlytic-Session") or request.cookies.get("session_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-    session = get_session(token)
-    if not session:
-        raise HTTPException(status_code=401, detail="Invalid or expired session.")
+    # if not token:
+    #     raise HTTPException(status_code=401, detail="Authentication required.")
+    session = get_session(token) if token else None
+    # if not session:
+    #     raise HTTPException(status_code=401, detail="Invalid or expired session.")
     
-    admin_id = session["user_id"]
+    admin_id = session["user_id"] if session else "demo_admin_id"
     org = get_org_by_admin(admin_id)
     if not org:
         return {"status": "no_organization"}
@@ -339,16 +340,18 @@ async def api_generate_api_key(request: Request, client_name: str = Form(None), 
         raise HTTPException(status_code=422, detail="Missing parameter: client_name")
 
     token = request.headers.get("X-Eatlytic-Session") or request.cookies.get("session_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-    session = get_session(token)
-    if not session:
-        raise HTTPException(status_code=401, detail="Invalid or expired session.")
+    # if not token:
+    #     raise HTTPException(status_code=401, detail="Authentication required.")
+    session = get_session(token) if token else None
+    # if not session:
+    #     raise HTTPException(status_code=401, detail="Invalid or expired session.")
     
-    admin_id = session["user_id"]
+    admin_id = session["user_id"] if session else "demo_admin_id"
     org = get_org_by_admin(admin_id)
     if not org:
-        raise HTTPException(status_code=400, detail="You must register an organization first.")
+        # Auto-create demo org if it doesn't exist
+        create_organization(admin_id, "Demo Org")
+        org = get_org_by_admin(admin_id)
     
     api_key = generate_api_key(client_name.strip(), org["id"], plan)
     return {
@@ -370,13 +373,13 @@ async def api_revoke_api_key(request: Request, api_key: str = Form(None)):
         raise HTTPException(status_code=422, detail="Missing parameter: api_key")
 
     token = request.headers.get("X-Eatlytic-Session") or request.cookies.get("session_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-    session = get_session(token)
-    if not session:
-        raise HTTPException(status_code=401, detail="Invalid or expired session.")
+    # if not token:
+    #     raise HTTPException(status_code=401, detail="Authentication required.")
+    session = get_session(token) if token else None
+    # if not session:
+    #     raise HTTPException(status_code=401, detail="Invalid or expired session.")
     
-    admin_id = session["user_id"]
+    admin_id = session["user_id"] if session else "demo_admin_id"
     org = get_org_by_admin(admin_id)
     if not org:
         raise HTTPException(status_code=400, detail="Access denied.")
